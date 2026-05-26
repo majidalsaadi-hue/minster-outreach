@@ -6,3 +6,6 @@ __pycache__/
 dist/
 build/
 .streamlit/secrets.toml
+MoI_*.xlsx
+MoI_*.pptx
+MoI_*.pdf
