@@ -1,0 +1,173 @@
+
+/* Ministry of Investment — CRM Tool Custom Styles */
+
+/* ── Fonts ──────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Tajawal:wght@400;500;700&display=swap');
+
+/* ── RTL support ─────────────────────────────────────────────────────────── */
+[data-lang="ar"] * {
+    direction: rtl;
+    font-family: 'Tajawal', 'Arial', sans-serif !important;
+}
+[data-lang="en"] * {
+    direction: ltr;
+    font-family: 'Inter', 'Arial', sans-serif !important;
+}
+
+/* ── Global resets ────────────────────────────────────────────────────────── */
+.stApp {
+    background-color: #F7F7F2;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background-color: #1B5C3F !important;
+}
+[data-testid="stSidebar"] * {
+    color: #FFFFFF !important;
+}
+[data-testid="stSidebar"] .stRadio label {
+    color: rgba(255,255,255,0.85) !important;
+    font-size: 14px;
+    padding: 4px 0;
+}
+[data-testid="stSidebar"] .stRadio label:hover {
+    color: #C9974A !important;
+}
+
+/* ── Main content ─────────────────────────────────────────────────────────── */
+.main .block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+    max-width: 1400px;
+}
+
+/* ── Header bar ──────────────────────────────────────────────────────────── */
+.misa-header {
+    background: linear-gradient(135deg, #1B5C3F 0%, #0F3D2A 100%);
+    color: white;
+    padding: 16px 24px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.misa-header h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: white;
+}
+.misa-header .subtitle {
+    font-size: 12px;
+    color: rgba(255,255,255,0.7);
+    margin-top: 2px;
+}
+.misa-header .lang-badge {
+    background: #C9974A;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* ── Status badges ────────────────────────────────────────────────────────── */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: white;
+}
+.badge-green  { background: #1B5C3F; }
+.badge-gold   { background: #C9974A; }
+.badge-red    { background: #C0392B; }
+.badge-gray   { background: #9B9B9B; }
+
+/* ── Section titles ───────────────────────────────────────────────────────── */
+h3 {
+    color: #1B5C3F !important;
+    border-bottom: 2px solid #C9974A;
+    padding-bottom: 6px;
+    margin-bottom: 16px;
+}
+
+/* ── DataFrames ──────────────────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+/* ── Upload area ─────────────────────────────────────────────────────────── */
+[data-testid="stFileUploader"] {
+    border: 2px dashed #1B5C3F !important;
+    border-radius: 10px;
+    background: #F7F7F2;
+}
+
+/* ── Forms ───────────────────────────────────────────────────────────────── */
+[data-testid="stForm"] {
+    background: #FFFFFF;
+    border: 1px solid #E0E0E0;
+    border-radius: 10px;
+    padding: 16px;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.stButton > button {
+    background-color: #1B5C3F !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+}
+.stButton > button:hover {
+    background-color: #C9974A !important;
+    color: white !important;
+}
+
+/* ── Metric cards ─────────────────────────────────────────────────────────── */
+[data-testid="stMetric"] {
+    background: white;
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid #E0E0E0;
+}
+
+/* ── Download buttons ─────────────────────────────────────────────────────── */
+.stDownloadButton > button {
+    background-color: #C9974A !important;
+    color: white !important;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    color: #1B5C3F !important;
+    border-bottom: 3px solid #1B5C3F !important;
+    font-weight: 700 !important;
+}
+
+/* ── Expanders ───────────────────────────────────────────────────────────── */
+[data-testid="stExpander"] {
+    border: 1px solid #E0E0E0 !important;
+    border-radius: 8px !important;
+    background: white !important;
+}
+
+/* ── Success / warning / error messages ─────────────────────────────────── */
+[data-testid="stSuccess"] { border-left: 4px solid #1B5C3F !important; }
+[data-testid="stWarning"] { border-left: 4px solid #C9974A !important; }
+[data-testid="stError"]   { border-left: 4px solid #C0392B !important; }
+
+/* ── Charts ──────────────────────────────────────────────────────────────── */
+.js-plotly-plot { border-radius: 8px !important; }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #F0F0EA; }
+::-webkit-scrollbar-thumb { background: #1B5C3F; border-radius: 3px; }
