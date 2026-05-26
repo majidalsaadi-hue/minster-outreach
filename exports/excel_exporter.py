@@ -17,7 +17,9 @@ from config.settings import (
     MEETING_OBJECTIVES, OPPORTUNITY_TYPES, OPPORTUNITY_SOURCES,
     OPPORTUNITY_STAGES, CONFIDENCE_LEVELS, ACTION_STATUSES,
     PROGRESS_OPTIONS, ESCALATION_FLAGS, ENGAGEMENT_TYPES, DEPARTMENTS,
-    TASK_PRIORITIES,
+    TASK_PRIORITIES, DEAL_CLASSIFICATIONS, VISION_2030_PILLARS,
+    BLOCKER_LEVELS, MINISTER_ACTION_TYPES, SAUDI_CONTENT_OPTIONS,
+    TECH_TRANSFER_OPTIONS,
 )
 
 # Colours (hex without #)
@@ -82,34 +84,59 @@ def _build_investor_sheet(wb: Workbook):
         "Investor Tier", "Relationship Manager", "Account Manager",
         "Outreach Manager", "Journey Stage", "Relationship Status",
         "Est. Investment Value (SAR)", "Actual Commitment (SAR)",
+        "Est. Jobs Created", "Saudi Content %", "Technology Transfer",
+        "Deal Classification", "Vision 2030 Pillar",
+        "Strategic Priority Score",
+        "Minister Action Required", "Decision Required By", "Blocker Level",
         "Last Meeting Date", "Next Meeting Date", "Last Updated",
         "Escalation Flag", "Notes",
     ]
     _write_header_row(ws, headers, _GREEN, _WHITE)
-    _set_col_widths(ws, [12, 25, 18, 22, 22, 22, 22, 18, 28, 20, 28, 25, 18, 18, 15, 18, 40])
+    _set_col_widths(ws, [
+        12, 25, 18, 22, 22, 22, 22, 18, 28, 20,
+        28, 25, 18, 18, 18,
+        28, 30, 10,
+        30, 18, 38,
+        18, 18, 15, 18, 40,
+    ])
 
-    # Data validations
-    _add_dv(ws, "C", COUNTRIES,       2, 200)
-    _add_dv(ws, "D", SECTORS,         2, 200)
-    _add_dv(ws, "E", INVESTOR_TIERS,  2, 200)
-    _add_dv(ws, "J", INVESTOR_STATUSES, 2, 200)
-    _add_dv(ws, "I", JOURNEY_STAGES,  2, 200)
-    _add_dv(ws, "P", ESCALATION_FLAGS, 2, 200)
+    # Core dropdowns
+    _add_dv(ws, "C", COUNTRIES,            2, 200)
+    _add_dv(ws, "D", SECTORS,              2, 200)
+    _add_dv(ws, "E", INVESTOR_TIERS,       2, 200)
+    _add_dv(ws, "I", JOURNEY_STAGES,       2, 200)
+    _add_dv(ws, "J", INVESTOR_STATUSES,    2, 200)
+    # Minister decision-support dropdowns
+    _add_dv(ws, "N", SAUDI_CONTENT_OPTIONS, 2, 200)
+    _add_dv(ws, "O", TECH_TRANSFER_OPTIONS, 2, 200)
+    _add_dv(ws, "P", DEAL_CLASSIFICATIONS,  2, 200)
+    _add_dv(ws, "Q", VISION_2030_PILLARS,   2, 200)
+    _add_dv(ws, "S", MINISTER_ACTION_TYPES, 2, 200)
+    _add_dv(ws, "U", BLOCKER_LEVELS,        2, 200)
+    _add_dv(ws, "Y", ESCALATION_FLAGS,      2, 200)
 
-    # Sample row
+    # Sample rows with minister decision fields
     ws.append([
         "INV-001", "Siemens Energy", "Germany", "Energy & Industrial",
         "Tier 1 — Strategic", "Khalid Al Sheddi", "TBD", "Majed",
         "Technical Engagement", "Active",
         2_000_000_000, None,
+        8500, "40–60%", "Yes",
+        "Greenfield", "Thriving Economy",
+        4,
+        "Site Visit", date(2026, 6, 15), "Ministerial — requires HE intervention",
         date(2026, 5, 15), date(2026, 6, 10), date(2026, 5, 26),
-        "None", "Turbine factory expansion + new switchgear plant",
+        "Flag for RM", "Turbine factory expansion + new switchgear plant",
     ])
     ws.append([
         "INV-002", "BlackRock", "United States", "Finance & Investment",
         "Tier 1 — Strategic", "Dana", "TBD", "Majed",
         "Opportunity Matching", "Active",
         5_000_000_000, None,
+        3200, "20–40%", "No",
+        "Fund / FDI", "Thriving Economy",
+        5,
+        "Decision Required", date(2026, 7, 31), "None",
         date(2026, 4, 27), date(2026, 6, 30), date(2026, 4, 27),
         "None", "Infrastructure & data center investment narrative in development",
     ])
@@ -118,6 +145,10 @@ def _build_investor_sheet(wb: Workbook):
         "Tier 2 — High Potential", "Dana", "TBD", "Majed",
         "Technical Engagement", "Active",
         None, None,
+        1200, "< 20%", "No",
+        "Strategic Partnership", "Thriving Economy",
+        3,
+        "None Required", None, "None",
         date(2026, 5, 15), None, date(2026, 5, 15),
         "None", "Operational readiness + NIS roadshow coordination",
     ])
@@ -125,7 +156,12 @@ def _build_investor_sheet(wb: Workbook):
         "INV-004", "Brookfield", "United States", "Real Estate",
         "Tier 2 — High Potential", "Dana", "TBD", "Majed",
         "Qualification", "Pending",
-        None, None, None, None, date(2026, 5, 26),
+        None, None,
+        None, "TBD", "TBD",
+        "Greenfield", "Vibrant Society",
+        2,
+        "None Required", None, "None",
+        None, None, date(2026, 5, 26),
         "None", "",
     ])
     _style_data_rows(ws, 2, 5)
@@ -303,24 +339,30 @@ def _build_reference_sheet(wb: Workbook):
     ws.sheet_state = "hidden"   # hide from end-users; used only for dropdowns
 
     lists = {
-        "A": ("Sectors",           SECTORS),
-        "B": ("Countries",         COUNTRIES),
-        "C": ("Investor Tiers",    INVESTOR_TIERS),
-        "D": ("Investor Statuses", INVESTOR_STATUSES),
-        "E": ("Journey Stages",    JOURNEY_STAGES),
-        "F": ("Meeting Types",     MEETING_TYPES),
-        "G": ("Meeting Statuses",  MEETING_STATUSES),
-        "H": ("Meeting Objectives",MEETING_OBJECTIVES),
-        "I": ("Opp Types",         OPPORTUNITY_TYPES),
-        "J": ("Opp Sources",       OPPORTUNITY_SOURCES),
-        "K": ("Opp Stages",        OPPORTUNITY_STAGES),
-        "L": ("Confidence",        CONFIDENCE_LEVELS),
-        "M": ("Action Statuses",   ACTION_STATUSES),
-        "N": ("Progress",          PROGRESS_OPTIONS),
-        "O": ("Escalation Flags",  ESCALATION_FLAGS),
-        "P": ("Engagement Types",  ENGAGEMENT_TYPES),
-        "Q": ("Departments",       DEPARTMENTS),
-        "R": ("Task Priorities",   TASK_PRIORITIES),
+        "A": ("Sectors",             SECTORS),
+        "B": ("Countries",           COUNTRIES),
+        "C": ("Investor Tiers",      INVESTOR_TIERS),
+        "D": ("Investor Statuses",   INVESTOR_STATUSES),
+        "E": ("Journey Stages",      JOURNEY_STAGES),
+        "F": ("Meeting Types",       MEETING_TYPES),
+        "G": ("Meeting Statuses",    MEETING_STATUSES),
+        "H": ("Meeting Objectives",  MEETING_OBJECTIVES),
+        "I": ("Opp Types",           OPPORTUNITY_TYPES),
+        "J": ("Opp Sources",         OPPORTUNITY_SOURCES),
+        "K": ("Opp Stages",          OPPORTUNITY_STAGES),
+        "L": ("Confidence",          CONFIDENCE_LEVELS),
+        "M": ("Action Statuses",     ACTION_STATUSES),
+        "N": ("Progress",            PROGRESS_OPTIONS),
+        "O": ("Escalation Flags",    ESCALATION_FLAGS),
+        "P": ("Engagement Types",    ENGAGEMENT_TYPES),
+        "Q": ("Departments",         DEPARTMENTS),
+        "R": ("Task Priorities",     TASK_PRIORITIES),
+        "S": ("Deal Classifications",DEAL_CLASSIFICATIONS),
+        "T": ("Vision 2030 Pillars", VISION_2030_PILLARS),
+        "U": ("Blocker Levels",      BLOCKER_LEVELS),
+        "V": ("Minister Actions",    MINISTER_ACTION_TYPES),
+        "W": ("Saudi Content",       SAUDI_CONTENT_OPTIONS),
+        "X": ("Tech Transfer",       TECH_TRANSFER_OPTIONS),
     }
     for col_letter, (header, values) in lists.items():
         col_idx = ord(col_letter) - ord("A") + 1

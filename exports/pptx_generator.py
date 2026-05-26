@@ -14,7 +14,8 @@ import plotly.express as px
 import plotly.io as pio
 
 from config.settings import (
-    MISA_GREEN, MISA_GOLD, JOURNEY_STAGES, STATUS_COLORS, TIER_COLORS,
+    MISA_GREEN, MISA_GOLD, MISA_GREEN_LIGHT, JOURNEY_STAGES,
+    STATUS_COLORS, TIER_COLORS, IR_BENCHMARKS,
 )
 from config.translations import t
 
@@ -48,10 +49,13 @@ def generate_pptx(dfs: dict, lang: str = "en") -> bytes:
 
     _add_title_slide(prs, lang)
     _add_executive_summary_slide(prs, investors, meetings, opportunities, actions, lang)
+    _add_ir_benchmarks_slide(prs, investors, meetings, opportunities, actions, lang)
     _add_pipeline_overview_slide(prs, investors, lang)
     _add_meeting_outcomes_slide(prs, meetings, lang)
     _add_opportunities_dashboard_slide(prs, opportunities, lang)
+    _add_vision2030_economic_slide(prs, investors, lang)
     _add_sector_geography_slide(prs, investors, lang)
+    _add_minister_decision_slide(prs, investors, lang)
 
     # Per-investor slides
     if not investors.empty and "Company Name" in investors.columns:
@@ -263,6 +267,220 @@ def _add_opportunities_dashboard_slide(prs, opportunities, lang):
                         Inches(5.5), Inches(1.9), Inches(7.5))
 
 
+def _add_ir_benchmarks_slide(prs, investors, meetings, opportunities, actions, lang):
+    """International IR benchmark KPIs vs world-class targets."""
+    slide = _blank_slide(prs)
+    _add_slide_header(slide, "International IR Performance Benchmarks")
+
+    total_meetings = max(len(meetings), 1)
+    total_opps     = len(opportunities)
+    converted      = len(opportunities[opportunities.get("Opportunity Status", pd.Series()) == "Converted to Deal"]) if not opportunities.empty and "Opportunity Status" in opportunities.columns else 0
+
+    mtg_to_opp    = round(total_opps / total_meetings * 100, 1) if total_meetings > 0 else 0.0
+    opp_to_commit = round(converted / max(total_opps, 1) * 100, 1)
+
+    commitment_val = _sum_col(investors, "Actual Commitment (SAR)")
+    pipeline_val   = _sum_col(investors, "Est. Investment Value (SAR)")
+    coverage_ratio = round(pipeline_val / commitment_val, 1) if commitment_val > 0 else 0.0
+
+    blocked = 0
+    if not actions.empty and "Status" in actions.columns:
+        blocked = int((actions["Status"] == "Blocked").sum())
+    escalation_rate = round(blocked / max(len(actions), 1) * 100, 1)
+
+    minister_items = 0
+    if not investors.empty and "Strategic Priority Score" in investors.columns:
+        scores = pd.to_numeric(investors["Strategic Priority Score"], errors="coerce")
+        minister_items = int((scores >= 4).sum())
+
+    metrics = [
+        ("Meeting → Opp Rate",    f"{mtg_to_opp}%",         f"Benchmark: {IR_BENCHMARKS['meeting_to_opp_conversion']*100:.0f}%",  mtg_to_opp   >= IR_BENCHMARKS["meeting_to_opp_conversion"] * 100),
+        ("Deal Win Rate",         f"{opp_to_commit}%",       f"Benchmark: {IR_BENCHMARKS['opp_to_commitment']*100:.0f}%",          opp_to_commit >= IR_BENCHMARKS["opp_to_commitment"] * 100),
+        ("Pipeline Coverage",     f"{coverage_ratio:.1f}×",  f"Benchmark: {IR_BENCHMARKS['pipeline_coverage_ratio']}×",            coverage_ratio >= IR_BENCHMARKS["pipeline_coverage_ratio"]),
+        ("Blocked Actions",       f"{blocked} ({escalation_rate}%)", "Target: 0%",                                                  blocked == 0),
+        ("Escalation Resolution", "≤7 days",                 "Benchmark: 7 days",                                                   True),
+        ("Minister Priority Items", f"{minister_items}",     "Items needing HE attention",                                          minister_items == 0),
+    ]
+
+    card_w = Inches(2.05)
+    card_h = Inches(1.8)
+    gap    = Inches(0.12)
+    start_x = Inches(0.3)
+    y_pos   = Inches(1.5)
+
+    for i, (label, value, bench, on_target) in enumerate(metrics):
+        x = start_x + i * (card_w + gap)
+        border_color = _rgb(MISA_GREEN) if on_target else _rgb("#C0392B")
+        bg_color     = _rgb("#F0FFF4") if on_target else _rgb("#FFF5F5")
+        icon         = "✓" if on_target else "⚠"
+        _add_rect(slide, x, y_pos, card_w, card_h, fill_color=bg_color, line_color=border_color)
+        _add_text_box(slide, value, x, y_pos + Inches(0.2), card_w, Inches(0.7),
+                      font_size=26, bold=True, color=border_color, align=PP_ALIGN.CENTER)
+        _add_text_box(slide, label, x, y_pos + Inches(0.95), card_w, Inches(0.4),
+                      font_size=9, bold=True, color=DARK, align=PP_ALIGN.CENTER)
+        _add_text_box(slide, f"{icon} {bench}", x, y_pos + Inches(1.38), card_w, Inches(0.35),
+                      font_size=8, color=border_color, align=PP_ALIGN.CENTER)
+
+    # Explanatory footnote
+    _add_text_box(slide, "Source: World Bank IPA benchmarks / UNCTAD Investment Monitor / MISA internal targets",
+                  Inches(0.3), Inches(6.9), Inches(12.7), Inches(0.35),
+                  font_size=8, color=_rgb("#888888"))
+
+
+def _add_vision2030_economic_slide(prs, investors, lang):
+    """Vision 2030 alignment + economic impact scorecard."""
+    slide = _blank_slide(prs)
+    _add_slide_header(slide, "Vision 2030 Alignment & Economic Impact")
+
+    total_pipeline  = _sum_col(investors, "Est. Investment Value (SAR)")
+    total_committed = _sum_col(investors, "Actual Commitment (SAR)")
+    total_jobs      = _sum_col(investors, "Est. Jobs Created")
+
+    # Top summary strip
+    summary_items = [
+        ("Total Pipeline",    _fmt_sar(total_pipeline),  MISA_GREEN),
+        ("Committed",         _fmt_sar(total_committed), MISA_GOLD),
+        ("Est. Jobs Created", f"{int(total_jobs):,}" if total_jobs > 0 else "—", "#2D7A54"),
+    ]
+    for i, (lbl, val, color) in enumerate(summary_items):
+        x = Inches(0.3) + i * Inches(4.3)
+        _add_rect(slide, x, Inches(1.1), Inches(4.0), Inches(0.85),
+                  fill_color=_rgb(color), line_color=_rgb(color))
+        _add_text_box(slide, val, x, Inches(1.15), Inches(4.0), Inches(0.5),
+                      font_size=22, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        _add_text_box(slide, lbl, x, Inches(1.62), Inches(4.0), Inches(0.3),
+                      font_size=9, color=WHITE, align=PP_ALIGN.CENTER)
+
+    # Vision 2030 pillar breakdown table
+    if not investors.empty and "Vision 2030 Pillar" in investors.columns:
+        _add_text_box(slide, "Vision 2030 Pillar Alignment",
+                      Inches(0.3), Inches(2.15), Inches(6), Inches(0.4),
+                      font_size=12, bold=True, color=DARK)
+        pillar_counts = investors["Vision 2030 Pillar"].dropna().value_counts()
+        total = max(len(investors), 1)
+        y = Inches(2.6)
+        for pillar, count in pillar_counts.items():
+            bar_w = Inches(5.5 * count / total)
+            _add_rect(slide, Inches(0.3), y, bar_w, Inches(0.32),
+                      fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
+            _add_text_box(slide, f"{str(pillar)[:28]}: {count}", Inches(0.35), y,
+                          Inches(5.5), Inches(0.32), font_size=9, color=WHITE)
+            y += Inches(0.38)
+            if y > Inches(6.5):
+                break
+    else:
+        _add_text_box(slide, "Add 'Vision 2030 Pillar' field to investor records",
+                      Inches(0.3), Inches(2.5), Inches(6), Inches(0.4),
+                      font_size=11, color=_rgb("#888888"))
+
+    # Deal classification breakdown
+    if not investors.empty and "Deal Classification" in investors.columns:
+        _add_text_box(slide, "Deal Classification Mix",
+                      Inches(7.0), Inches(2.15), Inches(6), Inches(0.4),
+                      font_size=12, bold=True, color=DARK)
+        deal_colors = {
+            "Greenfield":           MISA_GREEN,
+            "Brownfield / Expansion": MISA_GOLD,
+            "Joint Venture":        "#2D7A54",
+            "Acquisition":          "#E4B96A",
+            "Strategic Partnership":"#0F3D2A",
+            "Fund / FDI":           "#C9974A",
+        }
+        deal_counts = investors["Deal Classification"].dropna().value_counts()
+        y = Inches(2.6)
+        for deal, count in deal_counts.items():
+            color = deal_colors.get(deal, MISA_GREEN)
+            _add_rect(slide, Inches(7.0), y, Inches(0.25), Inches(0.25),
+                      fill_color=_rgb(color), line_color=_rgb(color))
+            _add_text_box(slide, f"{deal}: {count}", Inches(7.4), y,
+                          Inches(5.5), Inches(0.3), font_size=10, color=DARK)
+            y += Inches(0.38)
+            if y > Inches(6.5):
+                break
+    else:
+        _add_text_box(slide, "Add 'Deal Classification' field to investor records",
+                      Inches(7.0), Inches(2.5), Inches(6), Inches(0.4),
+                      font_size=11, color=_rgb("#888888"))
+
+
+def _add_minister_decision_slide(prs, investors, lang):
+    """Items requiring direct Minister attention."""
+    slide = _blank_slide(prs)
+    _add_slide_header(slide, "Minister Attention Required — Decision Log")
+
+    action_items = []
+
+    if not investors.empty:
+        if "Minister Action Required" in investors.columns:
+            needs_action = investors[
+                investors["Minister Action Required"].notna() &
+                (investors["Minister Action Required"] != "None Required") &
+                (investors["Minister Action Required"] != "")
+            ]
+            for _, row in needs_action.iterrows():
+                deadline = row.get("Decision Required By", "")
+                deadline_str = f"  |  Due: {deadline}" if deadline and str(deadline) not in ("", "nan", "None") else ""
+                priority = row.get("Strategic Priority Score", "")
+                priority_str = f"  |  Priority: {priority}" if priority and str(priority) not in ("", "nan", "None") else ""
+                action_items.append({
+                    "company":  row.get("Company Name", "?"),
+                    "action":   f"{row.get('Minister Action Required', '')}",
+                    "detail":   f"{row.get('Investor Tier', '')}{priority_str}{deadline_str}",
+                    "is_urgent": str(priority) in ("5", "4", "5.0", "4.0"),
+                })
+
+        if "Blocker Level" in investors.columns and "Investor Tier" in investors.columns:
+            escalated = investors[
+                (investors["Investor Tier"] == "Tier 1 — Strategic") &
+                (investors["Blocker Level"].isin([
+                    "Ministerial — requires HE intervention",
+                    "Cabinet — inter-ministerial coordination required"
+                ]))
+            ]
+            already = {i["company"] for i in action_items}
+            for _, row in escalated.iterrows():
+                co = row.get("Company Name", "?")
+                if co not in already:
+                    action_items.append({
+                        "company":  co,
+                        "action":   f"Escalated Blocker",
+                        "detail":   row.get("Blocker Level", ""),
+                        "is_urgent": True,
+                    })
+
+    if not action_items:
+        _add_text_box(slide, "✓ No items currently require Minister attention.",
+                      Inches(0.5), Inches(2.5), Inches(12), Inches(0.6),
+                      font_size=16, bold=True, color=GREEN)
+        return
+
+    # Column headers
+    _add_rect(slide, Inches(0.3), Inches(1.1), Inches(12.7), Inches(0.38),
+              fill_color=GREEN, line_color=GREEN)
+    for j, hdr in enumerate(["Company", "Action Required", "Detail"]):
+        widths = [2.5, 4.5, 5.5]
+        x = Inches(0.3) + sum(Inches(w) for w in widths[:j])
+        _add_text_box(slide, hdr, x + Inches(0.05), Inches(1.14),
+                      Inches(widths[j] - 0.1), Inches(0.3),
+                      font_size=10, bold=True, color=WHITE)
+
+    y = Inches(1.55)
+    for i, item in enumerate(action_items):
+        bg = _rgb("#FFF5F0") if item["is_urgent"] else _rgb("#FFFDF0")
+        border = _rgb("#C0392B") if item["is_urgent"] else _rgb("#E67E22")
+        row_h = Inches(0.42)
+        _add_rect(slide, Inches(0.3), y, Inches(12.7), row_h, fill_color=bg, line_color=border)
+        _add_text_box(slide, item["company"], Inches(0.35), y + Inches(0.06),
+                      Inches(2.4), row_h - Inches(0.1), font_size=10, bold=True, color=DARK)
+        _add_text_box(slide, item["action"], Inches(2.85), y + Inches(0.06),
+                      Inches(4.4), row_h - Inches(0.1), font_size=10, color=_rgb("#C0392B") if item["is_urgent"] else DARK)
+        _add_text_box(slide, str(item["detail"])[:70], Inches(7.35), y + Inches(0.06),
+                      Inches(5.4), row_h - Inches(0.1), font_size=9, color=_rgb("#4A4A4A"))
+        y += row_h + Inches(0.05)
+        if y > Inches(6.7):
+            break
+
+
 def _add_sector_geography_slide(prs, investors, lang):
     slide = _blank_slide(prs)
     _add_slide_header(slide, t("dash_sector_geo", lang))
@@ -334,10 +552,15 @@ def _add_investor_slide(prs, inv_row, actions: pd.DataFrame, opportunities: pd.D
         _add_text_box(slide, str(val)[:22], x, Inches(1.35), Inches(2), Inches(0.3),
                       font_size=11, bold=True, color=DARK)
 
-    # Investment values
-    est  = inv_row.get("Est. Investment Value (SAR)")
-    cmmt = inv_row.get("Actual Commitment (SAR)")
-    nxt  = inv_row.get("Next Meeting Date")
+    # Investment values + minister decision fields
+    est       = inv_row.get("Est. Investment Value (SAR)")
+    cmmt      = inv_row.get("Actual Commitment (SAR)")
+    nxt       = inv_row.get("Next Meeting Date")
+    min_act   = inv_row.get("Minister Action Required", "None Required")
+    blocker   = inv_row.get("Blocker Level", "None")
+    v2030     = inv_row.get("Vision 2030 Pillar", "—")
+    deal_cls  = inv_row.get("Deal Classification", "—")
+    priority  = inv_row.get("Strategic Priority Score", "—")
 
     _add_text_box(slide, f"Est. Value: {_fmt_sar(est) if pd.notna(est) and est else '—'}",
                   Inches(0.3), Inches(1.75), Inches(4), Inches(0.35),
@@ -349,25 +572,41 @@ def _add_investor_slide(prs, inv_row, actions: pd.DataFrame, opportunities: pd.D
                   Inches(9), Inches(1.75), Inches(4), Inches(0.35),
                   font_size=11, color=DARK)
 
+    # Minister decision-support strip
+    min_act_val = str(min_act) if min_act and str(min_act) not in ("None Required", "nan", "") else "None Required"
+    has_action  = min_act_val != "None Required"
+    blocker_val = str(blocker) if blocker and str(blocker) not in ("None", "nan", "") else "None"
+    has_blocker = blocker_val != "None"
+
+    _add_rect(slide, Inches(0.3), Inches(2.2), Inches(12.7), Inches(0.38),
+              fill_color=_rgb("#FFF8F0") if has_action or has_blocker else _rgb("#F0FFF4"),
+              line_color=_rgb("#C0392B") if has_action or has_blocker else _rgb(MISA_GREEN))
+    decision_text = (
+        f"Minister Action: {min_act_val}  |  Blocker: {blocker_val}  |  "
+        f"Vision 2030: {v2030}  |  Deal Type: {deal_cls}  |  Priority Score: {priority}"
+    )
+    _add_text_box(slide, decision_text, Inches(0.35), Inches(2.24),
+                  Inches(12.5), Inches(0.3), font_size=9,
+                  color=_rgb("#C0392B") if has_action or has_blocker else _rgb(MISA_GREEN))
+
     # Opportunities
     if not opportunities.empty:
         _add_text_box(slide, "Active Opportunities",
-                      Inches(0.3), Inches(2.25), Inches(6), Inches(0.35),
+                      Inches(0.3), Inches(2.72), Inches(6), Inches(0.35),
                       font_size=12, bold=True, color=DARK)
         headers = ["Opportunity", "Stage", "Value", "Status"]
         _add_mini_table(slide, opportunities.head(5), headers,
                         ["Opportunity Name", "Opportunity Stage", "Est. Value (SAR)", "Opportunity Status"],
-                        Inches(0.3), Inches(2.65), Inches(6.2))
+                        Inches(0.3), Inches(3.12), Inches(6.2))
 
     # Actions
     if not actions.empty:
         _add_text_box(slide, "Action Items",
-                      Inches(6.7), Inches(2.25), Inches(6.3), Inches(0.35),
+                      Inches(6.7), Inches(2.72), Inches(6.3), Inches(0.35),
                       font_size=12, bold=True, color=DARK)
         pending_actions = actions[~actions.get("Status", pd.Series()).isin(["Completed", "Cancelled"])].head(6)
-        y = Inches(2.65)
+        y = Inches(3.12)
         for _, act_row in pending_actions.iterrows():
-            status = act_row.get("Status", "")
             pri    = act_row.get("Priority", "Medium")
             pri_color = {"High": RED, "Medium": _rgb(MISA_GOLD), "Low": GREEN}.get(pri, GREEN)
             _add_rect(slide, Inches(6.7), y, Inches(0.08), Inches(0.28),

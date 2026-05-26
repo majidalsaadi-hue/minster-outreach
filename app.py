@@ -34,6 +34,7 @@ from modules.dashboard     import (
     render_kpi_cards, render_pipeline_overview, render_meeting_outcomes,
     render_investment_flow, render_opportunity_pipeline,
     render_sector_geography, render_alerts,
+    render_minister_decision_panel, render_vision2030_panel, render_economic_impact,
 )
 from modules.investors     import render as render_investors
 from modules.meetings      import render as render_meetings
@@ -237,6 +238,24 @@ def render_dashboard():
     # Sector & Geography
     st.markdown(f"#### {T('dash_sector_geo')}")
     render_sector_geography(dfs, lang())
+
+    st.markdown("---")
+
+    # Minister Decision Panel
+    st.markdown("#### 🏛️ Minister Attention Required")
+    render_minister_decision_panel(dfs, lang())
+
+    st.markdown("---")
+
+    # Vision 2030 Alignment + Deal Classification
+    st.markdown("#### 🌟 Vision 2030 Alignment")
+    render_vision2030_panel(dfs, lang())
+
+    st.markdown("---")
+
+    # Economic Impact
+    st.markdown("#### 💰 Economic Impact Scorecard")
+    render_economic_impact(dfs, lang())
 
 
 def _render_no_data_welcome():

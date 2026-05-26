@@ -175,3 +175,79 @@ PROGRESS_OPTIONS = ["0%", "25%", "50%", "75%", "100%"]
 ESCALATION_FLAGS = ["None", "Flag for RM", "Flag for Leadership"]
 
 TASK_PRIORITIES = ["High", "Medium", "Low"]
+
+# ── Minister decision-support fields ────────────────────────────────────────
+
+# How the deal classification maps to KSA economic impact categories
+DEAL_CLASSIFICATIONS = [
+    "Greenfield",
+    "Brownfield / Expansion",
+    "Joint Venture",
+    "Acquisition",
+    "Strategic Partnership",
+    "Fund / FDI",
+]
+
+# Vision 2030 pillar alignment
+VISION_2030_PILLARS = [
+    "Vibrant Society",
+    "Thriving Economy",
+    "Ambitious Nation",
+    "Giga Projects",
+    "National Champions",
+    "Privatisation",
+    "SME Development",
+    "Tourism & Culture",
+    "Renewables & Sustainability",
+]
+
+# Blocker severity — determines escalation path
+BLOCKER_LEVELS = [
+    "None",
+    "Operational — AM can resolve",
+    "Ministerial — requires HE intervention",
+    "Cabinet — inter-ministerial coordination required",
+]
+
+# Who initiated the meeting/engagement
+MEETING_INITIATED_BY = [
+    "Investor",
+    "Account Manager",
+    "Relationship Manager",
+    "Minister's Office",
+    "Third Party / Event",
+]
+
+# Strategic priority score descriptors
+STRATEGIC_PRIORITY_LABELS = {
+    5: "Critical — Immediate ministerial attention",
+    4: "High — HE briefing required",
+    3: "Medium — Regular RM oversight",
+    2: "Standard — AM-managed",
+    1: "Watch — Monitor only",
+}
+
+# International IR benchmark KPIs (used in dashboard & reports)
+IR_BENCHMARKS = {
+    "avg_days_to_close":          120,   # world-class IPA benchmark
+    "meeting_to_opp_conversion":  0.40,  # 40% industry target
+    "opp_to_commitment":          0.25,  # 25% industry target
+    "pipeline_coverage_ratio":    3.0,   # pipeline should be 3x target
+    "escalation_resolution_days": 7,     # resolve blockers within 7 days
+}
+
+SAUDI_CONTENT_OPTIONS = [
+    "< 20%", "20–40%", "40–60%", "60–80%", "> 80%", "TBD",
+]
+
+TECH_TRANSFER_OPTIONS = ["Yes", "No", "Partial", "TBD"]
+
+MINISTER_ACTION_TYPES = [
+    "None Required",
+    "Decision Required",
+    "Approval Required",
+    "Meeting Requested",
+    "Escalation — Unblock Deal",
+    "Letter / Communication",
+    "Site Visit",
+]
