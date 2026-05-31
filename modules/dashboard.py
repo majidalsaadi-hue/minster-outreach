@@ -597,7 +597,12 @@ def _overdue_count(actions: pd.DataFrame, today: date) -> int:
     if actions.empty or "Due Date" not in actions.columns or "Status" not in actions.columns:
         return 0
     due = pd.to_datetime(actions["Due Date"], errors="coerce")
-    return int(((due.dt.date < today) & (~actions["Status"].isin(["Completed","Cancelled"]))).sum())
+    statuses = actions["Status"].values
+    count = 0
+    for i, d in enumerate(due):
+        if pd.notna(d) and d.date() < today and statuses[i] not in ("Completed", "Cancelled"):
+            count += 1
+    return count
 
 
 def _avg_stage_days(investors: pd.DataFrame) -> int:
@@ -608,4 +613,5 @@ def _avg_stage_days(investors: pd.DataFrame) -> int:
     valid = days.dropna()
     if valid.empty:
         return 0
-    return int((today - valid.dt.date).dt.days.mean())
+    diffs = [(today - d.date()).days for d in valid]
+    return int(sum(diffs) / len(diffs)) if diffs else 0
