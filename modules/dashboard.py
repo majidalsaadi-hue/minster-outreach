@@ -571,6 +571,18 @@ def _layout() -> dict:
     )
 
 
+def _safe_date(val):
+    if val is None:
+        return None
+    try:
+        if isinstance(val, date):
+            return val
+        ts = pd.to_datetime(val, errors="coerce")
+        return ts.date() if pd.notna(ts) else None
+    except Exception:
+        return None
+
+
 def _fmt_sar(val: float) -> str:
     if not val or (isinstance(val, float) and pd.isna(val)):
         return "—"
