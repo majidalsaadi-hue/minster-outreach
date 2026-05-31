@@ -9,7 +9,7 @@ from config.settings import (
     MEETING_TYPES, MEETING_OBJECTIVES, MEETING_STATUSES, MISA_GREEN,
 )
 from config.translations import t
-from modules.data_loader import save_session
+from modules.persistence import save_session
 
 
 def render(dfs: dict, lang: str):

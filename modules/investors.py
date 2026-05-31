@@ -11,7 +11,7 @@ from config.settings import (
     STATUS_COLORS, TIER_COLORS,
 )
 from config.translations import t
-from modules.data_loader import save_session
+from modules.persistence import save_session
 
 
 def render(dfs: dict, lang: str):

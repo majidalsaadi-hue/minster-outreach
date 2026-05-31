@@ -29,7 +29,8 @@ if _CSS_PATH.exists():
 from config.translations import t
 from config.settings     import MISA_GREEN, MISA_GOLD
 
-from modules.data_loader   import load_excel, validate_schema, get_summary, save_session, load_session
+from modules.data_loader   import load_excel, validate_schema, get_summary
+from modules.persistence   import save_session, load_session
 from modules.dashboard     import (
     render_kpi_cards, render_pipeline_overview, render_meeting_outcomes,
     render_investment_flow, render_opportunity_pipeline,

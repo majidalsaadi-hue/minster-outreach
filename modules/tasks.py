@@ -7,7 +7,7 @@ from datetime import date, timedelta
 
 from config.settings import TASK_PRIORITIES, MISA_GREEN, MISA_GOLD
 from config.translations import t
-from modules.data_loader import save_session
+from modules.persistence import save_session
 
 TASK_STATUSES = ["Not Started", "In Progress", "Completed"]
 
