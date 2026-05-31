@@ -11,6 +11,7 @@ from config.settings import (
     STATUS_COLORS, PRIORITY_COLORS,
 )
 from config.translations import t
+from modules.data_loader import save_session
 
 
 def render(dfs: dict, lang: str):
@@ -175,6 +176,7 @@ def _add_action_form(dfs: dict, investors: pd.DataFrame, lang: str):
             dfs["Action Items"] = pd.concat(
                 [actions, pd.DataFrame([new_row])], ignore_index=True
             )
+            save_session(dfs)
             st.success(f"✅ Action {new_id} added for {company}")
             st.rerun()
 

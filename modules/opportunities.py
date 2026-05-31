@@ -11,6 +11,7 @@ from config.settings import (
     CONFIDENCE_LEVELS, ESCALATION_FLAGS, STATUS_COLORS, MISA_GREEN,
 )
 from config.translations import t
+from modules.data_loader import save_session
 
 OPP_STATUSES = ["Active", "Under Review", "Blocked", "Converted to Deal", "Dropped"]
 
@@ -177,6 +178,7 @@ def _add_opportunity_form(dfs: dict, investors: pd.DataFrame, lang: str):
             dfs["Opportunity Pipeline"] = pd.concat(
                 [opps, pd.DataFrame([new_row])], ignore_index=True
             )
+            save_session(dfs)
             st.success(f"✅ Opportunity {new_id} added for {company}")
             st.rerun()
 

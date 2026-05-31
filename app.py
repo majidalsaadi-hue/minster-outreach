@@ -29,7 +29,7 @@ if _CSS_PATH.exists():
 from config.translations import t
 from config.settings     import MISA_GREEN, MISA_GOLD
 
-from modules.data_loader   import load_excel, validate_schema, get_summary
+from modules.data_loader   import load_excel, validate_schema, get_summary, save_session, load_session
 from modules.dashboard     import (
     render_kpi_cards, render_pipeline_overview, render_meeting_outcomes,
     render_investment_flow, render_opportunity_pipeline,
@@ -61,6 +61,13 @@ def _init_state():
             st.session_state[k] = v
 
 _init_state()
+
+# Auto-load saved session on first run
+if st.session_state["dfs"] is None:
+    _saved = load_session()
+    if _saved is not None:
+        st.session_state["dfs"]     = _saved
+        st.session_state["summary"] = get_summary(_saved)
 
 
 # ── Language helpers ─────────────────────────────────────────────────────────
@@ -174,6 +181,7 @@ def _handle_upload(uploaded_file):
     st.session_state["summary"]          = get_summary(dfs)
     st.session_state["last_upload_name"] = uploaded_file.name
     st.session_state["last_upload_time"] = date.today().strftime("%d %b %Y")
+    save_session(dfs)
     st.success(f"✅ {T('success_upload')}: **{uploaded_file.name}**")
 
 

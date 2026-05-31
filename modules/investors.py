@@ -11,6 +11,7 @@ from config.settings import (
     STATUS_COLORS, TIER_COLORS,
 )
 from config.translations import t
+from modules.data_loader import save_session
 
 
 def render(dfs: dict, lang: str):
@@ -138,6 +139,7 @@ def _add_investor_form(dfs: dict, lang: str):
             dfs["Investor Master"] = pd.concat(
                 [investors, pd.DataFrame([new_row])], ignore_index=True
             )
+            save_session(dfs)
             st.success(f"✅ {company} added ({new_id})")
             st.rerun()
 

@@ -7,6 +7,7 @@ from datetime import date, timedelta
 
 from config.settings import TASK_PRIORITIES, MISA_GREEN, MISA_GOLD
 from config.translations import t
+from modules.data_loader import save_session
 
 TASK_STATUSES = ["Not Started", "In Progress", "Completed"]
 
@@ -146,6 +147,7 @@ def _add_task_form(dfs: dict, investors: pd.DataFrame, lang: str):
             dfs["RM Tasks"] = pd.concat(
                 [tasks, pd.DataFrame([new_row])], ignore_index=True
             )
+            save_session(dfs)
             st.success(f"✅ Task '{title}' added.")
             st.rerun()
 
@@ -156,6 +158,7 @@ def _mark_complete(dfs: dict, task_id):
         return
     tasks.loc[tasks["Task ID"] == task_id, "Status"] = "Completed"
     dfs["RM Tasks"] = tasks
+    save_session(dfs)
 
 
 def _safe_date(val):

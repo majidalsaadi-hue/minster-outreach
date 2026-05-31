@@ -9,6 +9,7 @@ from config.settings import (
     MEETING_TYPES, MEETING_OBJECTIVES, MEETING_STATUSES, MISA_GREEN,
 )
 from config.translations import t
+from modules.data_loader import save_session
 
 
 def render(dfs: dict, lang: str):
@@ -138,6 +139,7 @@ def _add_meeting_form(dfs: dict, investors: pd.DataFrame, lang: str):
             )
             # Update last meeting date on investor record
             _update_last_meeting(dfs, company, mtg_date)
+            save_session(dfs)
             st.success(f"✅ Meeting {new_id} logged for {company}")
             st.rerun()
 

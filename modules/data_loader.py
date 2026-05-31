@@ -6,7 +6,67 @@ import io
 import pandas as pd
 import streamlit as st
 from datetime import datetime, date
+from pathlib import Path
 from data.schema import SCHEMA, LEGACY_SHEET_PREFIXES, LEGACY_HEADER_ROW_MARKERS
+
+# Local auto-save file — sits next to app.py
+_SAVE_PATH = Path(__file__).parent.parent / "crm_data.xlsx"
+
+
+# ── Public API ───────────────────────────────────────────────────────────────
+
+def save_session(dfs: dict):
+    """Write the current session data to the local auto-save file."""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill
+        from openpyxl.utils import get_column_letter
+        wb = Workbook()
+        wb.remove(wb.active)
+        for sheet_name, df in dfs.items():
+            ws = wb.create_sheet(sheet_name)
+            if df.empty:
+                continue
+            # Write header
+            ws.append(list(df.columns))
+            fill = PatternFill("solid", fgColor="1B5C3F")
+            font = Font(bold=True, color="FFFFFF")
+            for cell in ws[1]:
+                cell.fill = fill
+                cell.font = font
+            # Write data
+            for _, row in df.iterrows():
+                ws.append([_clean_val(v) for v in row])
+        wb.save(_SAVE_PATH)
+    except Exception as exc:
+        st.warning(f"Auto-save failed: {exc}")
+
+
+def load_session() -> dict | None:
+    """Load the auto-saved session file if it exists."""
+    if not _SAVE_PATH.exists():
+        return None
+    try:
+        raw = pd.ExcelFile(_SAVE_PATH)
+        dfs = {}
+        for sheet, spec in SCHEMA.items():
+            if sheet in raw.sheet_names:
+                df = raw.parse(sheet)
+                df = _clean_df(df, spec.get("dtypes", {}))
+                dfs[sheet] = df
+        if "RM Tasks" not in dfs:
+            dfs["RM Tasks"] = _empty_tasks_df()
+        return dfs if dfs else None
+    except Exception:
+        return None
+
+
+def _clean_val(v):
+    if isinstance(v, float) and pd.isna(v):
+        return None
+    if isinstance(v, pd.Timestamp):
+        return v.date()
+    return v
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
