@@ -575,8 +575,6 @@ def _safe_date(val):
     if val is None:
         return None
     try:
-        if isinstance(val, date):
-            return val
         ts = pd.to_datetime(val, errors="coerce")
         return ts.date() if pd.notna(ts) else None
     except Exception:
