@@ -58,13 +58,15 @@ def render(dfs: dict, lang: str):
     today = date.today()
     if "Due Date" in filtered.columns and "Status" in filtered.columns:
         due = pd.to_datetime(filtered["Due Date"], errors="coerce")
+        statuses = filtered["Status"].values
         filtered = filtered.copy()
-        filtered["⚠️"] = due.apply(
-            lambda d: "🔴" if (pd.notna(d) and d.date() < today and
-                               filtered.loc[filtered.index == d.name, "Status"].values[0]
-                               not in ("Completed", "Cancelled"))
-            else ""
-        )
+        overdue_flags = []
+        for i, d in enumerate(due):
+            if pd.notna(d) and d.date() < today and statuses[i] not in ("Completed", "Cancelled"):
+                overdue_flags.append("🔴")
+            else:
+                overdue_flags.append("")
+        filtered["⚠️"] = overdue_flags
 
     display_cols = [
         c for c in [
