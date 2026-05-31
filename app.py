@@ -164,6 +164,15 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
 
+        # Save indicator
+        from modules.persistence import SAVE_PATH
+        if SAVE_PATH.exists() and st.session_state.get("dfs") is not None:
+            st.markdown(f"""
+            <div style="font-size:10px;color:rgba(255,255,255,0.4);
+                        margin-top:6px;text-align:center;">
+              💾 Auto-saved locally
+            </div>""", unsafe_allow_html=True)
+
         return page
 
 
@@ -505,3 +514,9 @@ def _require_data():
 
 if __name__ == "__main__":
     main()
+    # Auto-save after every interaction
+    if st.session_state.get("dfs") is not None:
+        try:
+            save_session(st.session_state["dfs"])
+        except Exception:
+            pass
