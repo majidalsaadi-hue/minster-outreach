@@ -43,7 +43,7 @@ from modules.opportunities import render as render_opportunities
 from modules.actions       import render as render_actions
 from modules.tasks         import render as render_tasks
 
-from exports.pptx_generator import generate_pptx
+from exports.pptx_generator import generate_pptx, generate_pptx_company
 from exports.pdf_generator  import generate_pdf
 from exports.excel_exporter import export_status_excel, generate_template
 
@@ -417,6 +417,34 @@ def render_export():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
+
+    # ── Per-company PowerPoint ────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 🏢 Company-Specific PowerPoint")
+
+    if dfs is not None:
+        investors_df = dfs.get("Investor Master", pd.DataFrame())
+        companies = sorted(investors_df["Company Name"].dropna().unique().tolist()) if not investors_df.empty and "Company Name" in investors_df.columns else []
+    else:
+        companies = []
+
+    if companies:
+        cc1, cc2 = st.columns([2, 1])
+        selected_co = cc1.selectbox("Select Company", companies, key="pptx_company_select")
+        co_lang     = cc2.selectbox("Language", ["English", "Arabic"], key="pptx_company_lang")
+        if st.button("📊 Generate Company PPTX", use_container_width=False, disabled=(dfs is None)):
+            with st.spinner(T("generating")):
+                co_lang_code = "ar" if co_lang == "Arabic" else "en"
+                co_pptx = generate_pptx_company(dfs, selected_co, lang=co_lang_code)
+            co_filename = f"MoI_{selected_co.replace(' ','_')}_{date.today().strftime('%Y-%m-%d')}.pptx"
+            st.download_button(
+                f"⬇️ Download — {selected_co}",
+                data=co_pptx,
+                file_name=co_filename,
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+    else:
+        st.info("Upload data first to generate company reports.")
 
     # ── Export notes ──────────────────────────────────────────────────────────
     st.markdown("---")

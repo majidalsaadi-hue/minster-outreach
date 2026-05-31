@@ -73,6 +73,127 @@ def generate_pptx(dfs: dict, lang: str = "en") -> bytes:
     return buf.getvalue()
 
 
+def generate_pptx_company(dfs: dict, company: str, lang: str = "en") -> bytes:
+    """Generate a single-company PowerPoint report."""
+    prs = Presentation()
+    prs.slide_width  = SLIDE_W
+    prs.slide_height = SLIDE_H
+
+    investors     = dfs.get("Investor Master",      pd.DataFrame())
+    meetings      = dfs.get("Meeting Log",          pd.DataFrame())
+    opportunities = dfs.get("Opportunity Pipeline", pd.DataFrame())
+    actions       = dfs.get("Action Items",         pd.DataFrame())
+
+    # Filter to this company
+    inv_row  = investors[investors["Company Name"] == company].iloc[0] if not investors.empty and "Company Name" in investors.columns and company in investors["Company Name"].values else pd.Series()
+    inv_mtgs = meetings[meetings["Company Name"] == company]       if not meetings.empty      and "Company Name" in meetings.columns      else pd.DataFrame()
+    inv_opps = opportunities[opportunities["Company Name"] == company] if not opportunities.empty and "Company Name" in opportunities.columns else pd.DataFrame()
+    inv_acts = actions[actions["Company Name"] == company]         if not actions.empty       and "Company Name" in actions.columns       else pd.DataFrame()
+
+    # Title slide
+    slide = _blank_slide(prs)
+    _fill_background(slide, GREEN)
+    tier = inv_row.get("Investor Tier", "") if not inv_row.empty else ""
+    _add_text_box(slide, company,
+                  Inches(1), Inches(2.2), Inches(11.33), Inches(1.2),
+                  font_size=40, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+    _add_text_box(slide, tier,
+                  Inches(1), Inches(3.5), Inches(11.33), Inches(0.6),
+                  font_size=18, color=_rgb(MISA_GOLD), align=PP_ALIGN.CENTER)
+    _add_text_box(slide, f"Investor Status Report — {date.today().strftime('%d %B %Y')}",
+                  Inches(1), Inches(4.2), Inches(11.33), Inches(0.5),
+                  font_size=14, color=_rgb("FFFFFF"), align=PP_ALIGN.CENTER)
+    _add_rect(slide, Inches(0), Inches(6.9), Inches(13.33), Inches(0.6),
+              fill_color=GOLD, line_color=GOLD)
+    _add_text_box(slide, "CONFIDENTIAL | Ministry of Investment — وزارة الاستثمار",
+                  Inches(0), Inches(6.9), Inches(13.33), Inches(0.6),
+                  font_size=11, color=WHITE, align=PP_ALIGN.CENTER)
+
+    # Company profile slide
+    if not inv_row.empty:
+        _add_investor_slide(prs, inv_row, inv_acts, inv_opps, lang)
+
+    # Meetings slide
+    _add_company_meetings_slide(prs, company, inv_mtgs, lang)
+
+    # Opportunities slide
+    _add_company_opportunities_slide(prs, company, inv_opps, lang)
+
+    # Action items slide
+    _add_company_actions_slide(prs, company, inv_acts, lang)
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
+
+
+def _add_company_meetings_slide(prs, company, meetings, lang):
+    slide = _blank_slide(prs)
+    _add_slide_header(slide, f"{company} — Meetings")
+
+    if meetings.empty:
+        _add_text_box(slide, "No meetings logged yet.",
+                      Inches(0.5), Inches(2), Inches(12), Inches(0.5),
+                      font_size=13, color=_rgb("#888888"))
+        return
+
+    cols   = ["Meeting Date", "Meeting Type", "Meeting Status", "Meeting Objective", "Key Discussion Points", "Next Steps"]
+    avail  = [c for c in cols if c in meetings.columns]
+    _add_mini_table(slide, meetings.sort_values("Meeting Date", ascending=False).head(10) if "Meeting Date" in meetings.columns else meetings.head(10),
+                    avail, avail, Inches(0.3), Inches(1.2), Inches(12.7))
+
+
+def _add_company_opportunities_slide(prs, company, opps, lang):
+    slide = _blank_slide(prs)
+    _add_slide_header(slide, f"{company} — Opportunities")
+
+    if opps.empty:
+        _add_text_box(slide, "No opportunities in pipeline.",
+                      Inches(0.5), Inches(2), Inches(12), Inches(0.5),
+                      font_size=13, color=_rgb("#888888"))
+        return
+
+    # Summary strip
+    total_val = _sum_col(opps, "Est. Value (SAR)")
+    _add_rect(slide, Inches(0.3), Inches(1.1), Inches(6), Inches(0.75),
+              fill_color=GREEN, line_color=GREEN)
+    _add_text_box(slide, f"Total Pipeline: {_fmt_sar(total_val)}",
+                  Inches(0.3), Inches(1.2), Inches(6), Inches(0.5),
+                  font_size=16, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+
+    cols  = ["Opportunity Name", "Opportunity Stage", "Est. Value (SAR)", "Confidence Level", "Opportunity Status", "Target Closure Date"]
+    avail = [c for c in cols if c in opps.columns]
+    _add_mini_table(slide, opps.head(10), avail, avail, Inches(0.3), Inches(2.0), Inches(12.7))
+
+
+def _add_company_actions_slide(prs, company, actions, lang):
+    slide = _blank_slide(prs)
+    _add_slide_header(slide, f"{company} — Action Items")
+
+    if actions.empty:
+        _add_text_box(slide, "No action items.",
+                      Inches(0.5), Inches(2), Inches(12), Inches(0.5),
+                      font_size=13, color=_rgb("#888888"))
+        return
+
+    today = date.today()
+    # Status summary strip
+    statuses = actions["Status"].value_counts() if "Status" in actions.columns else pd.Series()
+    x = Inches(0.3)
+    status_colors_map = {"Completed": MISA_GREEN, "In Progress": MISA_GOLD, "Blocked": "#C0392B", "Not Started": "#9B9B9B"}
+    for status, count in statuses.items():
+        color = _rgb(status_colors_map.get(status, "#9B9B9B"))
+        _add_rect(slide, x, Inches(1.1), Inches(2.8), Inches(0.6), fill_color=color, line_color=color)
+        _add_text_box(slide, f"{status}: {count}", x, Inches(1.2), Inches(2.8), Inches(0.4),
+                      font_size=11, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        x += Inches(3.0)
+
+    cols  = ["Action Description", "Status", "Priority", "Due Date", "Assigned To", "Type of Engagement"]
+    avail = [c for c in cols if c in actions.columns]
+    pending = actions[~actions.get("Status", pd.Series(dtype=str)).isin(["Completed", "Cancelled"])].head(12) if "Status" in actions.columns else actions.head(12)
+    _add_mini_table(slide, pending, avail, avail, Inches(0.3), Inches(1.85), Inches(12.7))
+
+
 # ── Slide builders ────────────────────────────────────────────────────────────
 
 def _add_title_slide(prs: Presentation, lang: str):
