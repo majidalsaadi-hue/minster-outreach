@@ -32,29 +32,195 @@ _RED    = "C0392B"
 
 
 def export_status_excel(dfs: dict) -> bytes:
-    """Export all current data as a formatted Excel workbook."""
+    """
+    Export Action Items in the exact tracker format:
+    - One sheet per company: 'Action Items [Company]'
+    - Rows 1-12: empty (logo area)
+    - Rows 13-16: header block — Outreach / Manager / A-M / RM / Last Updated / Next Meeting
+    - Row 20: column headers (green, white)
+    - Row 21+: data, color-coded by status and priority
+    - Columns A-F empty; data in G–Q
+    """
     wb = Workbook()
     wb.remove(wb.active)
 
-    sheet_order = [
-        ("Investor Master",    dfs.get("Investor Master",    pd.DataFrame())),
-        ("Meeting Log",        dfs.get("Meeting Log",        pd.DataFrame())),
-        ("Opportunity Pipeline", dfs.get("Opportunity Pipeline", pd.DataFrame())),
-        ("Action Items",       dfs.get("Action Items",       pd.DataFrame())),
-        ("RM Tasks",           dfs.get("RM Tasks",           pd.DataFrame())),
-    ]
+    actions   = dfs.get("Action Items",    pd.DataFrame())
+    investors = dfs.get("Investor Master", pd.DataFrame())
 
-    for sheet_name, df in sheet_order:
-        if df.empty:
-            ws = wb.create_sheet(sheet_name)
-            ws.append([f"No data for {sheet_name}"])
-        else:
-            ws = wb.create_sheet(sheet_name)
-            _write_data_sheet(ws, df, sheet_name)
+    if actions.empty:
+        ws = wb.create_sheet("Action Items")
+        ws["G21"] = "No action items yet."
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    companies = sorted(actions["Company Name"].dropna().unique().tolist()) if "Company Name" in actions.columns else ["All"]
+
+    for company in companies:
+        co_acts = actions[actions["Company Name"] == company] if "Company Name" in actions.columns else actions
+
+        # Look up investor metadata
+        inv_info = {"manager": "", "am": "", "rm": "", "next_meeting": None}
+        if not investors.empty and "Company Name" in investors.columns:
+            rows = investors[investors["Company Name"] == company]
+            if not rows.empty:
+                inv = rows.iloc[0]
+                inv_info = {
+                    "manager":      str(inv.get("Outreach Manager", "") or ""),
+                    "am":           str(inv.get("Account Manager",  "") or ""),
+                    "rm":           str(inv.get("Relationship Manager", "") or ""),
+                    "next_meeting": _clean_val(inv.get("Next Meeting Date")),
+                }
+
+        sheet_name = f"Action Items {company}"[:31]
+        ws = wb.create_sheet(sheet_name)
+        _write_tracker_sheet(ws, co_acts, inv_info)
 
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def _write_tracker_sheet(ws, actions_df: pd.DataFrame, inv_info: dict):
+    """Write one company's action items in the exact V5 tracker layout."""
+    from openpyxl.styles import numbers as xl_numbers
+
+    GREEN_FILL  = PatternFill("solid", fgColor=_GREEN)
+    GOLD_FILL   = PatternFill("solid", fgColor=_GOLD)
+    WHITE_BOLD  = Font(bold=True,  color=_WHITE, size=10)
+    WHITE_NORM  = Font(bold=False, color=_WHITE, size=10)
+    DARK_BOLD   = Font(bold=True,  color=_DGRAY, size=10)
+    NORM_FONT   = Font(size=10)
+    CENTER      = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    LEFT        = Alignment(horizontal="left",   vertical="top",    wrap_text=True)
+    THIN        = Border(left=Side(style="thin"), right=Side(style="thin"),
+                         top=Side(style="thin"),  bottom=Side(style="thin"))
+
+    # ── Rows 1-12: logo area (empty, set row height) ─────────────────────────
+    for r in range(1, 13):
+        ws.row_dimensions[r].height = 14
+
+    # ── Rows 13-16: header metadata block ────────────────────────────────────
+    # Layout (1-indexed cols):
+    #   L(12) = label   M(13) = value       P(16) = right-label   Q(17) = right-value
+    def _hdr(row, label_col, label_val, val_col=None, val_val=None,
+             right_col=None, right_label=None, right_val_col=None, right_val=None):
+        c = ws.cell(row=row, column=label_col, value=label_val)
+        c.fill, c.font, c.alignment = GREEN_FILL, WHITE_BOLD, CENTER
+        if val_col and val_val is not None:
+            vc = ws.cell(row=row, column=val_col, value=val_val)
+            vc.font, vc.alignment = DARK_BOLD, LEFT
+        if right_col and right_label:
+            rc = ws.cell(row=row, column=right_col, value=right_label)
+            rc.fill, rc.font, rc.alignment = GREEN_FILL, WHITE_BOLD, CENTER
+        if right_val_col and right_val is not None:
+            rvc = ws.cell(row=row, column=right_val_col, value=right_val)
+            rvc.fill, rvc.font, rvc.alignment = GOLD_FILL, WHITE_NORM, CENTER
+
+    _hdr(13, 12, "Outreach",
+         right_col=16, right_label="¦ Last Updated",
+         right_val_col=17, right_val=date.today())
+    _hdr(14, 12, "4 Manager",  13, inv_info["manager"])
+    _hdr(15, 12, "4 A-M",      13, inv_info["am"])
+    _hdr(16, 12, "4 RM",       13, inv_info["rm"],
+         right_col=16, right_label="¹ Next Meeting",
+         right_val_col=17, right_val=inv_info["next_meeting"])
+
+    for r in range(13, 20):
+        ws.row_dimensions[r].height = 18
+
+    # ── Row 20: column headers ────────────────────────────────────────────────
+    COLS = ["ID", "Action Item", "Assigned to", "Sector",
+            "Type of Engagement", "Start Date", "Due Date",
+            "Priority", "Progress", "Status", "Remarks"]
+    for j, h in enumerate(COLS):
+        c = ws.cell(row=20, column=7 + j, value=h)
+        c.fill, c.font, c.alignment = GREEN_FILL, WHITE_BOLD, CENTER
+    ws.row_dimensions[20].height = 22
+
+    # Column widths (A-F narrow; G-Q wide)
+    for col in range(1, 7):
+        ws.column_dimensions[get_column_letter(col)].width = 2
+    for col, w in zip(range(7, 18), [6, 52, 20, 18, 20, 12, 12, 12, 10, 14, 38]):
+        ws.column_dimensions[get_column_letter(col)].width = w
+
+    # Freeze panes below header
+    ws.freeze_panes = "H21"
+
+    # ── Status / Priority fill maps ───────────────────────────────────────────
+    STATUS_FILL = {
+        "Completed":   PatternFill("solid", fgColor="E2EFDA"),
+        "In Progress": PatternFill("solid", fgColor="FFF2CC"),
+        "Inprogress":  PatternFill("solid", fgColor="FFF2CC"),
+        "Not Started": PatternFill("solid", fgColor="F2F2F2"),
+        "Blocked":     PatternFill("solid", fgColor="FCE4D6"),
+        "Cancelled":   PatternFill("solid", fgColor="EDEDED"),
+    }
+    PRIO_COLOR = {
+        "Very High": "C00000",
+        "High":      _RED,
+        "Medium":    _GOLD,
+        "Low":       _GREEN,
+    }
+
+    # ── Data rows ─────────────────────────────────────────────────────────────
+    for i, (_, row) in enumerate(actions_df.iterrows()):
+        r       = 21 + i
+        status  = str(row.get("Status", "") or "")
+        prio    = str(row.get("Priority", "") or "")
+        rfill   = STATUS_FILL.get(status, PatternFill("solid", fgColor="FFFFFF"))
+
+        # Convert progress string ("25%", "0%") → float 0-1
+        raw_prog = row.get("Progress", 0)
+        if isinstance(raw_prog, str):
+            try:
+                prog = float(raw_prog.replace("%", "")) / 100
+            except ValueError:
+                prog = 0.0
+        else:
+            prog = float(raw_prog) if raw_prog not in (None, "") else 0.0
+        # If already stored as percentage float > 1 (e.g. 25 not 0.25) normalise
+        if prog > 1.0:
+            prog = prog / 100
+
+        data = [
+            i + 1,
+            str(row.get("Action Description", "") or ""),
+            str(row.get("Assigned To", "")        or ""),
+            str(row.get("Sector", "")             or ""),
+            str(row.get("Type of Engagement", "") or ""),
+            _clean_val(row.get("Start Date")),
+            _clean_val(row.get("Due Date")),
+            prio,
+            prog,
+            status,
+            str(row.get("Remarks", "") or ""),
+        ]
+
+        for j, val in enumerate(data):
+            c = ws.cell(row=r, column=7 + j, value=val)
+            c.fill   = rfill
+            c.border = THIN
+            c.font   = NORM_FONT
+
+            # Progress as % format
+            if j == 8:
+                c.number_format = "0%"
+                c.alignment = CENTER
+            # Priority — bold + colour
+            elif j == 7:
+                c.font = Font(size=10, bold=True, color=PRIO_COLOR.get(prio, _DGRAY))
+                c.alignment = CENTER
+            # ID centred
+            elif j == 0:
+                c.alignment = CENTER
+            # Dates centred
+            elif j in (5, 6):
+                c.alignment = CENTER
+            else:
+                c.alignment = LEFT
+
+        ws.row_dimensions[r].height = 40
 
 
 def generate_template() -> bytes:
