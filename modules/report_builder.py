@@ -26,6 +26,35 @@ _PRIORITY_AR = {"Very High": "مهم جدا", "High": "مهم", "Medium": "مت�
 _PRIORITY_EN = {"مهم جدا": "Very High", "مهم": "High", "متوسط": "Medium", "عادي": "Low",
                 "مستمر": "Ongoing"}
 
+
+def _translate_to_en(text: str) -> str:
+    """Translate Arabic text to English using Google Translate (free, no API key)."""
+    if not text or not text.strip():
+        return text
+    # Skip if already mostly Latin (English)
+    latin = sum(1 for c in text if c.isascii() and c.isalpha())
+    arabic = sum(1 for c in text if '؀' <= c <= 'ۿ')
+    if latin > arabic:
+        return text
+    try:
+        from deep_translator import GoogleTranslator
+        result = GoogleTranslator(source="ar", target="en").translate(text)
+        return result or text
+    except Exception:
+        return text  # Fall back to original if no internet / API error
+
+
+def _translate_list(texts: list) -> list:
+    """Batch-translate a list of Arabic strings to English."""
+    if not texts:
+        return texts
+    try:
+        from deep_translator import GoogleTranslator
+        t = GoogleTranslator(source="ar", target="en")
+        return [t.translate(s) or s for s in texts]
+    except Exception:
+        return texts  # Return originals unchanged if translation fails
+
 _EMPTY_ACTIONS = pd.DataFrame(columns=[
     "Action (AR)", "Action (EN)", "Assigned To", "Type", "Priority", "Due Date", "Remarks"
 ])
@@ -83,7 +112,8 @@ def render(dfs: dict, lang: str):
     # Parse Word on upload
     if word_file is not None:
         raw = word_file.read()
-        parsed = _parse_word(raw)
+        with st.spinner("Parsing document and translating action items to English…"):
+            parsed = _parse_word(raw)
         if parsed:
             st.session_state["rb2_parsed"]     = parsed
             st.session_state["rb2_company"]    = parsed.get("company", "")
@@ -96,8 +126,16 @@ def render(dfs: dict, lang: str):
             st.session_state["rb2_attendees"]  = parsed.get("attendees", "")
             st.session_state["rb2_disc_ar"]    = parsed.get("discussion_ar", "")
             if parsed.get("action_items"):
-                st.session_state["rb2_actions"] = pd.DataFrame(parsed["action_items"])
-            st.success(f"✅ Parsed: {len(parsed.get('action_items', []))} action items extracted.")
+                items = parsed["action_items"]
+                # Auto-translate Arabic to English for Excel/email output
+                ar_texts = [i.get("Action (AR)", "") for i in items]
+                en_texts = _translate_list(ar_texts)
+                for i, en in enumerate(en_texts):
+                    if not items[i].get("Action (EN)"):
+                        items[i]["Action (EN)"] = en
+                st.session_state["rb2_actions"] = pd.DataFrame(items)
+            n = len(parsed.get("action_items", []))
+            st.success(f"✅ Parsed: {n} action item(s) extracted and translated to English.")
 
     if excel_file is not None:
         st.session_state["rb2_excel_bytes"] = excel_file.read()
@@ -191,6 +229,24 @@ def _action_items_form():
         hide_index=True,
     )
     st.session_state["rb2_actions"] = edited
+
+    btn1, btn2, _ = st.columns([1, 1, 3])
+    if btn1.button("🌐 Translate AR → EN", key="_rb2_translate",
+                   help="Auto-fill English column from Arabic text using Google Translate"):
+        df = st.session_state["rb2_actions"].copy()
+        mask = df["Action (EN)"].isna() | (df["Action (EN)"] == "")
+        needs = df[mask]
+        if not needs.empty:
+            with st.spinner("Translating…"):
+                en_list = _translate_list(needs["Action (AR)"].tolist())
+            df.loc[needs.index, "Action (EN)"] = en_list
+            st.session_state["rb2_actions"] = df
+            st.rerun()
+        else:
+            st.info("All items already have an English translation.")
+    if btn2.button("🗑️ Clear all", key="_rb2_clear"):
+        st.session_state["rb2_actions"] = _EMPTY_ACTIONS.copy()
+        st.rerun()
 
 
 # ── Tab 1: Updated Excel output ────────────────────────────────────────────────
