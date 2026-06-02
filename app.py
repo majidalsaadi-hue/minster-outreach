@@ -168,14 +168,36 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
 
-        # Save indicator
-        from modules.persistence import SAVE_PATH
-        if SAVE_PATH.exists() and st.session_state.get("dfs") is not None:
-            st.markdown(f"""
-            <div style="font-size:10px;color:rgba(255,255,255,0.4);
-                        margin-top:6px;text-align:center;">
-              💾 Auto-saved locally
-            </div>""", unsafe_allow_html=True)
+        # ── Save status indicator + manual save button ───────────────────────
+        if st.session_state.get("dfs") is not None:
+            save_status = st.session_state.get("save_status", "")
+            save_time   = st.session_state.get("save_time", "")
+
+            if save_status == "ok":
+                st.markdown(f"""
+                <div style="font-size:11px;color:#70C99C;margin-top:6px;text-align:center;">
+                  💾 Saved at {save_time}
+                </div>""", unsafe_allow_html=True)
+            elif save_status.startswith("error"):
+                err_msg = save_status.replace("error: ", "")
+                st.markdown(f"""
+                <div style="font-size:11px;color:#FF6B6B;margin-top:6px;text-align:center;">
+                  ⚠️ Save failed: {err_msg[:60]}
+                </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="font-size:11px;color:rgba(255,255,255,0.4);
+                            margin-top:6px;text-align:center;">
+                  💾 Not yet saved
+                </div>""", unsafe_allow_html=True)
+
+            if st.button("💾 Save Now", use_container_width=True, key="manual_save"):
+                ok = save_session(st.session_state["dfs"])
+                if ok:
+                    st.success("Saved!")
+                else:
+                    err = st.session_state.get("save_status", "")
+                    st.error(f"Save failed: {err}")
 
         return page
 
