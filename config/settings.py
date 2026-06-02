@@ -251,3 +251,53 @@ MINISTER_ACTION_TYPES = [
     "Letter / Communication",
     "Site Visit",
 ]
+
+# ── Deal Progress module ─────────────────────────────────────────────────────
+
+DEAL_STAGES = [
+    "Term Sheet",
+    "Due Diligence",
+    "Regulatory Approval",
+    "Final Negotiation",
+    "Closing",
+]
+
+DEAL_STATUSES = [
+    "Active",
+    "On Hold",
+    "Blocked",
+    "Closed — Won",
+    "Closed — Lost",
+]
+
+CHALLENGE_CLASSIFICATIONS = [
+    "Regulatory",
+    "Financial",
+    "Technical",
+    "Legal",
+    "Land & Infrastructure",
+    "Political",
+    "Inter-ministerial",
+    "Other",
+]
+
+CHALLENGE_SEVERITIES = [
+    "Critical",
+    "High",
+    "Medium",
+    "Low",
+]
+
+ESCALATION_LEVELS = [
+    "None",
+    "RM Level",
+    "Leadership Level",
+    "Minister Level",
+    "Cabinet Level",
+]
+
+ESCALATION_STATUSES = [
+    "Not Started",
+    "In Progress",
+    "Resolved",
+]

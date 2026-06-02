@@ -150,6 +150,7 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
     meetings     = dfs.get("Meeting Log",         pd.DataFrame())
     opportunities= dfs.get("Opportunity Pipeline",pd.DataFrame())
     tasks        = dfs.get("RM Tasks",            pd.DataFrame())
+    deals        = dfs.get("Deal Progress",       pd.DataFrame())
 
     row = investors[investors["Company Name"] == company].iloc[0]
 
@@ -197,6 +198,7 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
     linked_opps     = opportunities[opportunities["Company Name"] == company] if not opportunities.empty and "Company Name" in opportunities.columns else pd.DataFrame()
     linked_actions  = actions[actions["Company Name"] == company] if not actions.empty and "Company Name" in actions.columns else pd.DataFrame()
     linked_tasks    = tasks[tasks["Linked Investor"] == company] if not tasks.empty and "Linked Investor" in tasks.columns else pd.DataFrame()
+    linked_deals    = deals[deals["Company Name"] == company] if not deals.empty and "Company Name" in deals.columns else pd.DataFrame()
 
     # Separate challenges from action items
     if not linked_actions.empty and "Type of Engagement" in linked_actions.columns:
@@ -207,12 +209,13 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
         linked_actions_only = linked_actions
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_meetings, tab_opps, tab_challenges, tab_actions, tab_tasks = st.tabs([
+    tab_meetings, tab_opps, tab_challenges, tab_actions, tab_tasks, tab_deals = st.tabs([
         f"🤝 Meetings ({len(linked_meetings)})",
         f"🎯 Opportunities ({len(linked_opps)})",
         f"⚠️ Challenges ({len(linked_challenges)})",
         f"✅ Action Items ({len(linked_actions_only)})",
         f"📋 RM Tasks ({len(linked_tasks)})",
+        f"🏦 Deals ({len(linked_deals)})",
     ])
 
     # ── Meetings tab ──────────────────────────────────────────────────────────
@@ -282,6 +285,46 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
                 "Due Date", "Notes",
             ] if c in linked_tasks.columns]
             st.dataframe(linked_tasks[cols], use_container_width=True, hide_index=True)
+
+    # ── Deals tab ─────────────────────────────────────────────────────────────
+    with tab_deals:
+        if linked_deals.empty:
+            st.info("No deals in progress for this company.")
+        else:
+            cols = [c for c in [
+                "Deal ID", "Deal Name", "Deal Stage", "Deal Status",
+                "Challenge Severity", "Challenge Classification",
+                "Est. Value (SAR)", "Escalation Required", "Escalation Level",
+                "Escalation Status", "Assigned Owner", "Target Resolution Date",
+                "Last Updated",
+            ] if c in linked_deals.columns]
+            st.dataframe(linked_deals[cols], use_container_width=True, hide_index=True,
+                         column_config={
+                             "Est. Value (SAR)":       st.column_config.NumberColumn(format="SAR %,.0f"),
+                             "Target Resolution Date": st.column_config.DateColumn(),
+                             "Last Updated":           st.column_config.DateColumn(),
+                         })
+            # Per-deal challenge detail for this company
+            for _, drow in linked_deals.iterrows():
+                deal_id   = str(drow.get("Deal ID", "—"))
+                deal_name = str(drow.get("Deal Name", "—"))
+                severity  = str(drow.get("Challenge Severity", ""))
+                status    = str(drow.get("Deal Status", ""))
+                flag = "🔴 " if (severity == "Critical" or status == "Blocked") else ("🟠 " if severity == "High" else "")
+                with st.expander(f"{flag}{deal_id} — {deal_name}", expanded=False):
+                    d1, d2 = st.columns(2)
+                    d1.markdown(f"**Stage:** {drow.get('Deal Stage', '—')}")
+                    d1.markdown(f"**Status:** {status or '—'}")
+                    d1.markdown(f"**Challenge Classification:** {drow.get('Challenge Classification', '—')}")
+                    d2.markdown(f"**Escalation Level:** {drow.get('Escalation Level', '—')}")
+                    d2.markdown(f"**Escalation Status:** {drow.get('Escalation Status', '—')}")
+                    d2.markdown(f"**Assigned Owner:** {drow.get('Assigned Owner', '—')}")
+                    challenge_desc = str(drow.get("Challenge Description", "") or "")
+                    proposed_sol   = str(drow.get("Proposed Solution", "") or "")
+                    if challenge_desc:
+                        st.markdown(f"**Challenge:** {challenge_desc}")
+                    if proposed_sol:
+                        st.markdown(f"**Proposed Solution:** {proposed_sol}")
 
     # ── Notes ─────────────────────────────────────────────────────────────────
     notes = str(row.get("Notes", "") or "")

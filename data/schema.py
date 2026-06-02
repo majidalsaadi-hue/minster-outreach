@@ -103,6 +103,28 @@ SCHEMA = {
             "Created Date": "date",
         },
     },
+
+    "Deal Progress": {
+        "required": [
+            "Deal ID", "Investor ID", "Company Name",
+            "Deal Name", "Deal Stage", "Deal Status",
+            "Challenge Severity", "Escalation Required",
+        ],
+        "optional": [
+            "Linked Opportunity ID",
+            "Est. Value (SAR)",
+            "Challenge Description", "Challenge Classification",
+            "Proposed Solution",
+            "Escalation Level", "Escalation Status",
+            "Assigned Owner", "Target Resolution Date",
+            "Last Updated", "Notes",
+        ],
+        "dtypes": {
+            "Est. Value (SAR)":       "float",
+            "Target Resolution Date": "date",
+            "Last Updated":           "date",
+        },
+    },
 }
 
 # Legacy sheet names from the original tracker — used to detect old-format uploads
