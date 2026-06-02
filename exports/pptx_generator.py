@@ -4,7 +4,8 @@
 # Company deck: 3 slides.
 
 import io
-from datetime import date
+import calendar as _calendar
+from datetime import date, timedelta
 import pandas as pd
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -100,7 +101,7 @@ def generate_pptx_company(dfs: dict, company: str, lang: str = "en") -> bytes:
     inv_acts = actions[actions["Company Name"] == company]         if not actions.empty       and "Company Name" in actions.columns       else pd.DataFrame()
     inv_dls  = deals[deals["Company Name"] == company]             if not deals.empty         and "Company Name" in deals.columns         else pd.DataFrame()
 
-    _co_slide_cover_profile(prs, company, inv_row, inv_opps, inv_acts, lang)
+    _co_slide_cover_profile(prs, company, inv_row, inv_opps, inv_acts, inv_mtgs, lang)
     _co_slide_meetings_opps(prs, company, inv_mtgs, inv_opps, lang)
     _co_slide_actions_deals(prs, company, inv_acts, inv_dls, lang)
 
@@ -552,72 +553,263 @@ def _slide_investor(prs, inv_row, actions, opportunities, lang):
 # COMPANY DECK — slide builders (3 slides)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _co_slide_cover_profile(prs, company, inv_row, opps, acts, lang):
-    """Cover + profile + key metrics."""
+def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, lang):
+    """Slide 1: Header band + metadata row + engagement timeline (L) + action/opp status (R)."""
     slide = _blank_slide(prs)
-    _fill_background(slide, GREEN)
 
-    # Company name block
+    # ── Green header band ────────────────────────────────────────────
+    _add_rect(slide, Inches(0), Inches(0), Inches(13.33), Inches(0.82),
+              fill_color=GREEN, line_color=GREEN)
     _add_text_box(slide, company,
-                  Inches(1), Inches(1.5), Inches(11.33), Inches(1.1),
-                  font_size=38, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-    tier = inv_row.get("Investor Tier", "") if not inv_row.empty else ""
-    _add_text_box(slide, tier,
-                  Inches(1), Inches(2.7), Inches(11.33), Inches(0.5),
-                  font_size=16, color=GOLD, align=PP_ALIGN.CENTER)
-    _add_text_box(slide, f"Investor Status Report — {date.today().strftime('%d %B %Y')}",
-                  Inches(1), Inches(3.3), Inches(11.33), Inches(0.4),
-                  font_size=13, color=_rgb("FFFFFFBB"), align=PP_ALIGN.CENTER)
+                  Inches(0.3), Inches(0.07), Inches(9.0), Inches(0.68),
+                  font_size=26, bold=True, color=WHITE)
+    tier = str(inv_row.get("Investor Tier", "") or "") if not inv_row.empty else ""
+    _add_text_box(slide, tier, Inches(8.8), Inches(0.14),
+                  Inches(4.2), Inches(0.35), font_size=12, color=GOLD, align=PP_ALIGN.RIGHT)
+    _add_text_box(slide,
+                  f"Investor Status Report — {date.today().strftime('%d %B %Y')}",
+                  Inches(8.8), Inches(0.49), Inches(4.2), Inches(0.26),
+                  font_size=8, color=_rgb("CCCCCC"), align=PP_ALIGN.RIGHT)
 
-    # White info band
-    _add_rect(slide, Inches(0), Inches(4.0), Inches(13.33), Inches(2.6),
+    # ── White metadata band ──────────────────────────────────────────
+    _add_rect(slide, Inches(0), Inches(0.82), Inches(13.33), Inches(0.58),
               fill_color=WHITE, line_color=WHITE)
-
     if not inv_row.empty:
-        meta = [
-            ("Country",         inv_row.get("Country", "—")),
-            ("Sector",          inv_row.get("Sector", "—")),
-            ("Journey Stage",   inv_row.get("Journey Stage", "—")),
-            ("Status",          inv_row.get("Relationship Status", "—")),
-            ("RM",              inv_row.get("Relationship Manager", "—")),
-            ("AM",              inv_row.get("Account Manager", "TBD")),
-        ]
-        for i, (lbl, val) in enumerate(meta):
+        for i, (lbl, val) in enumerate([
+            ("Country",       str(inv_row.get("Country",  "—") or "—")),
+            ("Sector",        str(inv_row.get("Sector",   "—") or "—")),
+            ("Journey Stage", str(inv_row.get("Journey Stage", "—") or "—")),
+            ("Status",        str(inv_row.get("Relationship Status", "—") or "—")),
+            ("RM",            str(inv_row.get("Relationship Manager", "—") or "—")),
+            ("AM",            str(inv_row.get("Account Manager", "TBD") or "TBD")),
+        ]):
             x = Inches(0.4) + i * Inches(2.1)
-            _add_text_box(slide, lbl, x, Inches(4.1), Inches(2.0), Inches(0.25),
-                          font_size=9, color=MGRAY)
-            _add_text_box(slide, str(val)[:22], x, Inches(4.35), Inches(2.0), Inches(0.35),
-                          font_size=12, bold=True, color=DARK)
+            _add_text_box(slide, lbl, x, Inches(0.87), Inches(2.0), Inches(0.18),
+                          font_size=8, color=MGRAY)
+            _add_text_box(slide, val[:22], x, Inches(1.04), Inches(2.0), Inches(0.3),
+                          font_size=10, bold=True, color=DARK)
 
-        est  = inv_row.get("Est. Investment Value (SAR)")
-        cmmt = inv_row.get("Actual Commitment (SAR)")
-        jobs = inv_row.get("Est. Jobs Created")
-        min_act = str(inv_row.get("Minister Action Required", "None Required") or "None Required")
-        next_m  = str(inv_row.get("Next Meeting Date", "—") or "—")
+    # Gold accent line under metadata
+    _add_rect(slide, Inches(0), Inches(1.40), Inches(13.33), Inches(0.025),
+              fill_color=GOLD, line_color=GOLD)
 
-        kpis = [
-            ("Est. Investment",    _fmt_sar(est) if pd.notna(est) and est else "—",          MISA_GREEN),
-            ("Committed",          _fmt_sar(cmmt) if pd.notna(cmmt) and cmmt else "—",       MISA_GOLD),
-            ("Est. Jobs",          f"{int(jobs):,}" if pd.notna(jobs) and jobs else "—",     "#2D7A54"),
-            ("Open Opportunities", str(len(opps)),                                            MISA_GREEN),
-            ("Pending Actions",    str(len(acts[~acts.get("Status", pd.Series(dtype=str)).isin(["Completed","Cancelled"])]) if not acts.empty and "Status" in acts.columns else len(acts)), MISA_GOLD),
-            ("Next Meeting",       next_m[:12],                                              MISA_GREEN),
-        ]
-        for i, (lbl, val, col) in enumerate(kpis):
-            x = Inches(0.4) + i * Inches(2.1)
-            _add_rect(slide, x, Inches(4.85), Inches(1.95), Inches(1.2),
+    # ── Vertical divider (timeline | status panels) ──────────────────
+    DIVX = Inches(8.85)
+    _add_rect(slide, DIVX, Inches(1.5), Inches(0.02), Inches(5.35),
+              fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
+
+    # ══════════════════════════════════════════════════════════════════
+    # LEFT: Engagement Timeline
+    # ══════════════════════════════════════════════════════════════════
+    _add_text_box(slide, "Engagement Timeline",
+                  Inches(0.3), Inches(1.55), Inches(8.3), Inches(0.28),
+                  font_size=10, bold=True, color=DARK)
+
+    today_d  = date.today()
+    start_dt = today_d - timedelta(days=120)   # ~4 months back
+    end_dt   = today_d + timedelta(days=30)    # 1 month forward
+    tot_days = (end_dt - start_dt).days
+
+    AXIS_Y = Inches(3.5)
+    AXIS_L = Inches(0.55)
+    AXIS_W = Inches(7.95)
+    DOT_R  = Inches(0.13)
+
+    def _dx(d):
+        try:
+            if hasattr(d, "date"):
+                d = d.date()
+            elif not isinstance(d, type(today_d)):
+                d = pd.to_datetime(d).date()
+            frac = max(0.0, min(1.0, (d - start_dt).days / tot_days))
+            return AXIS_L + frac * AXIS_W
+        except Exception:
+            return None
+
+    # Month tick marks + labels
+    cur = start_dt.replace(day=1)
+    while cur <= end_dt:
+        mx = _dx(cur)
+        if mx is not None and mx >= AXIS_L:
+            _add_rect(slide, mx, AXIS_Y - Inches(0.12), Inches(0.015), Inches(0.14),
+                      fill_color=_rgb("#AAAAAA"), line_color=_rgb("#AAAAAA"))
+            _add_text_box(
+                slide,
+                f"{_calendar.month_abbr[cur.month]} '{cur.year % 100:02d}",
+                mx - Inches(0.27), AXIS_Y - Inches(0.35), Inches(0.72), Inches(0.22),
+                font_size=7, color=MGRAY, align=PP_ALIGN.CENTER,
+            )
+        if cur.month == 12:
+            cur = cur.replace(year=cur.year + 1, month=1)
+        else:
+            cur = cur.replace(month=cur.month + 1)
+
+    # Main axis line
+    _add_rect(slide, AXIS_L, AXIS_Y, AXIS_W, Inches(0.025),
+              fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
+
+    # "Now" marker
+    now_x = _dx(today_d)
+    if now_x:
+        _add_rect(slide, now_x - Inches(0.01), AXIS_Y - Inches(0.25), Inches(0.02), Inches(0.3),
+                  fill_color=GOLD, line_color=GOLD)
+        _add_text_box(slide, "Now", now_x - Inches(0.22), AXIS_Y + Inches(0.05),
+                      Inches(0.5), Inches(0.18), font_size=7, color=GOLD, align=PP_ALIGN.CENTER)
+
+    # Meeting dots (last 10, alternating above / below axis)
+    if not meetings.empty and "Meeting Date" in meetings.columns:
+        recent_mtgs = (
+            meetings.sort_values("Meeting Date").tail(10).reset_index(drop=True)
+        )
+        for idx, (_, mtg) in enumerate(recent_mtgs.iterrows()):
+            raw_date = mtg.get("Meeting Date")
+            if pd.isna(raw_date):
+                continue
+            mx = _dx(raw_date)
+            if mx is None:
+                continue
+
+            # Dot colour by status
+            status = str(mtg.get("Meeting Status", ""))
+            if any(w in status for w in ("Completed", "Done", "Held")):
+                dot_c = _rgb(MISA_GREEN)
+            elif any(w in status for w in ("Scheduled", "Upcoming", "Planned")):
+                dot_c = _rgb(MISA_GOLD)
+            elif any(w in status for w in ("Cancelled", "Canceled")):
+                dot_c = _rgb("#AAAAAA")
+            else:
+                dot_c = _rgb(MISA_GREEN)
+
+            mtype = str(mtg.get("Meeting Type", ""))[:14]
+            try:
+                d_lbl = pd.to_datetime(raw_date).strftime("%d %b")
+            except Exception:
+                d_lbl = str(raw_date)[:8]
+
+            above = (idx % 2 == 0)
+            if above:
+                conn_top = AXIS_Y - Inches(1.48)
+                conn_h   = Inches(1.48) - DOT_R
+                text_y   = AXIS_Y - Inches(1.88)
+            else:
+                conn_top = AXIS_Y + DOT_R
+                conn_h   = Inches(1.18)
+                text_y   = AXIS_Y + DOT_R + Inches(1.18)
+
+            # Connector line
+            _add_rect(slide, mx - Inches(0.01), conn_top, Inches(0.02), conn_h,
+                      fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
+            # Dot
+            _add_rect(slide, mx - DOT_R, AXIS_Y - DOT_R, DOT_R * 2, DOT_R * 2,
+                      fill_color=dot_c, line_color=dot_c)
+            # Label
+            _add_text_box(
+                slide, f"{d_lbl}\n{mtype}",
+                mx - Inches(0.55), text_y, Inches(1.1), Inches(0.42),
+                font_size=7, color=DARK, align=PP_ALIGN.CENTER,
+            )
+
+    # Timeline legend
+    lx, leg_y = Inches(0.55), Inches(5.45)
+    for lbl, col in [("Completed", MISA_GREEN), ("Scheduled", MISA_GOLD), ("Cancelled", "#AAAAAA")]:
+        _add_rect(slide, lx, leg_y + Inches(0.03), Inches(0.13), Inches(0.13),
+                  fill_color=_rgb(col), line_color=_rgb(col))
+        _add_text_box(slide, lbl, lx + Inches(0.17), leg_y,
+                      Inches(1.0), Inches(0.2), font_size=7, color=MGRAY)
+        lx += Inches(1.2)
+
+    # ══════════════════════════════════════════════════════════════════
+    # RIGHT: Action status + Opportunity status + KPI cards
+    # ══════════════════════════════════════════════════════════════════
+    RX = DIVX + Inches(0.2)
+    RW = Inches(13.33) - RX - Inches(0.15)
+
+    # Action Items status bars
+    _add_text_box(slide, "Action Items",
+                  RX, Inches(1.57), RW, Inches(0.28),
+                  font_size=10, bold=True, color=DARK)
+    y_r = Inches(1.94)
+    ACT_CFG = [
+        ("Completed",   "#2D7A54"),
+        ("In Progress", MISA_GOLD),
+        ("Not Started", "#888888"),
+        ("Blocked",     "#C0392B"),
+        ("Cancelled",   "#AAAAAA"),
+    ]
+    if not acts.empty and "Status" in acts.columns:
+        sc      = acts["Status"].value_counts()
+        total_a = max(len(acts), 1)
+        for sname, scol in ACT_CFG:
+            cnt = int(sc.get(sname, 0))
+            if cnt == 0:
+                continue
+            bw = max(Inches(0.15), RW * cnt / total_a)
+            _add_rect(slide, RX, y_r, bw, Inches(0.26),
+                      fill_color=_rgb(scol), line_color=_rgb(scol))
+            _add_text_box(slide, f"{sname}: {cnt}",
+                          RX + Inches(0.06), y_r + Inches(0.04),
+                          RW - Inches(0.1), Inches(0.18), font_size=8, color=WHITE)
+            y_r += Inches(0.32)
+    else:
+        _add_text_box(slide, "No action items yet.",
+                      RX, y_r, RW, Inches(0.25), font_size=8, color=MGRAY)
+        y_r += Inches(0.32)
+
+    # Opportunities status
+    y_r += Inches(0.18)
+    total_val = _sum_col(opps, "Est. Value (SAR)")
+    _add_text_box(slide, "Opportunities",
+                  RX, y_r, RW, Inches(0.28), font_size=10, bold=True, color=DARK)
+    y_r += Inches(0.35)
+    if not opps.empty:
+        if "Opportunity Status" in opps.columns:
+            for sname, cnt in opps["Opportunity Status"].value_counts().items():
+                _add_rect(slide, RX, y_r + Inches(0.04), Inches(0.13), Inches(0.13),
+                          fill_color=GREEN, line_color=GREEN)
+                _add_text_box(slide, f"{sname}: {cnt}",
+                              RX + Inches(0.2), y_r, RW - Inches(0.2), Inches(0.22),
+                              font_size=8, color=DARK)
+                y_r += Inches(0.27)
+        _add_text_box(slide, f"Pipeline: {_fmt_sar(total_val)}",
+                      RX, y_r + Inches(0.06), RW, Inches(0.24),
+                      font_size=9, bold=True, color=GOLD)
+    else:
+        _add_text_box(slide, "No opportunities yet.",
+                      RX, y_r, RW, Inches(0.25), font_size=8, color=MGRAY)
+
+    # KPI cards (fixed at bottom of right panel)
+    if not inv_row.empty:
+        est    = inv_row.get("Est. Investment Value (SAR)")
+        cmmt   = inv_row.get("Actual Commitment (SAR)")
+        next_m = str(inv_row.get("Next Meeting Date", "—") or "—")[:12]
+        kpi_y  = Inches(5.55)
+        kw     = (RW - Inches(0.06)) / 2
+
+        for i, (val, lbl, col) in enumerate([
+            (_fmt_sar(est)  if pd.notna(est)  and est  else "—", "Est. Investment", MISA_GREEN),
+            (_fmt_sar(cmmt) if pd.notna(cmmt) and cmmt else "—", "Committed",       MISA_GOLD),
+        ]):
+            kx = RX + i * (kw + Inches(0.06))
+            _add_rect(slide, kx, kpi_y, kw, Inches(0.75),
                       fill_color=_rgb(col), line_color=_rgb(col))
-            _add_text_box(slide, val, x, Inches(4.9), Inches(1.95), Inches(0.65),
-                          font_size=18, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-            _add_text_box(slide, lbl, x, Inches(5.53), Inches(1.95), Inches(0.25),
-                          font_size=8, color=WHITE, align=PP_ALIGN.CENTER)
+            _add_text_box(slide, val, kx, kpi_y + Inches(0.04), kw, Inches(0.36),
+                          font_size=12, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+            _add_text_box(slide, lbl, kx, kpi_y + Inches(0.43), kw, Inches(0.2),
+                          font_size=7, color=WHITE, align=PP_ALIGN.CENTER)
 
-    # Gold footer
-    _add_rect(slide, Inches(0), Inches(6.9), Inches(13.33), Inches(0.6),
+        _add_rect(slide, RX, kpi_y + Inches(0.82), RW, Inches(0.57),
+                  fill_color=_rgb("#2D7A54"), line_color=_rgb("#2D7A54"))
+        _add_text_box(slide, next_m, RX, kpi_y + Inches(0.86), RW, Inches(0.3),
+                      font_size=13, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        _add_text_box(slide, "Next Meeting", RX, kpi_y + Inches(1.14), RW, Inches(0.18),
+                      font_size=7, color=WHITE, align=PP_ALIGN.CENTER)
+
+    # ── Gold footer ──────────────────────────────────────────────────
+    _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
               fill_color=GOLD, line_color=GOLD)
     _add_text_box(slide, "CONFIDENTIAL | Ministry of Investment — وزارة الاستثمار",
-                  Inches(0), Inches(6.9), Inches(13.33), Inches(0.6),
-                  font_size=11, color=WHITE, align=PP_ALIGN.CENTER)
+                  Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
+                  font_size=10, color=WHITE, align=PP_ALIGN.CENTER)
 
 
 def _co_slide_meetings_opps(prs, company, meetings, opps, lang):
