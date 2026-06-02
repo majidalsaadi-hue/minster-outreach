@@ -1,10 +1,13 @@
 
 # Deal Progress — track active deals, challenges, and escalations.
 
+import io
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from datetime import date
+
+import openpyxl
 
 from config.settings import (
     MISA_GREEN, MISA_GOLD, STATUS_COLORS,
@@ -24,11 +27,17 @@ def render(dfs: dict, lang: str):
     # ── KPI strip ─────────────────────────────────────────────────────────────
     _render_kpi_strip(deals)
 
-    # ── Add deal ──────────────────────────────────────────────────────────────
-    with st.expander("➕ Add Deal", expanded=False):
+    # ── Two tabs: Add Deal | Import Actions ───────────────────────────────────
+    tab1, tab2 = st.tabs(["➕ Add Deal", "📥 Import Action Items from Excel"])
+
+    with tab1:
         _add_deal_form(dfs, investors, lang)
 
+    with tab2:
+        _import_actions_tab(dfs, investors, lang)
+
     # ── Filters ───────────────────────────────────────────────────────────────
+    st.markdown("---")
     with st.expander(t("filter", lang), expanded=False):
         fc1, fc2, fc3, fc4 = st.columns(4)
         companies    = sorted(deals["Company Name"].dropna().unique().tolist()) if not deals.empty and "Company Name" in deals.columns else []
@@ -66,7 +75,6 @@ def render(dfs: dict, lang: str):
         ] if c in filtered.columns
     ]
 
-    # Colour-code rows: red background indicator via caption
     def _row_label(row):
         sev    = str(row.get("Challenge Severity", ""))
         status = str(row.get("Deal Status", ""))
@@ -104,6 +112,190 @@ def render(dfs: dict, lang: str):
     _render_deal_expanders(filtered)
 
 
+# ── Import Actions tab ────────────────────────────────────────────────────────
+
+def _import_actions_tab(dfs: dict, investors: pd.DataFrame, lang: str):
+    """Upload V5 tracker Excel → import only 'Deal' type rows into CRM Action Items."""
+    st.markdown(
+        "Upload the main Action Item Tracker Excel. "
+        "Only rows where **Type of Engagement = Deal** will be imported. "
+        "Rows of type **Opportunity** are excluded."
+    )
+
+    uploaded = st.file_uploader(
+        "Upload Action Item Tracker (.xlsx)", type=["xlsx"], key="deal_import_xl"
+    )
+    if not uploaded:
+        return
+
+    file_bytes = uploaded.read()
+    deal_df, opp_skipped, other_skipped = _parse_tracker_excel(file_bytes)
+
+    # Summary counters
+    col_a, col_b, col_c = st.columns(3)
+    col_a.metric("Deal rows to import", len(deal_df))
+    col_b.metric("Opportunity rows excluded", opp_skipped,
+                 delta="not imported", delta_color="off")
+    col_c.metric("Other types excluded", other_skipped,
+                 delta="not imported", delta_color="off")
+
+    if deal_df.empty:
+        st.warning(
+            "No rows with **Type of Engagement = Deal** were found. "
+            "Mark action items as 'Deal' type in the tracker to import them here."
+        )
+        return
+
+    # Preview table
+    st.markdown("##### Preview — Deal-type rows")
+    preview_cols = [
+        "Company Name", "Action Item", "Assigned to",
+        "Type of Engagement", "Due Date", "Priority", "Status",
+    ]
+    show_cols = [c for c in preview_cols if c in deal_df.columns]
+    st.dataframe(deal_df[show_cols], use_container_width=True, hide_index=True)
+
+    # Check for existing ACT IDs to avoid double-import
+    actions     = dfs.get("Action Items", pd.DataFrame())
+    exist_descs = set(actions["Action Description"].dropna().str.strip().tolist()) if not actions.empty and "Action Description" in actions.columns else set()
+    new_only    = deal_df[~deal_df["Action Item"].astype(str).str.strip().isin(exist_descs)]
+    dupes       = len(deal_df) - len(new_only)
+
+    if dupes > 0:
+        st.info(f"ℹ️ {dupes} row(s) already exist in CRM (matched by description) and will be skipped.")
+
+    if new_only.empty:
+        st.success("All rows already imported — nothing new to add.")
+        return
+
+    if st.button(f"📥 Import {len(new_only)} new action items to CRM", type="primary"):
+        new_rows = []
+        current_actions = actions.copy()
+
+        for _, row in new_only.iterrows():
+            company = str(row.get("Company Name", "") or "")
+            inv_id  = _get_investor_id(investors, company)
+            tmp_df  = pd.concat([current_actions, pd.DataFrame(new_rows)], ignore_index=True) if new_rows else current_actions
+            new_id  = _next_id(tmp_df, "Action ID", "ACT")
+
+            new_rows.append({
+                "Action ID":          new_id,
+                "Investor ID":        inv_id,
+                "Company Name":       company,
+                "Action Description": str(row.get("Action Item", "") or ""),
+                "Assigned To":        str(row.get("Assigned to", "") or ""),
+                "Sector":             str(row.get("Sector", "") or ""),
+                "Type of Engagement": str(row.get("Type of Engagement", "Deal") or "Deal"),
+                "Start Date":         _coerce_date(row.get("Start Date")),
+                "Due Date":           _coerce_date(row.get("Due Date")),
+                "Priority":           str(row.get("Priority", "Medium") or "Medium"),
+                "Progress":           _coerce_progress(row.get("Progress")),
+                "Status":             str(row.get("Status", "Not Started") or "Not Started"),
+                "Remarks":            str(row.get("Remarks", "") or ""),
+                "Last Updated":       date.today(),
+            })
+
+        dfs["Action Items"] = pd.concat(
+            [actions, pd.DataFrame(new_rows)], ignore_index=True
+        )
+        save_session(dfs)
+        st.success(f"✅ {len(new_rows)} Deal-type action items imported to CRM.")
+        st.rerun()
+
+
+def _parse_tracker_excel(file_bytes: bytes) -> tuple:
+    """
+    Parse V5 Action Item Tracker Excel.
+    Returns (deal_df, opp_skipped_count, other_skipped_count).
+    Only rows where Type of Engagement == 'Deal' (case-insensitive) are in deal_df.
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+
+    deal_rows    = []
+    opp_skipped  = 0
+    other_skip   = 0
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+
+        # Derive company from sheet name
+        name = sheet_name.strip()
+        if name.lower().startswith("action items"):
+            company = name[len("action items"):].strip()
+        else:
+            company = name
+
+        # Find header row: look for a cell containing exactly "Action Item" (rows 1–30)
+        header_row = None
+        for r in range(1, 31):
+            for c in range(1, 25):
+                val = str(ws.cell(row=r, column=c).value or "").strip()
+                if val.lower() == "action item":
+                    header_row = r
+                    break
+            if header_row:
+                break
+
+        if not header_row:
+            continue
+
+        # Build col_idx → header_name map
+        hdr_map: dict[int, str] = {}
+        for c in range(1, 25):
+            val = str(ws.cell(row=header_row, column=c).value or "").strip()
+            if val:
+                hdr_map[c] = val
+
+        # Locate Type of Engagement column
+        type_col = next(
+            (c for c, h in hdr_map.items() if "type" in h.lower()), None
+        )
+
+        # Read data rows
+        for r in range(header_row + 1, ws.max_row + 1):
+            cells = {c: ws.cell(row=r, column=c).value for c in hdr_map}
+            if all(v is None or str(v).strip() in ("", "None") for v in cells.values()):
+                break  # empty row → end of data
+
+            row_dict = {"Company Name": company}
+            for c, hdr in hdr_map.items():
+                row_dict[hdr] = cells.get(c)
+
+            type_val = str(cells.get(type_col, "") or "").strip().lower() if type_col else ""
+
+            if type_val == "deal":
+                deal_rows.append(row_dict)
+            elif "opp" in type_val:
+                opp_skipped += 1
+            else:
+                other_skip += 1
+
+    return pd.DataFrame(deal_rows), opp_skipped, other_skip
+
+
+def _coerce_date(val):
+    if val is None:
+        return None
+    if isinstance(val, date):
+        return val
+    try:
+        return pd.to_datetime(val).date()
+    except Exception:
+        return None
+
+
+def _coerce_progress(val):
+    if val is None:
+        return None
+    try:
+        f = float(val)
+        return round(f, 4)
+    except Exception:
+        return None
+
+
+# ── Existing helpers (unchanged) ─────────────────────────────────────────────
+
 def _render_kpi_strip(deals: pd.DataFrame):
     total          = len(deals) if not deals.empty else 0
     blocked        = 0
@@ -119,7 +311,6 @@ def _render_kpi_strip(deals: pd.DataFrame):
             minister_level = int((deals["Escalation Level"] == "Minister Level").sum())
 
     k1, k2, k3, k4 = st.columns(4)
-
     _kpi_card(k1, "Total Deals",               str(total),          MISA_GREEN)
     _kpi_card(k2, "Blocked Deals",             str(blocked),        "#C0392B" if blocked > 0 else MISA_GREEN)
     _kpi_card(k3, "Critical Challenges",        str(critical),       "#C0392B" if critical > 0 else MISA_GREEN)
@@ -151,17 +342,14 @@ def _render_deal_charts(df: pd.DataFrame, lang: str):
     with col2:
         if "Challenge Severity" in df.columns:
             sev_colors = {
-                "Critical": "#C0392B",
-                "High":     "#C9974A",
-                "Medium":   "#1B5C3F",
-                "Low":      "#9B9B9B",
+                "Critical": "#C0392B", "High": "#C9974A",
+                "Medium": "#1B5C3F",   "Low":  "#9B9B9B",
             }
             cc = df["Challenge Severity"].value_counts().reset_index()
             cc.columns = ["Severity", "Count"]
             fig2 = px.pie(cc, values="Count", names="Severity",
                           title="Challenge Severity",
-                          color="Severity",
-                          color_discrete_map=sev_colors)
+                          color="Severity", color_discrete_map=sev_colors)
             fig2.update_layout(margin=dict(t=30, b=10, l=10, r=10),
                                 paper_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig2, use_container_width=True)
@@ -187,7 +375,7 @@ def _render_deal_expanders(df: pd.DataFrame):
         severity  = str(row.get("Challenge Severity", ""))
         status    = str(row.get("Deal Status", ""))
 
-        flag = "🔴 " if (severity == "Critical" or status == "Blocked") else ("🟠 " if severity == "High" else "")
+        flag  = "🔴 " if (severity == "Critical" or status == "Blocked") else ("🟠 " if severity == "High" else "")
         label = f"{flag}{deal_id} — {company} | {deal_name}"
 
         with st.expander(label, expanded=False):
@@ -205,16 +393,14 @@ def _render_deal_expanders(df: pd.DataFrame):
             c3.markdown(f"**Escalation Status:** {row.get('Escalation Status', '—')}")
 
             st.markdown("---")
-            challenge_desc = str(row.get("Challenge Description", "") or "")
-            proposed_sol   = str(row.get("Proposed Solution", "") or "")
-            notes          = str(row.get("Notes", "") or "")
-
-            if challenge_desc:
-                st.markdown(f"**Challenge Description:**\n\n{challenge_desc}")
-            if proposed_sol:
-                st.markdown(f"**Proposed Solution:**\n\n{proposed_sol}")
-            if notes:
-                st.markdown(f"**Notes:**\n\n{notes}")
+            for field, label_text in [
+                ("Challenge Description", "Challenge Description"),
+                ("Proposed Solution",     "Proposed Solution"),
+                ("Notes",                 "Notes"),
+            ]:
+                val = str(row.get(field, "") or "")
+                if val:
+                    st.markdown(f"**{label_text}:**\n\n{val}")
 
             linked_opp = str(row.get("Linked Opportunity ID", "") or "")
             target_res = row.get("Target Resolution Date")
@@ -255,9 +441,9 @@ def _add_deal_form(dfs: dict, investors: pd.DataFrame, lang: str):
 
         st.markdown("##### Escalation")
         c9, c10 = st.columns(2)
-        escalate     = c9.selectbox("Escalation Required", ["No", "Yes"])
-        esc_level    = c10.selectbox("Escalation Level", ESCALATION_LEVELS)
-        esc_status   = st.selectbox("Escalation Status", ESCALATION_STATUSES)
+        escalate   = c9.selectbox("Escalation Required", ["No", "Yes"])
+        esc_level  = c10.selectbox("Escalation Level", ESCALATION_LEVELS)
+        esc_status = st.selectbox("Escalation Status", ESCALATION_STATUSES)
 
         st.markdown("##### Assignment")
         c11, c12 = st.columns(2)
