@@ -184,21 +184,41 @@ def _meta_form(dfs: dict):
     s = st.session_state
 
     c1, c2, c3 = st.columns(3)
-    s["rb2_company"]  = c1.selectbox("Company", companies,
-        index=companies.index(s["rb2_company"]) if s["rb2_company"] in companies else 0,
-        key="_rb2_co")
-    s["rb2_date"]     = c2.date_input("Meeting Date", value=s["rb2_date"], key="_rb2_date")
-    s["rb2_chair"]    = c3.text_input("Chaired By / برئاسة", value=s["rb2_chair"], key="_rb2_chair")
+
+    # Company: free-text input; show existing CRM companies as a hint dropdown
+    company_input = c1.text_input(
+        "Company Name",
+        value=s["rb2_company"],
+        key="_rb2_co_text",
+        placeholder="e.g. Barclays",
+    )
+    if companies and len(companies) > 1:
+        selected_from_crm = c1.selectbox(
+            "…or pick from CRM",
+            ["— type above —"] + companies[1:],
+            key="_rb2_co_sel",
+            label_visibility="visible",
+        )
+        if selected_from_crm != "— type above —":
+            company_input = selected_from_crm
+    s["rb2_company"] = company_input
+
+    s["rb2_date"]  = c2.date_input("Meeting Date", value=s["rb2_date"], key="_rb2_date")
+    s["rb2_chair"] = c3.text_input("Chaired By / برئاسة", value=s["rb2_chair"], key="_rb2_chair")
 
     c4, c5, c6 = st.columns(3)
-    s["rb2_location"] = c4.text_input("Location", value=s["rb2_location"], key="_rb2_loc")
-    s["rb2_next_mtg"] = c5.date_input("Next Meeting", value=s["rb2_next_mtg"], key="_rb2_next")
+    s["rb2_location"]   = c4.text_input("Location", value=s["rb2_location"], key="_rb2_loc")
+    s["rb2_next_mtg"]   = c5.date_input("Next Meeting", value=s["rb2_next_mtg"], key="_rb2_next")
     s["rb2_subject_ar"] = c6.text_input("Subject (Arabic)", value=s["rb2_subject_ar"], key="_rb2_sub_ar")
-    s["rb2_subject_en"] = st.text_input("Subject (English) — used in the email subject line",
-                                        value=s["rb2_subject_en"], key="_rb2_sub_en")
+    s["rb2_subject_en"] = st.text_input(
+        "Subject (English) — used in the email subject line",
+        value=s["rb2_subject_en"], key="_rb2_sub_en",
+    )
     st.markdown("**Attendees** — Name | Title, one per line")
-    s["rb2_attendees"] = st.text_area("Attendees", value=s["rb2_attendees"], height=80,
-                                      key="_rb2_att", label_visibility="collapsed")
+    s["rb2_attendees"] = st.text_area(
+        "Attendees", value=s["rb2_attendees"], height=80,
+        key="_rb2_att", label_visibility="collapsed",
+    )
 
 
 def _discussion_form():
