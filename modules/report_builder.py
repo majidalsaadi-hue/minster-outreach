@@ -1,8 +1,6 @@
 
 # Report Builder — Ministry of Investment
-# 3-step workflow: Upload → Configure → Generate
-# Outputs: Extracted action items table + Internal summary + Email draft
-# All processing server-side (python-docx + deep-translator + openpyxl)
+# Upload Arabic Word + Excel tracker → extract actions → update Excel + generate letter + sync CRM
 
 import io
 import re
@@ -24,24 +22,39 @@ from modules.persistence import save_session
 
 _PRIORITIES  = ["Very High", "High", "Medium", "Low"]
 _ENGAGE_OPTS = ["Support", "Opportunity", "Challenge", "Follow-up", "Action", "Administrative"]
-_PRIORITY_AR = {"Very High": "مهم جدا", "High": "مهم", "Medium": "متوسط", "Low": "عادي"}
-_PRIORITY_EN = {"مهم جدا": "Very High", "مهم": "High", "متوسط": "Medium", "عادي": "Low",
-                "مستمر": "Ongoing"}
+_PRIORITY_AR = {"مهم جدا": "Very High", "مهم": "High", "متوسط": "Medium", "عادي": "Low", "مستمر": "Ongoing"}
+_OWNER_AR    = {
+    "ساره السيد":   "Sara Al-Sayed",
+    "القطاع المالي": "Financial Sector Dept.",
+    "SIPA":         "SIPA",
+    "زباد الجهيمان": "Zabad Al-Juhaiman",
+    "دانا الجاربو":  "Dana Aljarbu",
+    "خالد الخطاف":   "Khaled Alkhattaf",
+}
 
 _EMPTY_ACTIONS = pd.DataFrame(columns=[
-    "Action (AR)", "Action (EN)", "Assigned To", "Type", "Priority", "Due Date", "Remarks"
+    "Action (AR)", "Action (EN)", "Assigned To", "Type",
+    "Priority", "Due Date", "Due Text", "Remarks",
 ])
 
+_STATUS_FILLS = {
+    "Completed":    "E2EFDA",
+    "Inprogress":   "FFF2CC",
+    "In Progress":  "FFF2CC",
+    "Not Started":  "F2F2F2",
+    "Blocked":      "FCE4D6",
+    "Cancelled":    "EDEDED",
+}
 _BADGE_CSS = {
-    "Very High": "background:#fee2e2;color:#dc2626",
-    "High":      "background:#fee2e2;color:#dc2626",
-    "Medium":    "background:#fef3c7;color:#d97706",
-    "Low":       "background:#f3f4f6;color:#6b7280",
-    "Completed": "background:#d1fae5;color:#065f46",
+    "Very High":  "background:#fee2e2;color:#dc2626",
+    "High":       "background:#fee2e2;color:#dc2626",
+    "Medium":     "background:#fef3c7;color:#d97706",
+    "Low":        "background:#f3f4f6;color:#6b7280",
+    "Completed":  "background:#d1fae5;color:#065f46",
     "Not Started":"background:#f3f4f6;color:#6b7280",
-    "Inprogress":"background:#fef3c7;color:#d97706",
+    "Inprogress": "background:#fef3c7;color:#d97706",
     "In Progress":"background:#fef3c7;color:#d97706",
-    "Blocked":   "background:#fee2e2;color:#dc2626",
+    "Blocked":    "background:#fee2e2;color:#dc2626",
 }
 
 # ─── Translation helpers ──────────────────────────────────────────────────────
@@ -75,31 +88,30 @@ def _translate_list(texts: list) -> list:
 
 def _init():
     defaults = {
-        "rb_parsed":      None,
-        "rb_actions":     _EMPTY_ACTIONS.copy(),
-        "rb_company":     "",
-        "rb_recipient":   "",
-        "rb_arm":         "",
-        "rb_exec_rm":     "",
-        "rb_date":        date.today().strftime("%d %B %Y"),
-        "rb_subject_ar":  "",
-        "rb_subject_en":  "",
-        "rb_location":    "المقر الرئيسي – وزارة الاستثمار",
-        "rb_chair":       "معالي الوزير",
-        "rb_next_mtg":    None,
-        "rb_attendees":   "",
-        "rb_disc_ar":     "",
-        "rb_disc_en":     "",
-        "rb_output_lang": "English",
-        "rb_excel_bytes": None,
-        "rb_result":      None,   # dict after pipeline runs
+        "rb_parsed":           None,
+        "rb_actions":          _EMPTY_ACTIONS.copy(),
+        "rb_company":          "",
+        "rb_recipient":        "",
+        "rb_arm":              "",
+        "rb_exec_rm":          "",
+        "rb_date":             date.today().strftime("%d %B %Y"),
+        "rb_subject_ar":       "",
+        "rb_subject_en":       "",
+        "rb_location":         "المقر الرئيسي – وزارة الاستثمار",
+        "rb_chair":            "معالي الوزير",
+        "rb_next_meeting_text": "",
+        "rb_attendees":        "",
+        "rb_disc_ar":          "",
+        "rb_output_lang":      "English",
+        "rb_excel_bytes":      None,
+        "rb_result":           None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
 
-# ─── CSS injection ────────────────────────────────────────────────────────────
+# ─── CSS ──────────────────────────────────────────────────────────────────────
 
 def _inject_css():
     st.markdown("""
@@ -128,7 +140,7 @@ def render(dfs: dict, lang: str):
     _inject_css()
     _init()
 
-    # ── Header ────────────────────────────────────────────────────────────────
+    # Header
     hc, bc = st.columns([5, 1])
     hc.markdown("**Report Builder — Ministry of Investment**")
     bc.markdown('<div style="text-align:right"><span class="rb-badge">Reusable workflow</span></div>',
@@ -140,77 +152,82 @@ def render(dfs: dict, lang: str):
     with st.container(border=True):
         st.markdown('<p class="rb-section">Step 1 — Upload your files</p>', unsafe_allow_html=True)
         u1, u2 = st.columns(2)
-
         with u1:
             st.markdown(
                 '<span class="rb-num">1</span>'
                 '<strong style="font-size:12px">Arabic meeting minutes (.docx)</strong>',
-                unsafe_allow_html=True,
-            )
+                unsafe_allow_html=True)
             st.caption("Standard Ministry of Investment meeting template")
-            word_file = st.file_uploader("word", type=["docx", "doc"],
+            word_file = st.file_uploader("word", type=["docx","doc"],
                                          key="rb_word_up", label_visibility="collapsed")
-
         with u2:
             st.markdown(
                 '<span class="rb-num">2</span>'
                 '<strong style="font-size:12px">Action Item Tracker (.xlsx)</strong>',
-                unsafe_allow_html=True,
-            )
-            st.caption("V5 tracker — format preserved, only relevant sheet updated")
-            excel_file = st.file_uploader("excel", type=["xlsx", "xls"],
+                unsafe_allow_html=True)
+            st.caption("V5 tracker — only relevant sheet will be updated")
+            excel_file = st.file_uploader("excel", type=["xlsx","xls"],
                                           key="rb_excel_up", label_visibility="collapsed")
 
-    # Auto-parse Word on upload
+    # Auto-parse Word
     if word_file is not None:
         raw = word_file.read()
-        with st.spinner("Parsing document and translating action items…"):
+        with st.spinner("Parsing Arabic document and translating action items…"):
             parsed = _parse_word(raw)
         if parsed:
-            st.session_state["rb_parsed"]    = parsed
-            st.session_state["rb_company"]   = parsed.get("company", "")
-            st.session_state["rb_date"]      = (
-                parsed["date"].strftime("%d %B %Y") if parsed.get("date") else date.today().strftime("%d %B %Y")
+            s = st.session_state
+            s["rb_parsed"]            = parsed
+            s["rb_company"]           = parsed.get("company", "")
+            s["rb_date"]              = (
+                parsed["date"].strftime("%d %B %Y") if parsed.get("date")
+                else date.today().strftime("%d %B %Y")
             )
-            st.session_state["rb_subject_ar"] = parsed.get("subject_ar", "")
-            st.session_state["rb_subject_en"] = parsed.get("subject_en", "")
-            st.session_state["rb_location"]   = parsed.get("location", "المقر الرئيسي – وزارة الاستثمار")
-            st.session_state["rb_chair"]      = parsed.get("chair", "معالي الوزير")
-            st.session_state["rb_attendees"]  = parsed.get("attendees", "")
-            st.session_state["rb_disc_ar"]    = parsed.get("discussion_ar", "")
+            s["rb_subject_ar"]        = parsed.get("subject_ar", "")
+            s["rb_subject_en"]        = parsed.get("subject_en", "")
+            s["rb_location"]          = parsed.get("location", "المقر الرئيسي – وزارة الاستثمار")
+            s["rb_chair"]             = parsed.get("chair", "معالي الوزير")
+            s["rb_next_meeting_text"] = parsed.get("next_meeting_text", "")
+            s["rb_attendees"]         = parsed.get("attendees", "")
+            s["rb_disc_ar"]           = parsed.get("discussion_ar", "")
             if parsed.get("action_items"):
-                items   = parsed["action_items"]
+                items    = parsed["action_items"]
                 ar_texts = [i.get("Action (AR)", "") for i in items]
                 en_texts = _translate_list(ar_texts)
                 for i, en in enumerate(en_texts):
                     if not items[i].get("Action (EN)"):
                         items[i]["Action (EN)"] = en
-                st.session_state["rb_actions"] = pd.DataFrame(items)
+                # Also translate "Due Text" fields
+                due_texts = [i.get("Due Text", "") for i in items]
+                due_en    = _translate_list([d for d in due_texts if d])
+                due_idx = 0
+                for i in items:
+                    if i.get("Due Text"):
+                        i["Due Text EN"] = due_en[due_idx] if due_idx < len(due_en) else i["Due Text"]
+                        due_idx += 1
+                s["rb_actions"] = pd.DataFrame(items)
             n = len(parsed.get("action_items", []))
-            st.success(f"✅ Parsed — {n} action item(s) extracted and translated.")
+            st.success(f"✅ Parsed — {n} action item(s) found and translated to English.")
 
     if excel_file is not None:
         st.session_state["rb_excel_bytes"] = excel_file.read()
         sheets = _get_excel_sheets(st.session_state["rb_excel_bytes"])
-        st.info(f"Excel loaded — sheets: {', '.join(sheets)}")
+        st.info(f"Excel loaded — {len(sheets)} sheet(s): {', '.join(sheets[:5])}")
 
     # ── Step 2: Configure ─────────────────────────────────────────────────────
     with st.container(border=True):
         st.markdown('<p class="rb-section">Step 2 — Configure output</p>', unsafe_allow_html=True)
-
         investors    = dfs.get("Investor Master", pd.DataFrame())
         company_list = sorted(investors["Company Name"].dropna().unique().tolist()) \
             if not investors.empty and "Company Name" in investors.columns else []
 
         r1c1, r1c2 = st.columns(2)
         with r1c1:
+            cur_co = st.session_state["rb_company"]
             if company_list:
-                idx = company_list.index(st.session_state["rb_company"]) \
-                    if st.session_state["rb_company"] in company_list else 0
+                idx     = company_list.index(cur_co) if cur_co in company_list else 0
                 company = st.selectbox("Company", company_list, index=idx, key="rb_co_sel")
             else:
-                company = st.text_input("Company",
-                                        value=st.session_state["rb_company"],
+                company = st.text_input("Company", value=cur_co,
                                         placeholder="e.g. Barclays", key="rb_co_txt")
             st.session_state["rb_company"] = company
 
@@ -218,121 +235,109 @@ def render(dfs: dict, lang: str):
             st.session_state["rb_recipient"] = st.text_input(
                 "Email recipient name",
                 value=st.session_state["rb_recipient"],
-                placeholder="e.g. Khalid Al-Dabbagh", key="rb_recip",
-            )
+                placeholder="e.g. Khalid Al-Dabbagh", key="rb_recip")
 
         r2c1, r2c2 = st.columns(2)
         with r2c1:
             st.session_state["rb_arm"] = st.text_input(
                 "ARM (Account Relationship Manager)",
                 value=st.session_state["rb_arm"],
-                placeholder="e.g. Dana Aljarbu", key="rb_arm_inp",
-            )
+                placeholder="e.g. Dana Aljarbu", key="rb_arm_inp")
         with r2c2:
             st.session_state["rb_exec_rm"] = st.text_input(
                 "Executive RM (Minister's Office)",
                 value=st.session_state["rb_exec_rm"],
-                placeholder="e.g. Sara Al-Sayed", key="rb_exec_inp",
-            )
+                placeholder="e.g. Sara Al-Sayed", key="rb_exec_inp")
 
         r3c1, r3c2 = st.columns(2)
         with r3c1:
             st.session_state["rb_date"] = st.text_input(
                 "Meeting date",
                 value=st.session_state["rb_date"],
-                placeholder=f"e.g. {date.today().strftime('%d %B %Y')}",
-                key="rb_date_inp",
-            )
+                placeholder=date.today().strftime("%d %B %Y"), key="rb_date_inp")
         with r3c2:
             st.session_state["rb_output_lang"] = st.selectbox(
                 "Output language",
                 ["English", "Arabic", "Bilingual (EN + AR)"],
-                key="rb_lang_sel",
-            )
+                key="rb_lang_sel")
 
     # ── Step 3: Generate ──────────────────────────────────────────────────────
     with st.container(border=True):
         st.markdown('<p class="rb-section">Step 3 — Generate</p>', unsafe_allow_html=True)
 
-        run_btn = st.button(
-            "▶  Run pipeline — extract actions, update Excel & draft email",
-            type="primary", use_container_width=True, key="rb_run",
-        )
+        if st.button("▶  Run pipeline — extract actions, update Excel, generate letter & sync CRM",
+                     type="primary", use_container_width=True, key="rb_run"):
 
-        if run_btn:
-            s = st.session_state
-            if not word_file and not s.get("rb_parsed") and not s.get("rb_actions", _EMPTY_ACTIONS.copy()).shape[0]:
-                st.warning("Upload at least the Word meeting minutes file.")
-            else:
-                prog   = st.progress(0)
-                status = st.empty()
+            s       = st.session_state
+            actions = _valid_actions(s["rb_actions"])
+            company = s["rb_company"] or "Company"
+            arm     = s["rb_arm"] or "Dana Aljarbu"
+            exec_rm = s["rb_exec_rm"] or "Sara Al-Sayed"
+            recipient = s["rb_recipient"] or f"{company} Team"
+            mtg_date  = s["rb_date"] or date.today().strftime("%d %B %Y")
 
-                def _log(msg: str, pct: int = None):
-                    status.markdown(f"→ {msg}")
-                    if pct is not None:
-                        prog.progress(pct)
+            prog   = st.progress(0)
+            status = st.empty()
 
-                try:
-                    _log("Reading files…", 10)
-                    actions  = _valid_actions(s["rb_actions"])
-                    company  = s["rb_company"] or "Company"
-                    arm      = s["rb_arm"] or "ARM"
-                    exec_rm  = s["rb_exec_rm"] or "Executive RM"
-                    recipient = s["rb_recipient"] or "Dear Sir/Madam"
-                    mtg_date = s["rb_date"] or date.today().strftime("%d %B %Y")
+            def _log(msg: str, pct: int = None):
+                status.markdown(f"→ {msg}")
+                if pct is not None:
+                    prog.progress(pct)
 
-                    _log(f"Processing {len(actions)} action item(s) for {company}…", 35)
+            try:
+                _log("Reading parsed data…", 10)
 
-                    cfg = {
-                        "company":   company,
-                        "recipient": recipient,
-                        "arm":       arm,
-                        "exec_rm":   exec_rm,
-                        "meeting_date": mtg_date,
-                        "chair":     s["rb_chair"] or "H.E. The Minister",
-                        "next_mtg":  s["rb_next_mtg"],
-                        "disc_en":   s["rb_disc_en"] or s["rb_disc_ar"] or "",
-                    }
+                cfg = {
+                    "company":           company,
+                    "recipient":         recipient,
+                    "arm":               arm,
+                    "exec_rm":           exec_rm,
+                    "meeting_date":      mtg_date,
+                    "chair":             s.get("rb_chair", "معالي الوزير"),
+                    "next_meeting_text": s.get("rb_next_meeting_text", ""),
+                    "disc_en":           s.get("rb_disc_ar", ""),
+                }
 
-                    _log("Generating internal summary…", 55)
-                    summary = _build_internal_summary(cfg, actions)
+                # 1 — Updated Excel tracker
+                updated_xl = None
+                if s.get("rb_excel_bytes") and not actions.empty:
+                    _log(f"Updating Excel tracker for {company}…", 30)
+                    try:
+                        mtg_d = datetime.strptime(mtg_date, "%d %B %Y").date()
+                    except ValueError:
+                        mtg_d = date.today()
+                    updated_xl = _build_excel(
+                        existing_bytes=s["rb_excel_bytes"],
+                        company=company,
+                        meeting_date=mtg_d,
+                        next_meeting=s.get("rb_next_meeting_text") or None,
+                        chair=cfg["chair"],
+                        actions_df=actions,
+                    )
 
-                    _log("Drafting outreach email…", 72)
-                    email_body = _build_email_from_cfg(cfg, actions)
+                # 2 — Word letter
+                _log("Generating company letter (.docx)…", 55)
+                letter_bytes = _build_letter_docx(cfg, actions)
 
-                    updated_xl = None
-                    if s.get("rb_excel_bytes") and not actions.empty:
-                        _log("Updating Excel tracker…", 85)
-                        try:
-                            mtg_d = datetime.strptime(mtg_date, "%d %B %Y").date() if mtg_date else date.today()
-                        except ValueError:
-                            mtg_d = date.today()
-                        updated_xl = _build_excel(
-                            existing_bytes=s["rb_excel_bytes"],
-                            company=company,
-                            meeting_date=mtg_d,
-                            next_meeting=s.get("rb_next_mtg"),
-                            chair=cfg["chair"],
-                            actions_df=actions,
-                        )
+                # 3 — CRM sync
+                _log("Syncing action items to CRM…", 80)
+                _sync_actions_to_crm(dfs, actions, company)
 
-                    _log("Syncing to CRM…", 93)
-                    _sync_actions_to_crm(dfs, actions, company)
+                prog.progress(100)
+                status.success("✓ Pipeline complete — 3 outputs ready")
 
-                    prog.progress(100)
-                    status.success("✓ Pipeline complete")
+                st.session_state["rb_result"] = {
+                    "actions":     actions,
+                    "xl_bytes":    updated_xl,
+                    "letter":      letter_bytes,
+                    "company":     company,
+                    "meeting_date": mtg_date,
+                }
 
-                    st.session_state["rb_result"] = {
-                        "actions":    actions,
-                        "summary":    summary,
-                        "email":      email_body,
-                        "xl_bytes":   updated_xl,
-                        "company":    company,
-                        "meeting_date": mtg_date,
-                    }
-
-                except Exception as e:
-                    status.error(f"Error: {e}")
+            except Exception as e:
+                status.error(f"Error: {e}")
+                import traceback
+                st.code(traceback.format_exc())
 
     # ── Output section ────────────────────────────────────────────────────────
     result = st.session_state.get("rb_result")
@@ -347,11 +352,11 @@ def _render_output(result: dict):
                 unsafe_allow_html=True)
 
     actions    = result["actions"]
-    summary    = result["summary"]
-    email_body = result["email"]
     xl_bytes   = result["xl_bytes"]
+    letter     = result["letter"]
     company    = result["company"]
     mtg_date   = result["meeting_date"]
+    fname_base = f"{company.replace(' ','_')}_{mtg_date.replace(' ','_')}"
 
     # ── Action items table ────────────────────────────────────────────────────
     with st.container(border=True):
@@ -359,65 +364,57 @@ def _render_output(result: dict):
         if not actions.empty:
             _render_action_table(actions)
         else:
-            st.info("No action items extracted.")
-        if xl_bytes:
-            st.download_button(
-                "⬇ Download updated Excel tracker",
-                data=xl_bytes,
-                file_name=f"ActionTracker_{company.replace(' ','_')}_{date.today()}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="rb_dl_xl",
-            )
+            st.info("No action items extracted from the uploaded document.")
 
-    # ── Internal summary ──────────────────────────────────────────────────────
+    # ── Downloads ─────────────────────────────────────────────────────────────
     with st.container(border=True):
-        st.markdown("#### 📄 Internal summary")
-        edited_summary = st.text_area(
-            "", value=summary, height=300, key="rb_sum_ed", label_visibility="collapsed"
-        )
-        c1, _ = st.columns([1, 4])
-        c1.download_button(
-            "⬇ Download",
-            data=edited_summary.encode("utf-8"),
-            file_name=f"Summary_{company.replace(' ','_')}_{mtg_date}.txt",
-            mime="text/plain",
-            key="rb_dl_sum",
-        )
+        st.markdown("#### ⬇ Downloads")
+        dc1, dc2 = st.columns(2)
 
-    # ── Email draft ───────────────────────────────────────────────────────────
-    with st.container(border=True):
-        st.markdown("#### ✉️ Email draft — ready to send")
-        edited_email = st.text_area(
-            "", value=email_body, height=360, key="rb_email_ed", label_visibility="collapsed"
-        )
-        c1, _ = st.columns([1, 4])
-        c1.download_button(
-            "⬇ Download",
-            data=edited_email.encode("utf-8"),
-            file_name=f"Email_{company.replace(' ','_')}_{mtg_date}.txt",
-            mime="text/plain",
-            key="rb_dl_email",
-        )
+        with dc1:
+            if xl_bytes:
+                st.download_button(
+                    "📊  Download updated Excel tracker",
+                    data=xl_bytes,
+                    file_name=f"ActionTracker_{fname_base}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True, key="rb_dl_xl",
+                )
+            else:
+                st.info("Excel tracker not generated (upload a tracker file in Step 1)")
+
+        with dc2:
+            if letter:
+                st.download_button(
+                    "📄  Download company letter (.docx)",
+                    data=letter,
+                    file_name=f"Letter_{fname_base}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True, key="rb_dl_letter",
+                )
+
+        if xl_bytes and letter:
+            st.success("✓ Both files are ready. Action items have been synced to CRM.")
 
 
 def _render_action_table(df: pd.DataFrame):
     rows_html = ""
     for i, (_, row) in enumerate(df.iterrows()):
-        en     = row.get("Action (EN)") or row.get("Action (AR)", "")
+        en     = (row.get("Action (EN)") or row.get("Action (AR)", "")).strip()
         owner  = str(row.get("Assigned To", "") or "")
         prio   = str(row.get("Priority", "Medium") or "Medium")
-        due    = str(row.get("Due Date", "TBD") or "TBD")
+        due    = str(row.get("Due Text EN", "") or row.get("Due Text", "") or
+                     row.get("Due Date", "") or "TBD")
         status = str(row.get("Status", "Not Started") or "Not Started")
         rmk    = str(row.get("Remarks", "") or "")
 
-        p_css = _BADGE_CSS.get(prio, "background:#f3f4f6;color:#6b7280")
-        s_css = _BADGE_CSS.get(status, "background:#f3f4f6;color:#6b7280")
+        p_css  = _BADGE_CSS.get(prio,   "background:#f3f4f6;color:#6b7280")
+        s_css  = _BADGE_CSS.get(status, "background:#f3f4f6;color:#6b7280")
 
         rows_html += (
             f"<tr>"
             f"<td style='font-weight:500;text-align:center;width:36px'>{i+1}</td>"
-            f"<td>{en}</td>"
-            f"<td>{owner}</td>"
+            f"<td>{en}</td><td>{owner}</td>"
             f"<td><span class='rb-pk' style='{p_css}'>{prio}</span></td>"
             f"<td>{due}</td>"
             f"<td><span class='rb-pk' style='{s_css}'>{status}</span></td>"
@@ -428,174 +425,17 @@ def _render_action_table(df: pd.DataFrame):
     st.markdown(f"""
     <div style="overflow-x:auto">
     <table class="rb-action-table">
-      <thead><tr>
-        <th>#</th><th>Action Item</th><th>Owner</th>
-        <th>Priority</th><th>Due Date</th><th>Status</th><th>Remarks</th>
-      </tr></thead>
+      <thead><tr><th>#</th><th>Action Item</th><th>Owner</th>
+      <th>Priority</th><th>Timeline</th><th>Status</th><th>Remarks</th></tr></thead>
       <tbody>{rows_html}</tbody>
-    </table>
-    </div>
+    </table></div>
     """, unsafe_allow_html=True)
-
-
-# ─── Summary & email builders ──────────────────────────────────────────────────
-
-def _build_internal_summary(cfg: dict, actions: pd.DataFrame) -> str:
-    co      = cfg["company"]
-    mtg     = cfg["meeting_date"]
-    arm     = cfg["arm"]
-    exec_rm = cfg["exec_rm"]
-    chair   = cfg["chair"]
-    disc    = cfg.get("disc_en", "")
-    yr      = date.today().year
-
-    lines = [
-        "MINISTRY OF INVESTMENT — MEETING SUMMARY",
-        "=" * 56,
-        f"Company:        {co}",
-        f"Meeting Date:   {mtg}",
-        f"Chaired By:     {chair}",
-        f"ARM:            {arm}",
-        f"Executive RM:   {exec_rm}",
-        f"Reference:      MISA/{co.upper()[:6].replace(' ','')}/ARM/{yr}",
-        "",
-        "KEY DISCUSSION POINTS",
-        "-" * 56,
-    ]
-
-    disc_lines = [ln.strip().lstrip("•● -") for ln in disc.split("\n") if ln.strip()] if disc else []
-    if disc_lines:
-        for ln in disc_lines:
-            lines.append(f"  • {ln}")
-    else:
-        lines.append("  (See attached meeting minutes for full discussion)")
-
-    lines += ["", "AGREED ACTION ITEMS", "-" * 56]
-    if not actions.empty:
-        for i, (_, row) in enumerate(actions.iterrows(), 1):
-            en    = row.get("Action (EN)") or row.get("Action (AR)", "")
-            owner = row.get("Assigned To", "TBD")
-            prio  = row.get("Priority", "Medium")
-            due   = str(row.get("Due Date", "TBD")) if row.get("Due Date") else "TBD"
-            lines.append(f"  {i}. {en}")
-            lines.append(f"     Owner: {owner}  |  Priority: {prio}  |  Due: {due}")
-    else:
-        lines.append("  (No action items recorded)")
-
-    lines += [
-        "",
-        "PREPARED BY",
-        "-" * 56,
-        f"  {arm}, Account Relationship Manager",
-        f"  {exec_rm}, Executive Relationship Manager",
-        f"  Ministry of Investment — وزارة الاستثمار",
-        f"  Date: {date.today().strftime('%d %B %Y')}",
-    ]
-
-    return "\n".join(lines)
-
-
-def _build_email_from_cfg(cfg: dict, actions: pd.DataFrame) -> str:
-    co       = cfg["company"]
-    mtg      = cfg["meeting_date"]
-    arm      = cfg["arm"]
-    exec_rm  = cfg["exec_rm"]
-    chair    = cfg["chair"]
-    recipient = cfg["recipient"]
-    sub_en   = f"Follow-up on Latest Updates — {co}"
-    yr       = date.today().year
-    ref      = f"MISA/{co.upper()[:6].replace(' ','')}/ARM/{yr}"
-
-    subject = f"SUBJECT: {sub_en} | Ref: {ref}"
-
-    intro = (
-        f"Dear {recipient},\n\n"
-        f"I hope this message finds you well.\n\n"
-        f"On behalf of H.E. {chair} and the Ministry of Investment of Saudi Arabia, "
-        f"I am writing to follow up on our productive meeting held on {mtg}. "
-        f"We appreciate your continued engagement and strategic partnership with the Kingdom.\n\n"
-        f"As part of our ongoing commitment to investor support, {arm} has been assigned "
-        f"as your dedicated Account Relationship Manager (ARM), "
-        f"with {exec_rm} serving as Executive Relationship Manager from the Minister's Office."
-    )
-
-    act_block = "\n\nAGREED ACTION ITEMS\n" + "-" * 56
-    if not actions.empty:
-        act_block += (
-            f"\n{'#':<4} {'Action Item':<55} {'Owner':<22} {'Due':<14} {'Priority'}"
-            f"\n{'-'*4} {'-'*55} {'-'*22} {'-'*14} {'-'*10}"
-        )
-        for i, (_, row) in enumerate(actions.iterrows(), 1):
-            en    = (row.get("Action (EN)") or row.get("Action (AR)", ""))[:54]
-            owner = str(row.get("Assigned To", "TBD"))
-            due   = str(row.get("Due Date", "TBD")) if row.get("Due Date") else "TBD"
-            prio  = str(row.get("Priority", "Medium"))
-            act_block += f"\n{i:<4} {en:<55} {owner:<22} {due:<14} {prio}"
-    else:
-        act_block += "\n  (No action items recorded)"
-
-    closing = (
-        "\n\nNEXT STEPS\n" + "-" * 56 +
-        "\nWe look forward to continued progress on the above action items. "
-        "Please do not hesitate to contact us for any clarifications or support.\n\n"
-        f"For day-to-day coordination, please reach out to {arm} (ARM).\n\n"
-        "Best regards,\n\n"
-        f"{exec_rm}\n"
-        "Executive Relationship Manager, Minister's Office\n"
-        "Ministry of Investment of Saudi Arabia\n"
-        "وزارة الاستثمار — المملكة العربية السعودية"
-    )
-
-    return "\n".join([subject, "", intro, act_block, closing])
-
-
-# ─── CRM sync (direct, no UI) ─────────────────────────────────────────────────
-
-def _sync_actions_to_crm(dfs: dict, actions: pd.DataFrame, company: str):
-    if actions.empty or not company:
-        return
-    investors = dfs.get("Investor Master", pd.DataFrame())
-    inv_id    = _investor_id(investors, company)
-    existing  = dfs.get("Action Items", pd.DataFrame())
-    new_rows  = []
-
-    for i, (_, row) in enumerate(actions.iterrows()):
-        desc   = row.get("Action (EN)") or row.get("Action (AR)", "")
-        if not desc:
-            continue
-        # Skip if already in CRM
-        if not existing.empty and "Action Description" in existing.columns:
-            if (existing["Action Description"].astype(str).str.strip() == str(desc).strip()).any():
-                continue
-        new_id = _next_act_id(pd.concat([existing, pd.DataFrame(new_rows)], ignore_index=True) if new_rows else existing, 0)
-        due = row.get("Due Date")
-        new_rows.append({
-            "Action ID":          new_id,
-            "Investor ID":        inv_id,
-            "Company Name":       company,
-            "Action Description": desc,
-            "Assigned To":        row.get("Assigned To", ""),
-            "Sector":             "",
-            "Type of Engagement": row.get("Type", "Action"),
-            "Start Date":         date.today(),
-            "Due Date":           due if (due and pd.notna(due)) else None,
-            "Priority":           _map_prio(row.get("Priority", "Medium")),
-            "Progress":           "0%",
-            "Status":             "Not Started",
-            "Escalation Flag":    "None",
-            "Remarks":            row.get("Remarks", ""),
-            "Last Updated":       date.today(),
-        })
-        existing = pd.concat([existing, pd.DataFrame([new_rows[-1]])], ignore_index=True)
-
-    if new_rows:
-        dfs["Action Items"] = existing
-        save_session(dfs)
 
 
 # ─── Word parser ──────────────────────────────────────────────────────────────
 
 def _parse_word(file_bytes: bytes) -> dict:
+    """Parse Arabic Ministry meeting minutes. Handles the standard 4-table format."""
     try:
         doc = docx.Document(io.BytesIO(file_bytes))
     except Exception:
@@ -603,8 +443,10 @@ def _parse_word(file_bytes: bytes) -> dict:
 
     result = {
         "company": "", "date": None, "subject_ar": "", "subject_en": "",
-        "location": "", "chair": "معالي الوزير", "priority": "Very High",
-        "next_meeting": None, "attendees": "", "discussion_ar": "", "action_items": [],
+        "location": "المقر الرئيسي – وزارة الاستثمار",
+        "chair": "معالي الوزير", "priority": "Very High",
+        "next_meeting_text": "",
+        "attendees": "", "discussion_ar": "", "action_items": [],
     }
 
     tables = []
@@ -615,106 +457,356 @@ def _parse_word(file_bytes: bytes) -> dict:
             rows.append(cells)
         tables.append(rows)
 
-    paras = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    def _dedup(row: list) -> list:
+        seen, out = set(), []
+        for c in row:
+            if c not in seen:
+                seen.add(c)
+                out.append(c)
+        return out
 
-    for tbl in tables[:3]:
-        flat = " ".join(" ".join(r) for r in tbl)
-        m = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", flat)
-        if m and not result["date"]:
+    def _parse_date(s: str):
+        for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
             try:
-                result["date"] = datetime.strptime(m.group(1).replace("/", "-"), "%Y-%m-%d").date()
+                return datetime.strptime(s.strip(), fmt).date()
             except ValueError:
                 pass
-        for row in tbl:
-            joined = " ".join(row)
-            if any(kw in joined for kw in ["مستجدات", "اجتماع", "تحديث", "متابعة"]):
-                for cell in row:
-                    if cell and not any(lbl in cell for lbl in ["الموضوع", "التاريخ", "اليوم", "الموقع"]):
-                        if len(cell) > 4:
-                            result["subject_ar"] = cell
-                            break
-            if "المقر" in joined or "وزارة" in joined:
-                for cell in row:
-                    if "المقر" in cell or "وزارة" in cell:
-                        result["location"] = cell
-            if "معالي" in joined:
-                for cell in row:
-                    if "معالي" in cell:
-                        result["chair"] = cell
+        m = re.match(r"(\d{1,2})[-/](\d{1,2})[-/](\d{4})", s.strip())
+        if m:
+            try:
+                return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            except Exception:
+                pass
+        return None
 
-    known = ["Barclays", "BlackRock", "Brookfield", "Goldman", "HSBC",
-             "JPMorgan", "Morgan Stanley", "UBS", "Citi", "Deutsche"]
-    full_text = " ".join(paras)
-    for name in known:
-        if name.lower() in full_text.lower():
-            result["company"] = name
-            if not result["subject_en"]:
-                result["subject_en"] = f"Latest Updates — {name}"
-            break
+    # ── Table 0: Meeting metadata ─────────────────────────────────────────────
+    # Row 0: headers (الموضوع, الموقع, اليوم, التاريخ)
+    # Row 1: values  (subject, location, day, date)
+    # Row 2: headers (وقت, برئاسة, الأولوية, الاجتماع القادم)
+    # Row 3: values  (time, chair, priority, next_meeting)
+    if tables:
+        meta = tables[0]
+        if len(meta) >= 2:
+            row1 = _dedup(meta[1])
+            if row1:
+                result["subject_ar"] = row1[0]
+            if len(row1) >= 2:
+                result["location"] = row1[1]
+            # Date: last unique cell that looks like a date
+            for cell in reversed(row1):
+                d = _parse_date(cell)
+                if d:
+                    result["date"] = d
+                    break
+            # Extract company from subject
+            known = ["Barclays", "BlackRock", "Brookfield", "Goldman", "HSBC",
+                     "JPMorgan", "Morgan Stanley", "UBS", "Citi", "Deutsche",
+                     "Allianz", "Lazard", "Blackstone", "Carlyle", "KKR"]
+            for name in known:
+                if name.lower() in row1[0].lower():
+                    result["company"] = name
+                    result["subject_en"] = f"Latest Updates — {name}"
+                    break
 
-    disc_lines = []
-    capturing  = False
-    for p in paras:
-        if "أبرز ما تم مناقشته" in p or "أبرز نقاط" in p:
-            capturing = True
-            continue
-        if capturing:
-            if any(h in p for h in ["توجيهات معاليه", "الحضور", "بنود العمل"]):
-                capturing = False
+        if len(meta) >= 4:
+            row3 = _dedup(meta[3])
+            if len(row3) >= 2:
+                result["chair"] = row3[1]
+            if len(row3) >= 3:
+                prio_map = {"مهم جدا": "Very High", "مهم": "High", "متوسط": "Medium", "عادي": "Low"}
+                result["priority"] = prio_map.get(row3[2], "High")
+            if len(row3) >= 4:
+                result["next_meeting_text"] = row3[3]
+
+    # ── Table 1: Discussion points ────────────────────────────────────────────
+    if len(doc.tables) >= 2:
+        full_cell = doc.tables[1].rows[0].cells[0].text.strip()
+        marker = "أبرز ما تم مناقشته:"
+        if marker in full_cell:
+            disc = full_cell.split(marker, 1)[-1].strip()
+        else:
+            disc = full_cell
+        result["discussion_ar"] = disc
+
+    # ── Table 2: Action items ─────────────────────────────────────────────────
+    if len(tables) >= 3:
+        act_tbl = tables[2]
+        for row in act_tbl[1:]:
+            cells = _dedup(row)
+            # Skip row if empty or only numbers
+            non_empty = [c for c in cells if c and not re.match(r"^\d+$", c)]
+            if not non_empty:
                 continue
-            if p:
-                disc_lines.append(p.lstrip("•● -"))
-    result["discussion_ar"] = "\n".join(disc_lines)
-
-    for tbl in tables:
-        if not tbl:
-            continue
-        header_flat = " ".join(tbl[0])
-        is_actions  = any(kw in header_flat for kw in ["المهمة", "التوجيه", "Action Item", "ID"])
-        if not is_actions and len(tbl) >= 2:
-            is_actions = any(kw in " ".join(tbl[1]) for kw in ["المهمة", "التوجيه"])
-        if not is_actions:
-            continue
-        for row in tbl[1:]:
-            cells      = [c.strip() for c in row if c.strip()]
-            text_cells = [c for c in cells if not re.match(r"^\d+$", c)]
-            if not text_cells:
+            action_ar = non_empty[0]
+            if action_ar in ("م", "التوجيه / المهمة", "Action Item", ""):
                 continue
-            action_ar = text_cells[0] if text_cells else ""
-            owner, prio, due = "", "High", None
-            for cell in text_cells[1:]:
-                if re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", cell):
-                    try:
-                        m = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", cell)
-                        if m:
-                            due = datetime.strptime(m.group(1).replace("/", "-"), "%Y-%m-%d").date()
-                    except Exception:
-                        pass
-                elif cell in _PRIORITY_EN:
-                    prio = _PRIORITY_EN[cell]
-                elif not owner and len(cell) > 1 and cell not in _PRIORITY_AR.values():
-                    owner = cell
-            if action_ar and action_ar not in ("م", "التوجيه / المهمة", "Action Item"):
-                result["action_items"].append({
-                    "Action (AR)": action_ar, "Action (EN)": "",
-                    "Assigned To": owner, "Type": "Action",
-                    "Priority": prio, "Due Date": due, "Remarks": "",
-                })
 
-    for tbl in reversed(tables):
-        header_flat = " ".join(tbl[0]) if tbl else ""
-        if "الاسم" in header_flat or "الوظيفة" in header_flat or "الحضور" in header_flat:
-            att_lines = []
-            for row in tbl[1:]:
-                cells = [c.strip() for c in row if c.strip()]
-                if len(cells) >= 2:
-                    att_lines.append(f"{cells[0]} | {cells[1]}")
-                elif cells:
-                    att_lines.append(cells[0])
-            result["attendees"] = "\n".join(att_lines)
-            break
+            owner_ar  = non_empty[1] if len(non_empty) > 1 else ""
+            prio_ar   = non_empty[2] if len(non_empty) > 2 else ""
+            due_ar    = non_empty[3] if len(non_empty) > 3 else ""
+
+            owner_en = _OWNER_AR.get(owner_ar, owner_ar)
+            prio_en  = _PRIORITY_AR.get(prio_ar, "High")
+            if prio_en == "Ongoing":
+                prio_en = "High"
+
+            result["action_items"].append({
+                "Action (AR)": action_ar,
+                "Action (EN)": "",
+                "Assigned To": owner_en,
+                "Type":        "Action",
+                "Priority":    prio_en,
+                "Due Date":    None,
+                "Due Text":    due_ar,
+                "Due Text EN": "",
+                "Remarks":     "",
+                "Status":      "Not Started",
+            })
+
+    # ── Table 3: Attendees ────────────────────────────────────────────────────
+    if len(tables) >= 4:
+        att_lines = []
+        for row in tables[3][1:]:
+            cells = [c for c in _dedup(row) if c and not re.match(r"^\d+$", c)]
+            if len(cells) >= 2:
+                att_lines.append(f"{cells[0]} | {cells[1]}")
+            elif cells:
+                att_lines.append(cells[0])
+        result["attendees"] = "\n".join(att_lines)
 
     return result
+
+
+# ─── Letter builder (Word doc) ────────────────────────────────────────────────
+
+def _build_letter_docx(cfg: dict, actions_df: pd.DataFrame) -> bytes:
+    """Generate a Word letter matching the Barclays_Email_Letter.docx template format."""
+    from docx.shared import Pt, RGBColor, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    co         = cfg["company"]
+    mtg        = cfg["meeting_date"]
+    arm        = cfg["arm"] or "Dana Aljarbu"
+    exec_rm    = cfg["exec_rm"] or "Sara Al-Sayed"
+    recipient  = cfg["recipient"] or f"{co} Team"
+    next_text  = cfg.get("next_meeting_text", "")
+    yr_mon     = date.today().strftime("%Y-%m")
+
+    arm_email  = (f"{arm.split()[0].lower()}."
+                  f"{''.join(arm.split()[1:]).lower()}@misa.gov.sa")
+    exec_email = (f"{exec_rm.split()[0].lower()}."
+                  f"{''.join(exec_rm.split()[1:]).lower()}@misa.gov.sa")
+
+    doc = docx.Document()
+    sec = doc.sections[0]
+    sec.left_margin   = Inches(1.0)
+    sec.right_margin  = Inches(1.0)
+    sec.top_margin    = Inches(0.75)
+    sec.bottom_margin = Inches(0.75)
+
+    def _rgb(h: str) -> RGBColor:
+        h = h.lstrip("#")
+        return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+    def _cell_bg(cell, hex_color: str):
+        tcPr = cell._tc.get_or_add_tcPr()
+        shd  = OxmlElement("w:shd")
+        shd.set(qn("w:val"), "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"), hex_color.lstrip("#").upper())
+        tcPr.append(shd)
+
+    def _run(para, text: str, bold=False, size_pt=11.0, color="1C1C1C"):
+        r = para.add_run(text)
+        r.bold            = bold
+        r.font.size       = Pt(size_pt)
+        r.font.color.rgb  = _rgb(color)
+        return r
+
+    def _para(text="", bold=False, size_pt=11.0, color="1C1C1C", align=WD_ALIGN_PARAGRAPH.LEFT):
+        p = doc.add_paragraph()
+        p.alignment = align
+        if text:
+            _run(p, text, bold=bold, size_pt=size_pt, color=color)
+        return p
+
+    # ── Ministry header table ─────────────────────────────────────────────────
+    hdr = doc.add_table(rows=2, cols=1)
+    hdr.style = "Table Grid"
+
+    c0 = hdr.rows[0].cells[0]
+    _cell_bg(c0, "217141")
+    p0 = c0.paragraphs[0]
+    p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p0, "Ministry of Investment  |  وزارة الاستثمار",
+         bold=True, size_pt=12, color="FFFFFF")
+
+    c1 = hdr.rows[1].cells[0]
+    _cell_bg(c1, "1A5C3F")
+    p1 = c1.paragraphs[0]
+    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p1, "Minister's Office  —  مكتب الوزير", size_pt=10, color="C9974A")
+
+    _para()  # blank line
+
+    # ── Date + Reference ──────────────────────────────────────────────────────
+    ref_p = doc.add_paragraph()
+    _run(ref_p, "Date: ",          bold=True, size_pt=10, color="555555")
+    _run(ref_p, f"{mtg}",          bold=False, size_pt=10, color="555555")
+    _run(ref_p, f"     |     Ref: MISA / {co} / ARM / {yr_mon}",
+         bold=False, size_pt=10, color="999999")
+
+    _para()
+
+    # ── Greeting ──────────────────────────────────────────────────────────────
+    greet = doc.add_paragraph()
+    _run(greet, f"Dear {recipient},", bold=True, size_pt=12, color="1C1C1C")
+    _para()
+
+    # ── Body ──────────────────────────────────────────────────────────────────
+    _para("I hope this message finds you well.", size_pt=11)
+    _para()
+
+    p3 = doc.add_paragraph()
+    _run(p3, "On behalf of the ")
+    _run(p3, "Ministry of Investment", bold=True)
+    _run(p3, ", we would like to express our sincere appreciation for our strong and "
+         "growing partnership with ")
+    _run(p3, co, bold=True)
+    _run(p3, ", and reaffirm our commitment to supporting your continued growth and "
+         "success in the Kingdom following our meeting on ")
+    _run(p3, mtg, bold=True)
+    _run(p3, ".")
+    _para()
+
+    p4 = doc.add_paragraph()
+    _run(p4, "In this regard, we are pleased to confirm that ")
+    _run(p4, arm, bold=True)
+    _run(p4, " will be leading the account team as the ")
+    _run(p4, f"Account Relationship Manager (ARM) for {co}", bold=True)
+    _run(p4, " — serving as your primary point of contact for all operational matters "
+         "and coordination. ")
+    _run(p4, exec_rm, bold=True)
+    _run(p4, " from the Minister's Office will act as the ")
+    _run(p4, "Executive Relationship Manager", bold=True)
+    _run(p4, " for any topics related to the Minister.")
+    _para()
+
+    _para("As a progress update, please find below the current status of our agreed "
+          "action items and key workstreams:", size_pt=11)
+    _para()
+
+    # ── Action items table ────────────────────────────────────────────────────
+    if not actions_df.empty:
+        tbl = doc.add_table(rows=1, cols=7)
+        tbl.style = "Table Grid"
+
+        # Header row
+        hdrs = ["#", "Action Item", "Description / Update",
+                "MISA Owner", "Priority", "Timeline", "Status"]
+        widths = [0.25, 1.3, 2.7, 1.2, 0.65, 1.05, 0.85]
+        for j, (cell, hdr_txt) in enumerate(zip(tbl.rows[0].cells, hdrs)):
+            _cell_bg(cell, "217141")
+            p = cell.paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _run(p, hdr_txt, bold=True, size_pt=9, color="FFFFFF")
+            try:
+                from docx.oxml import OxmlElement as OE
+                tc   = cell._tc
+                tcPr = tc.get_or_add_tcPr()
+                tcW  = OE("w:tcW")
+                tcW.set(qn("w:w"), str(int(widths[j] * 1440)))
+                tcW.set(qn("w:type"), "dxa")
+                tcPr.append(tcW)
+            except Exception:
+                pass
+
+        for i, (_, row) in enumerate(actions_df.iterrows()):
+            en     = (row.get("Action (EN)") or row.get("Action (AR)", "")).strip()
+            owner  = str(row.get("Assigned To", "") or "")
+            prio   = str(row.get("Priority", "Medium") or "Medium")
+            due    = str(row.get("Due Text EN", "") or row.get("Due Text", "") or
+                         row.get("Due Date", "") or "TBD")
+            status = str(row.get("Status", "Not Started") or "Not Started")
+
+            short  = (en[:55].rsplit(" ", 1)[0] + "…") if len(en) > 55 else en
+            bg     = "FFFFFF" if i % 2 == 0 else "F5F5F5"
+            st_bg  = _STATUS_FILLS.get(status, "F2F2F2")
+
+            data_row = tbl.add_row()
+            vals_bgs = [
+                (str(i + 1), bg), (short, bg), (en, bg),
+                (owner, bg), (prio, bg), (due, bg), (status, st_bg),
+            ]
+            for j, (val, cell_bg) in enumerate(vals_bgs):
+                cell = data_row.cells[j]
+                _cell_bg(cell, cell_bg)
+                p = cell.paragraphs[0]
+                if j == 0:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                _run(p, val, size_pt=9, color="1C1C1C")
+
+    _para()
+
+    # ── Closing ───────────────────────────────────────────────────────────────
+    p7 = doc.add_paragraph()
+    _run(p7, "We remain fully committed to supporting ")
+    _run(p7, co, bold=True)
+    _run(p7, " in growing its presence in the Kingdom and to progressing all "
+         "workstreams with the attention they deserve.")
+    _para()
+
+    upcoming = f"our upcoming meeting in {next_text}" if next_text else "our upcoming meeting"
+    _para(f"We look forward to our continued collaboration and to {upcoming}.")
+    _para()
+
+    p9 = doc.add_paragraph()
+    _run(p9, "Please feel free to contact ")
+    _run(p9, arm, bold=True)
+    _run(p9, " directly for all day-to-day coordination (CC: ")
+    _run(p9, exec_rm, bold=True)
+    _run(p9, " for any ministerial matters).")
+    _para()
+
+    _para("Yours sincerely,")
+    _para()
+    _para()
+
+    # ── Signature ─────────────────────────────────────────────────────────────
+    sig_n = doc.add_paragraph()
+    _run(sig_n, exec_rm, bold=True, size_pt=11.5, color="217141")
+
+    sig_t = doc.add_paragraph()
+    _run(sig_t, "Executive Relationship Manager  |  Minister's Office",
+         size_pt=10.5, color="555555")
+
+    sig_m = doc.add_paragraph()
+    _run(sig_m, "Ministry of Investment  |  Kingdom of Saudi Arabia",
+         size_pt=10.5, color="555555")
+
+    sig_e = doc.add_paragraph()
+    _run(sig_e, "E: ",         size_pt=10, color="888888")
+    _run(sig_e, exec_email,    size_pt=10, color="1A5276")
+    _run(sig_e, "   |   ARM: ", size_pt=10, color="888888")
+    _run(sig_e, arm_email,     size_pt=10, color="1A5276")
+
+    _para()
+
+    # ── Footer table ──────────────────────────────────────────────────────────
+    ftr = doc.add_table(rows=1, cols=1)
+    ftr.style = "Table Grid"
+    fc = ftr.rows[0].cells[0]
+    _cell_bg(fc, "217141")
+    fp = fc.paragraphs[0]
+    fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(fp, "Ministry of Investment  |  Kingdom of Saudi Arabia  |  www.misa.gov.sa",
+         size_pt=9, color="FFFFFF")
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
 
 
 # ─── Excel builder ────────────────────────────────────────────────────────────
@@ -727,7 +819,13 @@ def _build_excel(existing_bytes, company, meeting_date, next_meeting, chair, act
         if "Sheet" in wb.sheetnames:
             del wb["Sheet"]
 
-    sheet_name = company[:31]
+    # Match existing sheet with fuzzy name (handles typos like "Barclyes")
+    target_sheet = None
+    for sname in wb.sheetnames:
+        if company.lower() in sname.lower() or sname.lower() in company.lower():
+            target_sheet = sname
+            break
+    sheet_name = target_sheet or f"Action Items {company}"[:31]
 
     if sheet_name in wb.sheetnames:
         ws       = wb[sheet_name]
@@ -750,17 +848,22 @@ def _build_excel(existing_bytes, company, meeting_date, next_meeting, chair, act
     )
 
     for i, (_, row) in enumerate(actions_df.iterrows()):
-        r = start_row + i
-        due = row.get("Due Date")
-        due_val  = due if (due and str(due) not in ("NaT", "None", "")) else None
-        prio_val = _map_prio(row.get("Priority", "Medium"))
+        r       = start_row + i
+        due_val = None
+        due_raw = row.get("Due Date")
+        if due_raw and str(due_raw) not in ("NaT", "None", ""):
+            due_val = due_raw
+
+        prio_map = {"Very High": "Very High", "High": "High", "Medium": "Medium", "Low": "Low"}
+        prio_val = prio_map.get(str(row.get("Priority", "Medium")), "Medium")
+        due_text = str(row.get("Due Text EN", "") or row.get("Due Text", "") or "")
 
         ws.cell(r, 7,  i + 1)
         ws.cell(r, 8,  row.get("Action (EN)") or row.get("Action (AR)", ""))
         ws.cell(r, 9,  row.get("Assigned To", ""))
         ws.cell(r, 10, row.get("Type", "Action"))
         ws.cell(r, 11, meeting_date)
-        ws.cell(r, 12, due_val)
+        ws.cell(r, 12, due_val or due_text)
         ws.cell(r, 13, prio_val)
         ws.cell(r, 14, 0)
         ws.cell(r, 15, "Not Started")
@@ -776,7 +879,7 @@ def _build_excel(existing_bytes, company, meeting_date, next_meeting, chair, act
         ws.row_dimensions[r].height = 40
 
     if start_row == 21:
-        widths = {7: 6, 8: 50, 9: 18, 10: 18, 11: 12, 12: 12, 13: 12, 14: 10, 15: 14, 16: 30}
+        widths = {7: 6, 8: 50, 9: 18, 10: 18, 11: 12, 12: 16, 13: 12, 14: 10, 15: 14, 16: 30}
         for col, w in widths.items():
             ws.column_dimensions[get_column_letter(col)].width = w
 
@@ -796,14 +899,14 @@ def _write_sheet_header(ws, company, meeting_date, next_meeting, chair):
     ws.cell(13, 11).fill = green_fill
     ws.cell(13, 15, "Last Updated").font = white_font
     ws.cell(13, 15).fill = green_fill
-    ws.cell(13, 16, meeting_date).font = white_font
+    ws.cell(13, 16, str(meeting_date)).font = white_font
     ws.cell(13, 16).fill = gold_fill
     ws.cell(14, 11, "Manager").font = white_font
     ws.cell(14, 11).fill = green_fill
-    ws.cell(14, 12, chair).font = Font(bold=True, size=10)
+    ws.cell(14, 12, str(chair)).font = Font(bold=True, size=10)
     ws.cell(16, 15, "Next Meeting").font = white_font
     ws.cell(16, 15).fill = green_fill
-    ws.cell(16, 16, next_meeting or "TBD").font = gold_font
+    ws.cell(16, 16, str(next_meeting) if next_meeting else "TBD").font = gold_font
     ws.cell(16, 16).fill = gold_fill
 
     for r in range(13, 20):
@@ -820,26 +923,58 @@ def _write_sheet_header(ws, company, meeting_date, next_meeting, chair):
     ws.freeze_panes = "G21"
 
 
+# ─── CRM sync ────────────────────────────────────────────────────────────────
+
+def _sync_actions_to_crm(dfs: dict, actions: pd.DataFrame, company: str):
+    if actions.empty or not company:
+        return
+    investors = dfs.get("Investor Master", pd.DataFrame())
+    inv_id    = _investor_id(investors, company)
+    existing  = dfs.get("Action Items", pd.DataFrame())
+    new_rows  = []
+
+    for _, row in actions.iterrows():
+        desc = (row.get("Action (EN)") or row.get("Action (AR)", "")).strip()
+        if not desc:
+            continue
+        if not existing.empty and "Action Description" in existing.columns:
+            if (existing["Action Description"].astype(str).str.strip() == desc).any():
+                continue
+        tmp  = pd.concat([existing, pd.DataFrame(new_rows)], ignore_index=True) if new_rows else existing
+        new_id = _next_act_id(tmp)
+        new_rows.append({
+            "Action ID":          new_id,
+            "Investor ID":        inv_id,
+            "Company Name":       company,
+            "Action Description": desc,
+            "Assigned To":        str(row.get("Assigned To", "") or ""),
+            "Sector":             "",
+            "Type of Engagement": str(row.get("Type", "Action") or "Action"),
+            "Start Date":         date.today(),
+            "Due Date":           row.get("Due Date") if row.get("Due Date") and pd.notna(row.get("Due Date")) else None,
+            "Priority":           str(row.get("Priority", "Medium") or "Medium"),
+            "Progress":           "0%",
+            "Status":             "Not Started",
+            "Escalation Flag":    "None",
+            "Remarks":            str(row.get("Remarks", "") or ""),
+            "Last Updated":       date.today(),
+        })
+        existing = pd.concat([existing, pd.DataFrame([new_rows[-1]])], ignore_index=True)
+
+    if new_rows:
+        dfs["Action Items"] = existing
+        save_session(dfs)
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _valid_actions(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
-    mask = (
-        (df.get("Action (EN)", pd.Series(dtype=str)).notna() & (df.get("Action (EN)", pd.Series(dtype=str)) != "")) |
-        (df.get("Action (AR)", pd.Series(dtype=str)).notna() & (df.get("Action (AR)", pd.Series(dtype=str)) != ""))
-    )
-    return df[mask]
-
-
-def _map_prio(p: str) -> str:
-    return {"Very High": "High", "High": "High", "Medium": "Medium", "Low": "Low"}.get(p, "Medium")
-
-
-def _parse_lines(text: str) -> list:
-    if not text:
-        return []
-    return [ln.strip().lstrip("•●-– ") for ln in text.split("\n") if ln.strip()]
+    en_col = df.get("Action (EN)", pd.Series(dtype=str))
+    ar_col = df.get("Action (AR)", pd.Series(dtype=str))
+    mask   = (en_col.notna() & (en_col != "")) | (ar_col.notna() & (ar_col != ""))
+    return df[mask].reset_index(drop=True)
 
 
 def _get_excel_sheets(raw: bytes) -> list:
@@ -857,13 +992,13 @@ def _investor_id(investors: pd.DataFrame, company: str) -> str:
     return str(m.iloc[0].get("Investor ID", "")) if not m.empty else ""
 
 
-def _next_act_id(df: pd.DataFrame, offset: int = 0) -> str:
+def _next_act_id(df: pd.DataFrame) -> str:
     if df.empty or "Action ID" not in df.columns:
-        return f"ACT-{(1 + offset):03d}"
+        return "ACT-001"
     nums = []
     for v in df["Action ID"].dropna():
         try:
             nums.append(int(str(v).split("-")[-1]))
         except ValueError:
             pass
-    return f"ACT-{(max(nums) + 1 + offset if nums else 1 + offset):03d}"
+    return f"ACT-{(max(nums) + 1 if nums else 1):03d}"
