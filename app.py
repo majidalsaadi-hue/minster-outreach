@@ -65,12 +65,20 @@ def _init_state():
 
 _init_state()
 
-# Auto-load saved session on first run
+# ── Auto-save on every rerun (runs before main so st.rerun() can't skip it) ──
+if st.session_state.get("dfs") is not None:
+    try:
+        save_session(st.session_state["dfs"])
+    except Exception:
+        pass
+
+# ── Auto-load saved session on first run ─────────────────────────────────────
 if st.session_state["dfs"] is None:
     _saved = load_session()
     if _saved is not None:
         st.session_state["dfs"]     = _saved
         st.session_state["summary"] = get_summary(_saved)
+        st.session_state.setdefault("last_upload_time", "Auto-loaded")
 
 
 # ── Language helpers ─────────────────────────────────────────────────────────
@@ -168,7 +176,7 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
 
-        # ── Save status indicator + manual save button ───────────────────────
+        # ── Auto-save status indicator ───────────────────────────────────────
         if st.session_state.get("dfs") is not None:
             save_status = st.session_state.get("save_status", "")
             save_time   = st.session_state.get("save_time", "")
@@ -176,7 +184,7 @@ def render_sidebar():
             if save_status == "ok":
                 st.markdown(f"""
                 <div style="font-size:11px;color:#70C99C;margin-top:6px;text-align:center;">
-                  💾 Saved at {save_time}
+                  💾 Auto-saved {save_time}
                 </div>""", unsafe_allow_html=True)
             elif save_status.startswith("error"):
                 err_msg = save_status.replace("error: ", "")
@@ -188,16 +196,8 @@ def render_sidebar():
                 st.markdown("""
                 <div style="font-size:11px;color:rgba(255,255,255,0.4);
                             margin-top:6px;text-align:center;">
-                  💾 Not yet saved
+                  💾 Saving…
                 </div>""", unsafe_allow_html=True)
-
-            if st.button("💾 Save Now", use_container_width=True, key="manual_save"):
-                ok = save_session(st.session_state["dfs"])
-                if ok:
-                    st.success("Saved!")
-                else:
-                    err = st.session_state.get("save_status", "")
-                    st.error(f"Save failed: {err}")
 
         return page
 
@@ -552,9 +552,3 @@ def _require_data():
 
 if __name__ == "__main__":
     main()
-    # Auto-save after every interaction
-    if st.session_state.get("dfs") is not None:
-        try:
-            save_session(st.session_state["dfs"])
-        except Exception:
-            pass

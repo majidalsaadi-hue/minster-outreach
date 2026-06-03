@@ -8,7 +8,7 @@ import pandas as pd
 
 from data.schema import SCHEMA
 
-SAVE_PATH = Path(__file__).parent.parent / "crm_data.xlsx"
+SAVE_PATH = Path.home() / ".misa_crm" / "crm_data.xlsx"
 
 # Written to session state key "save_status": "ok" | "error: <msg>"
 _STATUS_KEY = "save_status"
