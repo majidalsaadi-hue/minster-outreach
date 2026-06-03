@@ -105,8 +105,9 @@ def _init():
         "rb_output_lang":      "English",
         "rb_excel_bytes":      None,
         "rb_result":           None,
-        "rb_manual_opps":      "",
-        "rb_detected_opps":    [],
+        "rb_manual_opps":       "",
+        "rb_detected_opps":     [],
+        "rb_last_opp_company":  "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -222,13 +223,10 @@ def render(dfs: dict, lang: str):
         if _rm:
             st.session_state["rb_exec_rm"]  = _rm
             st.session_state["rb_exec_inp"] = _rm
-        # Detect potential opportunities from action items
+        # Detect potential opportunities from action items (keeps company per item)
         _det = _detect_opps_from_actions(st.session_state["rb_excel_bytes"])
         st.session_state["rb_detected_opps"] = _det
-        if _det and not st.session_state.get("rb_manual_opps"):
-            prefill = "\n".join(_det)
-            st.session_state["rb_manual_opps"]    = prefill
-            st.session_state["rb_manual_opps_ta"] = prefill
+        # Don't pre-fill text area here — we filter by company in Step 2
 
     # ── Step 2: Configure ─────────────────────────────────────────────────────
     with st.container(border=True):
@@ -280,19 +278,43 @@ def render(dfs: dict, lang: str):
 
         # ── Opportunities ─────────────────────────────────────────────────────
         st.markdown("**Opportunities**")
-        _det_opps = st.session_state.get("rb_detected_opps", [])
-        if _det_opps:
-            with st.expander(f"ℹ️ {len(_det_opps)} potential opportunit{'y' if len(_det_opps)==1 else 'ies'} detected from action items — click to review", expanded=False):
-                for _o in _det_opps:
-                    st.markdown(f"- {_o}")
-                st.caption("These are action items classified as 'Opportunity' type in your Excel tracker.")
+        _cur_company = st.session_state.get("rb_company", "")
+        _all_det     = st.session_state.get("rb_detected_opps", [])
+
+        # Filter detected opps to the currently selected company only
+        _co_det = [o for o in _all_det if o.get("company", "").lower() in _cur_company.lower()
+                   or _cur_company.lower() in o.get("company", "").lower()] if _cur_company else []
+
+        # Show all companies' detected opps grouped (informational)
+        if _all_det:
+            from collections import defaultdict as _dd
+            _by_co: dict = _dd(list)
+            for _o in _all_det:
+                _by_co[_o["company"]].append(_o["name"])
+            with st.expander(f"ℹ️ {len(_all_det)} potential opportunit{'y' if len(_all_det)==1 else 'ies'} detected across all companies — click to review", expanded=False):
+                for _co, _names in _by_co.items():
+                    st.markdown(f"**{_co}**")
+                    for _n in _names:
+                        st.markdown(f"  - {_n}")
+                st.caption("Action items classified as 'Opportunity' type. The text area below is pre-filled for the selected company only.")
+
+        # Pre-fill text area when company changes and it's currently empty
+        _co_names = [o["name"] for o in _co_det]
+        _prev_company = st.session_state.get("rb_last_opp_company", "")
+        if _cur_company != _prev_company:
+            # Company changed — reset text area to this company's detected opps
+            prefill = "\n".join(_co_names)
+            st.session_state["rb_manual_opps"]       = prefill
+            st.session_state["rb_manual_opps_ta"]    = prefill
+            st.session_state["rb_last_opp_company"]  = _cur_company
+
         st.session_state["rb_manual_opps"] = st.text_area(
-            "Opportunities to include in report & pipeline (one per line)",
+            f"Opportunities for {_cur_company or 'selected company'} (one per line)",
             value=st.session_state["rb_manual_opps"],
             placeholder="e.g.\nInvestment in fintech ecosystem\nHealthcare matchmaking with InterHealth",
             height=120,
             key="rb_manual_opps_ta",
-            help="These will appear in the letter and be synced to the Opportunity Pipeline.",
+            help="These will appear in the letter and be synced to the Opportunity Pipeline for this company only.",
         )
 
     # ── Step 3: Generate ──────────────────────────────────────────────────────
@@ -362,17 +384,22 @@ def render(dfs: dict, lang: str):
                 _log("Syncing action items to CRM…", 75)
                 _sync_actions_to_crm(dfs, actions, company)
 
-                # 4 — Opportunities: Excel header block + manual text area
+                # 4 — Opportunities: Excel header block + detected (per-company) + manual
                 opp_count = 0
                 opp_items: list[dict] = []
                 if s.get("rb_excel_bytes"):
                     _log("Syncing opportunities…", 90)
                     try:
                         _wb_ops   = openpyxl.load_workbook(io.BytesIO(s["rb_excel_bytes"]))
+                        # Header-block opps (already carry correct company from sheet name)
                         opp_items = _parse_opps_from_excel(_wb_ops)
+                        # Detected action-item opps (carry correct company per sheet)
+                        for _do in s.get("rb_detected_opps", []):
+                            if _do["name"] not in {o["name"] for o in opp_items}:
+                                opp_items.append(_do)
                     except Exception:
                         pass
-                # Add manual entries (dedup against header-block items)
+                # Manual text-area entries → current company only
                 existing_names = {o["name"] for o in opp_items}
                 for mo in manual_opps:
                     if mo not in existing_names:
@@ -1210,17 +1237,23 @@ def _read_am_rm_from_excel(raw_bytes: bytes) -> tuple[str, str]:
     return "", ""
 
 
-def _detect_opps_from_actions(raw_bytes: bytes) -> list[str]:
+def _detect_opps_from_actions(raw_bytes: bytes) -> list[dict]:
     """
     Scan all sheets for action item rows whose Type of Engagement = 'Opportunity'.
-    Returns the action item descriptions as suggested opportunity names.
+    Returns list of {company, name} dicts — one per unique action item.
     """
-    results: list[str] = []
+    results: list[dict] = []
     _seen: set[str] = set()
     try:
         wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
         for ws in wb.worksheets:
-            # Find the header row by looking for the "Action Item" column header
+            # Derive company name from sheet name
+            co = ws.title.strip()
+            for prefix in ("Action Items", "Actions", "Action Item"):
+                if co.lower().startswith(prefix.lower()):
+                    co = co[len(prefix):].strip()
+                    break
+
             hdr_row = None
             for r in range(15, 25):
                 for c in range(1, 20):
@@ -1232,7 +1265,6 @@ def _detect_opps_from_actions(raw_bytes: bytes) -> list[str]:
             if not hdr_row:
                 continue
 
-            # Build column index map from headers
             col_map: dict[str, int] = {}
             for c in range(1, 20):
                 v = str(ws.cell(row=hdr_row, column=c).value or "").strip()
@@ -1254,7 +1286,7 @@ def _detect_opps_from_actions(raw_bytes: bytes) -> list[str]:
                 eng = str(ws.cell(row=r, column=type_col).value or "").strip().lower()
                 if eng == "opportunity" and ai not in _seen:
                     _seen.add(ai)
-                    results.append(ai)
+                    results.append({"company": co or ws.title, "name": ai})
     except Exception:
         pass
     return results
