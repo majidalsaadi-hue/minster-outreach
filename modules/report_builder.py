@@ -610,9 +610,13 @@ def _parse_word(file_bytes: bytes) -> dict:
 
     # ── Discussion table ──────────────────────────────────────────────────────
     _disc_rows = _classified.get("discussion")
-    if _disc_rows is None and len(tables) >= 2:
-        # Fallback: use position 1 if no table was classified as discussion
-        _disc_rows = tables[1]
+    if _disc_rows is None:
+        # Positional fallback: table 1, only if it wasn't claimed as actions/attendees
+        _claimed = {id(_t) for _t in _classified.values()}
+        for _t in tables[1:]:
+            if id(_t) not in _claimed:
+                _disc_rows = _t
+                break
     if _disc_rows:
         full_cell = _disc_rows[0][0] if _disc_rows[0] else ""
         marker = "أبرز ما تم مناقشته:"
