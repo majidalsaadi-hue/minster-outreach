@@ -319,19 +319,35 @@ def render(dfs: dict, lang: str):
                 _log("Generating company letter (.docx)…", 55)
                 letter_bytes = _build_letter_docx(cfg, actions)
 
-                # 3 — CRM sync
-                _log("Syncing action items to CRM…", 80)
+                # 3 — CRM sync (actions)
+                _log("Syncing action items to CRM…", 75)
                 _sync_actions_to_crm(dfs, actions, company)
 
+                # 4 — Opportunities from Excel header block
+                opp_count = 0
+                if s.get("rb_excel_bytes"):
+                    _log("Syncing opportunities from Excel header block…", 90)
+                    try:
+                        _wb_ops   = openpyxl.load_workbook(io.BytesIO(s["rb_excel_bytes"]))
+                        opp_items = _parse_opps_from_excel(_wb_ops)
+                        _sync_opps_to_crm(dfs, opp_items, company)
+                        opp_count = len(opp_items)
+                    except Exception:
+                        pass
+
                 prog.progress(100)
-                status.success("✓ Pipeline complete — 3 outputs ready")
+                status.success(
+                    f"✓ Pipeline complete — 3 outputs ready"
+                    + (f"  |  {opp_count} opportunit{'y' if opp_count == 1 else 'ies'} synced" if opp_count else "")
+                )
 
                 st.session_state["rb_result"] = {
-                    "actions":     actions,
-                    "xl_bytes":    updated_xl,
-                    "letter":      letter_bytes,
-                    "company":     company,
+                    "actions":      actions,
+                    "xl_bytes":     updated_xl,
+                    "letter":       letter_bytes,
+                    "company":      company,
                     "meeting_date": mtg_date,
+                    "opp_count":    opp_count,
                 }
 
             except Exception as e:
@@ -393,8 +409,12 @@ def _render_output(result: dict):
                     use_container_width=True, key="rb_dl_letter",
                 )
 
+        opp_count = result.get("opp_count", 0)
         if xl_bytes and letter:
-            st.success("✓ Both files are ready. Action items have been synced to CRM.")
+            msg = "✓ Both files are ready. Action items have been synced to CRM."
+            if opp_count:
+                msg += f" **{opp_count} opportunit{'y' if opp_count == 1 else 'ies'}** added to Opportunity Pipeline."
+            st.success(msg)
 
 
 def _render_action_table(df: pd.DataFrame):
@@ -921,6 +941,92 @@ def _write_sheet_header(ws, company, meeting_date, next_meeting, chair):
         cell.alignment = center_al
     ws.row_dimensions[20].height = 22
     ws.freeze_panes = "G21"
+
+
+# ─── Opportunity extraction & sync ───────────────────────────────────────────
+
+def _parse_opps_from_excel(wb) -> list:
+    """
+    Read all sheets in the workbook and extract opportunity names from the
+    header block rows 14-19, column H — the cells the user fills in to list
+    major opportunities arising from each meeting.
+    Returns a list of dicts: {company, name}.
+    """
+    _SKIP_VALS = {"opportunity", "opportunities", "type", "n/a", "none", ""}
+    opps = []
+    for sname in wb.sheetnames:
+        # Derive company name by stripping "Action Items" prefix
+        co = sname.strip()
+        for prefix in ("Action Items", "Actions", "Action Item"):
+            if co.lower().startswith(prefix.lower()):
+                co = co[len(prefix):].strip()
+                break
+
+        ws = wb[sname]
+        for row_idx in range(14, 20):       # rows 14-19 (header block area)
+            cell_val = ws.cell(row_idx, 8).value   # column H
+            if cell_val is None:
+                continue
+            val = str(cell_val).strip()
+            if not val:
+                continue
+            if val.lower() in _SKIP_VALS:
+                continue
+            # Skip row-label artefacts like "4 Manager", "¦ Last Updated"
+            if val[:2] in ("4 ", "¦ ", "¹ ") or val[0] in "¦¹":
+                continue
+            opps.append({"company": co or sname, "name": val})
+    return opps
+
+
+def _next_opp_id(df: pd.DataFrame) -> str:
+    if df.empty or "Opportunity ID" not in df.columns:
+        return "OPP-001"
+    nums = []
+    for v in df["Opportunity ID"].dropna():
+        try:
+            nums.append(int(str(v).split("-")[-1]))
+        except ValueError:
+            pass
+    return f"OPP-{(max(nums) + 1 if nums else 1):03d}"
+
+
+def _sync_opps_to_crm(dfs: dict, opp_items: list, default_company: str):
+    """Add extracted opportunities to Opportunity Pipeline (deduplicates by name)."""
+    if not opp_items:
+        return
+    investors = dfs.get("Investor Master", pd.DataFrame())
+    existing  = dfs.get("Opportunity Pipeline", pd.DataFrame())
+    new_rows  = []
+
+    for item in opp_items:
+        company = item.get("company") or default_company
+        name    = item["name"]
+        # Skip if already in pipeline
+        if not existing.empty and "Opportunity Name" in existing.columns:
+            if (existing["Opportunity Name"].astype(str).str.strip() == name).any():
+                continue
+        tmp    = pd.concat([existing, pd.DataFrame(new_rows)], ignore_index=True) if new_rows else existing
+        new_id = _next_opp_id(tmp)
+        inv_id = _investor_id(investors, company)
+        new_row = {
+            "Opportunity ID":     new_id,
+            "Investor ID":        inv_id,
+            "Company Name":       company,
+            "Opportunity Name":   name,
+            "Sector":             "",
+            "Opportunity Stage":  "Exploration",
+            "Opportunity Status": "Active",
+            "Opportunity Type":   "Opportunity",
+            "Opportunity Source": "Excel Tracker Import",
+            "Last Updated":       date.today(),
+        }
+        new_rows.append(new_row)
+        existing = pd.concat([existing, pd.DataFrame([new_row])], ignore_index=True)
+
+    if new_rows:
+        dfs["Opportunity Pipeline"] = existing
+        save_session(dfs)
 
 
 # ─── CRM sync ────────────────────────────────────────────────────────────────
