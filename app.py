@@ -43,7 +43,8 @@ from modules.opportunities import render as render_opportunities
 from modules.actions       import render as render_actions
 from modules.tasks         import render as render_tasks
 from modules.deals         import render as render_deals
-from modules.report_builder import render as render_report_builder
+from modules.report_builder      import render as render_report_builder
+from modules.company_directory   import render as render_company_directory
 
 from exports.pptx_generator import generate_pptx, generate_pptx_company
 from exports.pdf_generator  import generate_pdf
@@ -123,10 +124,11 @@ def render_sidebar():
             T("nav_meetings"):      "meetings",
             T("nav_opportunities"): "opportunities",
             T("nav_deals"):          "deals",
-            T("nav_report_builder"): "report_builder",
-            T("nav_actions"):        "actions",
-            T("nav_tasks"):         "tasks",
-            T("nav_export"):        "export",
+            T("nav_report_builder"):    "report_builder",
+            T("nav_company_directory"): "company_directory",
+            T("nav_actions"):           "actions",
+            T("nav_tasks"):             "tasks",
+            T("nav_export"):            "export",
         }
         selected_label = st.radio(
             "Navigation",
@@ -529,6 +531,12 @@ def main():
             _require_data()
         else:
             render_report_builder(dfs, lang())
+
+    elif page == "company_directory":
+        if dfs is None:
+            _require_data()
+        else:
+            render_company_directory(dfs, lang())
 
     elif page == "actions":
         if dfs is None:

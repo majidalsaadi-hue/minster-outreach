@@ -50,8 +50,9 @@ TRANSLATIONS = {
     "nav_actions":       {"en": "Action Items", "ar": "بنود العمل"},
     "nav_tasks":         {"en": "RM Tasks", "ar": "مهام مدير العلاقات"},
     "nav_deals":          {"en": "Deal Progress",    "ar": "تقدم الصفقات"},
-    "nav_report_builder": {"en": "Report Builder",  "ar": "بناء التقارير"},
-    "nav_export":         {"en": "Export & Reports", "ar": "التصدير والتقارير"},
+    "nav_report_builder":   {"en": "Report Builder",    "ar": "بناء التقارير"},
+    "nav_company_directory":{"en": "Company Directory", "ar": "دليل الشركات"},
+    "nav_export":           {"en": "Export & Reports",  "ar": "التصدير والتقارير"},
 
     # ── Dashboard ───────────────────────────────────────────────────────────────
     "dash_pipeline_overview":   {"en": "Pipeline Overview", "ar": "نظرة عامة على المسار"},
