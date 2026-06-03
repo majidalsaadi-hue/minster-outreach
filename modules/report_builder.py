@@ -477,6 +477,29 @@ def _parse_word(file_bytes: bytes) -> dict:
             rows.append(cells)
         tables.append(rows)
 
+    def _classify_table(rows: list) -> str:
+        """Identify table type by header content, not by position."""
+        header_text = " ".join(c for row in rows[:2] for c in row)
+        if any(m in header_text for m in ["التوجيه", "المهمة", "مسؤول", "الأولوية", "الموعد النهائي", "الإجراء"]):
+            return "actions"
+        if any(m in header_text for m in ["الاسم", "المسمى", "الجهة", "حضر", "المشاركون", "التوقيع"]):
+            return "attendees"
+        if len(rows) <= 5:
+            for row in rows:
+                for cell in row:
+                    if len(cell) > 120:
+                        return "discussion"
+        if any(m in header_text for m in ["أبرز ما تم مناقشته", "نقاط النقاش", "مناقشة"]):
+            return "discussion"
+        return "metadata"
+
+    # Classify all tables by content (order-independent)
+    _classified: dict[str, list] = {}
+    for _t in tables:
+        _kind = _classify_table(_t)
+        if _kind not in _classified:
+            _classified[_kind] = _t
+
     def _dedup(row: list) -> list:
         seen, out = set(), []
         for c in row:
@@ -538,9 +561,13 @@ def _parse_word(file_bytes: bytes) -> dict:
             if len(row3) >= 4:
                 result["next_meeting_text"] = row3[3]
 
-    # ── Table 1: Discussion points ────────────────────────────────────────────
-    if len(doc.tables) >= 2:
-        full_cell = doc.tables[1].rows[0].cells[0].text.strip()
+    # ── Discussion table ──────────────────────────────────────────────────────
+    _disc_rows = _classified.get("discussion")
+    if _disc_rows is None and len(tables) >= 2:
+        # Fallback: use position 1 if no table was classified as discussion
+        _disc_rows = tables[1]
+    if _disc_rows:
+        full_cell = _disc_rows[0][0] if _disc_rows[0] else ""
         marker = "أبرز ما تم مناقشته:"
         if marker in full_cell:
             disc = full_cell.split(marker, 1)[-1].strip()
@@ -548,9 +575,12 @@ def _parse_word(file_bytes: bytes) -> dict:
             disc = full_cell
         result["discussion_ar"] = disc
 
-    # ── Table 2: Action items ─────────────────────────────────────────────────
-    if len(tables) >= 3:
-        act_tbl = tables[2]
+    # ── Action items table ────────────────────────────────────────────────────
+    _act_rows = _classified.get("actions")
+    if _act_rows is None and len(tables) >= 3:
+        _act_rows = tables[2]
+    if _act_rows:
+        act_tbl = _act_rows
         for row in act_tbl[1:]:
             cells = _dedup(row)
             # Skip row if empty or only numbers
@@ -583,10 +613,13 @@ def _parse_word(file_bytes: bytes) -> dict:
                 "Status":      "Not Started",
             })
 
-    # ── Table 3: Attendees ────────────────────────────────────────────────────
-    if len(tables) >= 4:
+    # ── Attendees table ───────────────────────────────────────────────────────
+    _att_rows = _classified.get("attendees")
+    if _att_rows is None and len(tables) >= 4:
+        _att_rows = tables[3]
+    if _att_rows:
         att_lines = []
-        for row in tables[3][1:]:
+        for row in _att_rows[1:]:
             cells = [c for c in _dedup(row) if c and not re.match(r"^\d+$", c)]
             if len(cells) >= 2:
                 att_lines.append(f"{cells[0]} | {cells[1]}")
