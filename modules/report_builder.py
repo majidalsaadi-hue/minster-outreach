@@ -105,6 +105,8 @@ def _init():
         "rb_output_lang":      "English",
         "rb_excel_bytes":      None,
         "rb_result":           None,
+        "rb_manual_opps":      "",
+        "rb_detected_opps":    [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -220,6 +222,13 @@ def render(dfs: dict, lang: str):
         if _rm:
             st.session_state["rb_exec_rm"]  = _rm
             st.session_state["rb_exec_inp"] = _rm
+        # Detect potential opportunities from action items
+        _det = _detect_opps_from_actions(st.session_state["rb_excel_bytes"])
+        st.session_state["rb_detected_opps"] = _det
+        if _det and not st.session_state.get("rb_manual_opps"):
+            prefill = "\n".join(_det)
+            st.session_state["rb_manual_opps"]    = prefill
+            st.session_state["rb_manual_opps_ta"] = prefill
 
     # ── Step 2: Configure ─────────────────────────────────────────────────────
     with st.container(border=True):
@@ -269,6 +278,23 @@ def render(dfs: dict, lang: str):
                 ["English", "Arabic", "Bilingual (EN + AR)"],
                 key="rb_lang_sel")
 
+        # ── Opportunities ─────────────────────────────────────────────────────
+        st.markdown("**Opportunities**")
+        _det_opps = st.session_state.get("rb_detected_opps", [])
+        if _det_opps:
+            with st.expander(f"ℹ️ {len(_det_opps)} potential opportunit{'y' if len(_det_opps)==1 else 'ies'} detected from action items — click to review", expanded=False):
+                for _o in _det_opps:
+                    st.markdown(f"- {_o}")
+                st.caption("These are action items classified as 'Opportunity' type in your Excel tracker.")
+        st.session_state["rb_manual_opps"] = st.text_area(
+            "Opportunities to include in report & pipeline (one per line)",
+            value=st.session_state["rb_manual_opps"],
+            placeholder="e.g.\nInvestment in fintech ecosystem\nHealthcare matchmaking with InterHealth",
+            height=120,
+            key="rb_manual_opps_ta",
+            help="These will appear in the letter and be synced to the Opportunity Pipeline.",
+        )
+
     # ── Step 3: Generate ──────────────────────────────────────────────────────
     with st.container(border=True):
         st.markdown('<p class="rb-section">Step 3 — Generate</p>', unsafe_allow_html=True)
@@ -295,6 +321,10 @@ def render(dfs: dict, lang: str):
             try:
                 _log("Reading parsed data…", 10)
 
+                manual_opps = [
+                    ln.strip() for ln in s.get("rb_manual_opps", "").splitlines()
+                    if ln.strip()
+                ]
                 cfg = {
                     "company":           company,
                     "recipient":         recipient,
@@ -304,6 +334,7 @@ def render(dfs: dict, lang: str):
                     "chair":             s.get("rb_chair", "معالي الوزير"),
                     "next_meeting_text": s.get("rb_next_meeting_text", ""),
                     "disc_en":           s.get("rb_disc_ar", ""),
+                    "opportunities":     manual_opps,
                 }
 
                 # 1 — Updated Excel tracker
@@ -331,17 +362,25 @@ def render(dfs: dict, lang: str):
                 _log("Syncing action items to CRM…", 75)
                 _sync_actions_to_crm(dfs, actions, company)
 
-                # 4 — Opportunities from Excel header block
+                # 4 — Opportunities: Excel header block + manual text area
                 opp_count = 0
+                opp_items: list[dict] = []
                 if s.get("rb_excel_bytes"):
-                    _log("Syncing opportunities from Excel header block…", 90)
+                    _log("Syncing opportunities…", 90)
                     try:
                         _wb_ops   = openpyxl.load_workbook(io.BytesIO(s["rb_excel_bytes"]))
                         opp_items = _parse_opps_from_excel(_wb_ops)
-                        _sync_opps_to_crm(dfs, opp_items, company)
-                        opp_count = len(opp_items)
                     except Exception:
                         pass
+                # Add manual entries (dedup against header-block items)
+                existing_names = {o["name"] for o in opp_items}
+                for mo in manual_opps:
+                    if mo not in existing_names:
+                        opp_items.append({"company": company, "name": mo})
+                        existing_names.add(mo)
+                if opp_items:
+                    _sync_opps_to_crm(dfs, opp_items, company)
+                    opp_count = len(opp_items)
 
                 prog.progress(100)
                 status.success(
@@ -811,6 +850,17 @@ def _build_letter_docx(cfg: dict, actions_df: pd.DataFrame) -> bytes:
 
     _para()
 
+    # ── Opportunities section ─────────────────────────────────────────────────
+    opps_list = cfg.get("opportunities", [])
+    if opps_list:
+        p_opp_hdr = doc.add_paragraph()
+        _run(p_opp_hdr, "Opportunities Identified:", bold=True, size_pt=11, color="1B5C3F")
+        _para()
+        for opp_name in opps_list:
+            p_opp = doc.add_paragraph(style="List Bullet")
+            _run(p_opp, opp_name, size_pt=10, color="1C1C1C")
+        _para()
+
     # ── Closing ───────────────────────────────────────────────────────────────
     p7 = doc.add_paragraph()
     _run(p7, "We remain fully committed to supporting ")
@@ -1133,22 +1183,77 @@ def _get_excel_sheets(raw: bytes) -> list:
 
 
 def _read_am_rm_from_excel(raw_bytes: bytes) -> tuple[str, str]:
-    """Read AM and RM names from Excel header block (rows 15-16, col L)."""
+    """Read AM and RM by finding their label cells (column-position-independent)."""
+    _skip = {"", "nan", "none", "n/a"}
     try:
         wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
         for ws in wb.worksheets:
-            # pandas df_raw uses header=None: col 11 (0-indexed) = openpyxl col 12 (L)
-            # am_name at 0-indexed row 14 → openpyxl row 15
-            # rm_name at 0-indexed row 15 → openpyxl row 16
-            am = ws.cell(row=15, column=12).value
-            rm = ws.cell(row=16, column=12).value
-            am = str(am).strip() if am and str(am).strip() else ""
-            rm = str(rm).strip() if rm and str(rm).strip() else ""
+            am, rm = "", ""
+            for r in range(13, 20):
+                for c in range(1, 20):
+                    lbl = str(ws.cell(row=r, column=c).value or "").strip().lstrip("4¦¹ ").strip()
+                    val = str(ws.cell(row=r, column=c + 1).value or "").strip()
+                    if val.lower() in _skip:
+                        continue
+                    if re.search(r"A[-.]M$", lbl, re.IGNORECASE):
+                        am = val
+                    elif lbl.upper() == "RM":
+                        rm = val
             if am or rm:
                 return am, rm
     except Exception:
         pass
     return "", ""
+
+
+def _detect_opps_from_actions(raw_bytes: bytes) -> list[str]:
+    """
+    Scan all sheets for action item rows whose Type of Engagement = 'Opportunity'.
+    Returns the action item descriptions as suggested opportunity names.
+    """
+    results: list[str] = []
+    _seen: set[str] = set()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
+        for ws in wb.worksheets:
+            # Find the header row by looking for the "Action Item" column header
+            hdr_row = None
+            for r in range(15, 25):
+                for c in range(1, 20):
+                    if str(ws.cell(row=r, column=c).value or "").strip() == "Action Item":
+                        hdr_row = r
+                        break
+                if hdr_row:
+                    break
+            if not hdr_row:
+                continue
+
+            # Build column index map from headers
+            col_map: dict[str, int] = {}
+            for c in range(1, 20):
+                v = str(ws.cell(row=hdr_row, column=c).value or "").strip()
+                if v:
+                    col_map[v] = c
+
+            action_col = col_map.get("Action Item", 8)
+            type_col   = next(
+                (col_map[k] for k in col_map if "Type" in k and "Engagement" in k),
+                None,
+            )
+            if not type_col:
+                continue
+
+            for r in range(hdr_row + 1, hdr_row + 200):
+                ai = str(ws.cell(row=r, column=action_col).value or "").strip()
+                if not ai:
+                    break
+                eng = str(ws.cell(row=r, column=type_col).value or "").strip().lower()
+                if eng == "opportunity" and ai not in _seen:
+                    _seen.add(ai)
+                    results.append(ai)
+    except Exception:
+        pass
+    return results
 
 
 def _investor_id(investors: pd.DataFrame, company: str) -> str:
