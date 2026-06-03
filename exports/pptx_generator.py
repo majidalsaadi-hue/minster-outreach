@@ -554,7 +554,7 @@ def _slide_investor(prs, inv_row, actions, opportunities, lang):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, lang):
-    """Slide 1: Header band + metadata row + engagement timeline (L) + action/opp status (R)."""
+    """Slide 1: Header + metadata + Brief/Outcome strip + timeline with actions (L) + status (R)."""
     slide = _blank_slide(prs)
 
     # ── Green header band ────────────────────────────────────────────
@@ -593,27 +593,64 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, lang):
     _add_rect(slide, Inches(0), Inches(1.40), Inches(13.33), Inches(0.025),
               fill_color=GOLD, line_color=GOLD)
 
+    # ── Brief + Major Outcome strip ──────────────────────────────────
+    BRIEF_Y = Inches(1.46)
+    BRIEF_H = Inches(0.66)
+    _add_rect(slide, Inches(0), BRIEF_Y, Inches(13.33), BRIEF_H,
+              fill_color=_rgb("#F5F5F0"), line_color=_rgb("#E4E4DC"))
+
+    brief_text    = "—"
+    major_outcome = "—"
+    if not meetings.empty and "Meeting Date" in meetings.columns:
+        last_mtg  = meetings.sort_values("Meeting Date", ascending=False).iloc[0]
+        obj  = str(last_mtg.get("Meeting Objective",     "") or "")
+        kd   = str(last_mtg.get("Key Discussion Points", "") or "")
+        dm   = str(last_mtg.get("Decisions Made",        "") or "")
+        ns   = str(last_mtg.get("Next Steps",            "") or "")
+        brief_text    = (obj or kd or "—")[:135]
+        major_outcome = (dm or ns or "—")[:135]
+
+    # Fall back to completed actions for major outcome
+    if major_outcome in ("—", "") and not acts.empty and "Status" in acts.columns:
+        done = acts[acts["Status"].str.lower().str.contains("complet", na=False)]
+        if not done.empty:
+            major_outcome = "✓ " + str(done.iloc[-1].get("Action Description", "") or "")[:120]
+
+    _add_rect(slide, Inches(6.58), BRIEF_Y + Inches(0.08), Inches(0.02),
+              BRIEF_H - Inches(0.16), fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
+
+    _add_text_box(slide, "Brief", Inches(0.3), BRIEF_Y + Inches(0.06),
+                  Inches(0.62), Inches(0.2), font_size=7, bold=True, color=_rgb(MISA_GREEN))
+    _add_text_box(slide, brief_text, Inches(0.95), BRIEF_Y + Inches(0.05),
+                  Inches(5.52), Inches(0.52), font_size=7.5, color=DARK)
+
+    _add_text_box(slide, "Major Outcome", Inches(6.68), BRIEF_Y + Inches(0.06),
+                  Inches(1.35), Inches(0.2), font_size=7, bold=True, color=_rgb(MISA_GOLD))
+    _add_text_box(slide, major_outcome, Inches(8.1), BRIEF_Y + Inches(0.05),
+                  Inches(5.05), Inches(0.52), font_size=7.5, color=DARK)
+
     # ── Vertical divider (timeline | status panels) ──────────────────
     DIVX = Inches(8.85)
-    _add_rect(slide, DIVX, Inches(1.5), Inches(0.02), Inches(5.35),
+    _add_rect(slide, DIVX, Inches(2.17), Inches(0.02), Inches(4.83),
               fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
 
     # ══════════════════════════════════════════════════════════════════
-    # LEFT: Engagement Timeline
+    # LEFT: Engagement Timeline — meetings above, action items below
     # ══════════════════════════════════════════════════════════════════
     _add_text_box(slide, "Engagement Timeline",
-                  Inches(0.3), Inches(1.55), Inches(8.3), Inches(0.28),
+                  Inches(0.3), Inches(2.20), Inches(8.3), Inches(0.28),
                   font_size=10, bold=True, color=DARK)
 
     today_d  = date.today()
-    start_dt = today_d - timedelta(days=120)   # ~4 months back
-    end_dt   = today_d + timedelta(days=30)    # 1 month forward
+    start_dt = today_d - timedelta(days=120)
+    end_dt   = today_d + timedelta(days=45)
     tot_days = (end_dt - start_dt).days
 
-    AXIS_Y = Inches(3.5)
+    AXIS_Y = Inches(4.1)
     AXIS_L = Inches(0.55)
     AXIS_W = Inches(7.95)
     DOT_R  = Inches(0.13)
+    SQ     = Inches(0.12)
 
     def _dx(d):
         try:
@@ -651,16 +688,14 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, lang):
     # "Now" marker
     now_x = _dx(today_d)
     if now_x:
-        _add_rect(slide, now_x - Inches(0.01), AXIS_Y - Inches(0.25), Inches(0.02), Inches(0.3),
+        _add_rect(slide, now_x - Inches(0.01), AXIS_Y - Inches(0.30), Inches(0.02), Inches(0.38),
                   fill_color=GOLD, line_color=GOLD)
-        _add_text_box(slide, "Now", now_x - Inches(0.22), AXIS_Y + Inches(0.05),
+        _add_text_box(slide, "Now", now_x - Inches(0.22), AXIS_Y + Inches(0.06),
                       Inches(0.5), Inches(0.18), font_size=7, color=GOLD, align=PP_ALIGN.CENTER)
 
-    # Meeting dots (last 10, alternating above / below axis)
+    # Meetings ABOVE axis — all above, alternating high/low heights to avoid overlap
     if not meetings.empty and "Meeting Date" in meetings.columns:
-        recent_mtgs = (
-            meetings.sort_values("Meeting Date").tail(10).reset_index(drop=True)
-        )
+        recent_mtgs = meetings.sort_values("Meeting Date").tail(10).reset_index(drop=True)
         for idx, (_, mtg) in enumerate(recent_mtgs.iterrows()):
             raw_date = mtg.get("Meeting Date")
             if pd.isna(raw_date):
@@ -669,7 +704,6 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, lang):
             if mx is None:
                 continue
 
-            # Dot colour by status
             status = str(mtg.get("Meeting Status", ""))
             if any(w in status for w in ("Completed", "Done", "Held")):
                 dot_c = _rgb(MISA_GREEN)
@@ -686,49 +720,101 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, lang):
             except Exception:
                 d_lbl = str(raw_date)[:8]
 
-            above = (idx % 2 == 0)
-            if above:
-                conn_top = AXIS_Y - Inches(1.48)
-                conn_h   = Inches(1.48) - DOT_R
-                text_y   = AXIS_Y - Inches(1.88)
+            # Even → high position, odd → lower position (still above axis)
+            if idx % 2 == 0:
+                text_y   = Inches(2.52)
+                conn_top = Inches(2.94)
+                conn_h   = AXIS_Y - DOT_R - Inches(2.94)
             else:
-                conn_top = AXIS_Y + DOT_R
-                conn_h   = Inches(1.18)
-                text_y   = AXIS_Y + DOT_R + Inches(1.18)
+                text_y   = Inches(3.12)
+                conn_top = Inches(3.54)
+                conn_h   = AXIS_Y - DOT_R - Inches(3.54)
 
-            # Connector line
             _add_rect(slide, mx - Inches(0.01), conn_top, Inches(0.02), conn_h,
                       fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
-            # Dot
             _add_rect(slide, mx - DOT_R, AXIS_Y - DOT_R, DOT_R * 2, DOT_R * 2,
                       fill_color=dot_c, line_color=dot_c)
-            # Label
             _add_text_box(
                 slide, f"{d_lbl}\n{mtype}",
-                mx - Inches(0.55), text_y, Inches(1.1), Inches(0.42),
+                mx - Inches(0.55), text_y, Inches(1.1), Inches(0.40),
                 font_size=7, color=DARK, align=PP_ALIGN.CENTER,
             )
 
+    # Action Items BELOW axis — squares colored by status, plotted by due date
+    _ACT_SC = {
+        "Completed":   MISA_GREEN,
+        "In Progress": MISA_GOLD,
+        "Inprogress":  MISA_GOLD,
+        "Not Started": "#888888",
+        "Blocked":     "#C0392B",
+        "Cancelled":   "#AAAAAA",
+    }
+    if not acts.empty and "Due Date" in acts.columns:
+        act_tl = acts.copy()
+        act_tl["_dt"] = pd.to_datetime(act_tl["Due Date"], errors="coerce")
+        act_tl = act_tl[act_tl["_dt"].notna()].sort_values("_dt").tail(9)
+        ROW_H = Inches(0.40)
+        for ai, (_, act) in enumerate(act_tl.iterrows()):
+            ax = _dx(act["_dt"])
+            if ax is None:
+                continue
+            row_idx = ai % 3
+            sq_top  = AXIS_Y + Inches(0.14) + row_idx * ROW_H
+            scol    = _rgb(_ACT_SC.get(str(act.get("Status", "")), "#888888"))
+            desc    = str(act.get("Action Description", ""))[:16]
+            try:
+                d_lbl = act["_dt"].strftime("%d %b")
+            except Exception:
+                d_lbl = ""
+            # Connector from axis down to square
+            _add_rect(slide, ax - Inches(0.008), AXIS_Y + Inches(0.025),
+                      Inches(0.015), Inches(0.14) + row_idx * ROW_H,
+                      fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
+            # Square marker
+            _add_rect(slide, ax - SQ / 2, sq_top, SQ, SQ,
+                      fill_color=scol, line_color=scol)
+            # Tiny label below square
+            _add_text_box(
+                slide, f"{desc}\n{d_lbl}",
+                ax - Inches(0.52), sq_top + SQ + Inches(0.01), Inches(1.04), Inches(0.34),
+                font_size=6, color=DARK, align=PP_ALIGN.CENTER,
+            )
+
     # Timeline legend
-    lx, leg_y = Inches(0.55), Inches(5.45)
+    leg_y = Inches(6.40)
+    lx = Inches(0.55)
+    _add_text_box(slide, "Meetings:", lx, leg_y, Inches(0.72), Inches(0.2),
+                  font_size=7, bold=True, color=MGRAY)
+    lx += Inches(0.75)
     for lbl, col in [("Completed", MISA_GREEN), ("Scheduled", MISA_GOLD), ("Cancelled", "#AAAAAA")]:
         _add_rect(slide, lx, leg_y + Inches(0.03), Inches(0.13), Inches(0.13),
                   fill_color=_rgb(col), line_color=_rgb(col))
         _add_text_box(slide, lbl, lx + Inches(0.17), leg_y,
-                      Inches(1.0), Inches(0.2), font_size=7, color=MGRAY)
-        lx += Inches(1.2)
+                      Inches(0.94), Inches(0.2), font_size=7, color=MGRAY)
+        lx += Inches(1.12)
+    lx += Inches(0.18)
+    _add_text_box(slide, "Actions:", lx, leg_y, Inches(0.65), Inches(0.2),
+                  font_size=7, bold=True, color=MGRAY)
+    lx += Inches(0.68)
+    for lbl, col in [("Done", MISA_GREEN), ("In Progress", MISA_GOLD),
+                     ("Pending", "#888888"), ("Blocked", "#C0392B")]:
+        _add_rect(slide, lx, leg_y + Inches(0.04), Inches(0.11), Inches(0.11),
+                  fill_color=_rgb(col), line_color=_rgb(col))
+        _add_text_box(slide, lbl, lx + Inches(0.15), leg_y,
+                      Inches(0.84), Inches(0.2), font_size=7, color=MGRAY)
+        lx += Inches(0.98)
 
     # ══════════════════════════════════════════════════════════════════
-    # RIGHT: Action status + Opportunity status + KPI cards
+    # RIGHT: Action status bars + Upcoming actions + Opportunities + KPIs
     # ══════════════════════════════════════════════════════════════════
     RX = DIVX + Inches(0.2)
     RW = Inches(13.33) - RX - Inches(0.15)
 
     # Action Items status bars
     _add_text_box(slide, "Action Items",
-                  RX, Inches(1.57), RW, Inches(0.28),
+                  RX, Inches(2.22), RW, Inches(0.28),
                   font_size=10, bold=True, color=DARK)
-    y_r = Inches(1.94)
+    y_r = Inches(2.58)
     ACT_CFG = [
         ("Completed",   "#2D7A54"),
         ("In Progress", MISA_GOLD),
@@ -749,18 +835,46 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, lang):
             _add_text_box(slide, f"{sname}: {cnt}",
                           RX + Inches(0.06), y_r + Inches(0.04),
                           RW - Inches(0.1), Inches(0.18), font_size=8, color=WHITE)
-            y_r += Inches(0.32)
+            y_r += Inches(0.31)
     else:
         _add_text_box(slide, "No action items yet.",
                       RX, y_r, RW, Inches(0.25), font_size=8, color=MGRAY)
         y_r += Inches(0.32)
 
+    # Upcoming / overdue actions mini-list
+    y_r += Inches(0.12)
+    if not acts.empty and "Status" in acts.columns:
+        pending_acts = acts[~acts["Status"].isin(["Completed", "Cancelled"])].copy()
+        if "Due Date" in pending_acts.columns:
+            pending_acts["_due"] = pd.to_datetime(pending_acts["Due Date"], errors="coerce")
+            pending_acts = pending_acts.sort_values("_due").head(4)
+        else:
+            pending_acts = pending_acts.head(4)
+        if not pending_acts.empty:
+            _add_text_box(slide, "Upcoming Actions",
+                          RX, y_r, RW, Inches(0.22), font_size=8, bold=True, color=DARK)
+            y_r += Inches(0.26)
+            for _, pa in pending_acts.iterrows():
+                desc = str(pa.get("Action Description", ""))[:34]
+                due  = pa.get("Due Date", "")
+                try:
+                    due_d  = pd.to_datetime(due)
+                    due_s  = due_d.strftime("%d %b") if pd.notna(due) else "—"
+                    is_ov  = due_d.date() < today_d
+                except Exception:
+                    due_s, is_ov = "—", False
+                bullet   = "⚠" if is_ov else "•"
+                txt_color = RED if is_ov else DARK
+                _add_text_box(slide, f"{bullet} {desc}  ({due_s})",
+                              RX, y_r, RW, Inches(0.22), font_size=7.5, color=txt_color)
+                y_r += Inches(0.24)
+
     # Opportunities status
-    y_r += Inches(0.18)
+    y_r += Inches(0.12)
     total_val = _sum_col(opps, "Est. Value (SAR)")
     _add_text_box(slide, "Opportunities",
                   RX, y_r, RW, Inches(0.28), font_size=10, bold=True, color=DARK)
-    y_r += Inches(0.35)
+    y_r += Inches(0.34)
     if not opps.empty:
         if "Opportunity Status" in opps.columns:
             for sname, cnt in opps["Opportunity Status"].value_counts().items():
@@ -777,12 +891,12 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, lang):
         _add_text_box(slide, "No opportunities yet.",
                       RX, y_r, RW, Inches(0.25), font_size=8, color=MGRAY)
 
-    # KPI cards (fixed at bottom of right panel)
+    # KPI cards fixed at bottom of right panel
     if not inv_row.empty:
         est    = inv_row.get("Est. Investment Value (SAR)")
         cmmt   = inv_row.get("Actual Commitment (SAR)")
         next_m = str(inv_row.get("Next Meeting Date", "—") or "—")[:12]
-        kpi_y  = Inches(5.55)
+        kpi_y  = Inches(5.72)
         kw     = (RW - Inches(0.06)) / 2
 
         for i, (val, lbl, col) in enumerate([
@@ -790,18 +904,18 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, lang):
             (_fmt_sar(cmmt) if pd.notna(cmmt) and cmmt else "—", "Committed",       MISA_GOLD),
         ]):
             kx = RX + i * (kw + Inches(0.06))
-            _add_rect(slide, kx, kpi_y, kw, Inches(0.75),
+            _add_rect(slide, kx, kpi_y, kw, Inches(0.72),
                       fill_color=_rgb(col), line_color=_rgb(col))
-            _add_text_box(slide, val, kx, kpi_y + Inches(0.04), kw, Inches(0.36),
+            _add_text_box(slide, val, kx, kpi_y + Inches(0.04), kw, Inches(0.34),
                           font_size=12, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-            _add_text_box(slide, lbl, kx, kpi_y + Inches(0.43), kw, Inches(0.2),
+            _add_text_box(slide, lbl, kx, kpi_y + Inches(0.41), kw, Inches(0.2),
                           font_size=7, color=WHITE, align=PP_ALIGN.CENTER)
 
-        _add_rect(slide, RX, kpi_y + Inches(0.82), RW, Inches(0.57),
+        _add_rect(slide, RX, kpi_y + Inches(0.79), RW, Inches(0.52),
                   fill_color=_rgb("#2D7A54"), line_color=_rgb("#2D7A54"))
-        _add_text_box(slide, next_m, RX, kpi_y + Inches(0.86), RW, Inches(0.3),
+        _add_text_box(slide, next_m, RX, kpi_y + Inches(0.83), RW, Inches(0.28),
                       font_size=13, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-        _add_text_box(slide, "Next Meeting", RX, kpi_y + Inches(1.14), RW, Inches(0.18),
+        _add_text_box(slide, "Next Meeting", RX, kpi_y + Inches(1.09), RW, Inches(0.16),
                       font_size=7, color=WHITE, align=PP_ALIGN.CENTER)
 
     # ── Gold footer ──────────────────────────────────────────────────
