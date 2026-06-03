@@ -212,6 +212,14 @@ def render(dfs: dict, lang: str):
         st.session_state["rb_excel_bytes"] = excel_file.read()
         sheets = _get_excel_sheets(st.session_state["rb_excel_bytes"])
         st.info(f"Excel loaded — {len(sheets)} sheet(s): {', '.join(sheets[:5])}")
+        # Auto-fill AM / RM from header block
+        _am, _rm = _read_am_rm_from_excel(st.session_state["rb_excel_bytes"])
+        if _am:
+            st.session_state["rb_arm"]     = _am
+            st.session_state["rb_arm_inp"] = _am
+        if _rm:
+            st.session_state["rb_exec_rm"]  = _rm
+            st.session_state["rb_exec_inp"] = _rm
 
     # ── Step 2: Configure ─────────────────────────────────────────────────────
     with st.container(border=True):
@@ -1122,6 +1130,25 @@ def _get_excel_sheets(raw: bytes) -> list:
         return wb.sheetnames
     except Exception:
         return []
+
+
+def _read_am_rm_from_excel(raw_bytes: bytes) -> tuple[str, str]:
+    """Read AM and RM names from Excel header block (rows 15-16, col L)."""
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
+        for ws in wb.worksheets:
+            # pandas df_raw uses header=None: col 11 (0-indexed) = openpyxl col 12 (L)
+            # am_name at 0-indexed row 14 → openpyxl row 15
+            # rm_name at 0-indexed row 15 → openpyxl row 16
+            am = ws.cell(row=15, column=12).value
+            rm = ws.cell(row=16, column=12).value
+            am = str(am).strip() if am and str(am).strip() else ""
+            rm = str(rm).strip() if rm and str(rm).strip() else ""
+            if am or rm:
+                return am, rm
+    except Exception:
+        pass
+    return "", ""
 
 
 def _investor_id(investors: pd.DataFrame, company: str) -> str:
