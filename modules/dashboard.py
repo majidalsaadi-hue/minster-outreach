@@ -19,6 +19,333 @@ CHART_TEMPLATE = "plotly_white"
 CHART_FONT     = dict(family="Inter, Tajawal, sans-serif", size=12)
 _PALETTE       = [MISA_GREEN, MISA_GOLD, "#2D7A54", "#E4B96A", "#0F3D2A", "#C0392B"]
 
+_URGENCY_ORDER = {"critical": 0, "today": 1, "soon": 2, "strategic": 3, "watch": 4}
+
+
+# ── Today's Briefing — Action Advisor ────────────────────────────────────────
+
+def render_action_advisor(dfs: dict, lang: str):
+    """Ranked 'what should I do today' panel derived from live CRM data."""
+    today       = date.today()
+    investors   = dfs.get("Investor Master",      pd.DataFrame())
+    meetings    = dfs.get("Meeting Log",          pd.DataFrame())
+    actions     = dfs.get("Action Items",         pd.DataFrame())
+    opps        = dfs.get("Opportunity Pipeline", pd.DataFrame())
+
+    items: list[dict] = []
+
+    # ── 1. Action items: overdue + due this week ──────────────────────────────
+    if not actions.empty and "Due Date" in actions.columns and "Status" in actions.columns:
+        due_dates = pd.to_datetime(actions["Due Date"], errors="coerce")
+        for idx, row in actions.iterrows():
+            if str(row.get("Status", "")).strip() in ("Completed", "Cancelled"):
+                continue
+            d = _safe_date(due_dates.iloc[idx] if idx < len(due_dates) else None)
+            if not d:
+                continue
+            company = str(row.get("Company Name", "?"))
+            desc    = str(row.get("Action Description", ""))[:90]
+            owner   = str(row.get("Assigned To", "—"))
+            prio    = str(row.get("Priority", ""))
+            days_late = (today - d).days
+            if days_late > 0:
+                items.append({
+                    "score":    120 + days_late * 3,
+                    "urgency":  "critical",
+                    "tag":      "OVERDUE",
+                    "tag_color":"#DC2626",
+                    "company":  company,
+                    "action":   desc or "Complete pending action",
+                    "detail":   f"{days_late}d overdue · {owner}",
+                    "icon":     "🔴",
+                })
+            elif (d - today).days == 0:
+                items.append({
+                    "score":    100,
+                    "urgency":  "critical",
+                    "tag":      "DUE TODAY",
+                    "tag_color":"#B45309",
+                    "company":  company,
+                    "action":   desc or "Complete action",
+                    "detail":   f"Due today · {owner}",
+                    "icon":     "⚡",
+                })
+            elif (d - today).days <= 7:
+                items.append({
+                    "score":    60 + max(0, 7 - (d - today).days) * 4,
+                    "urgency":  "soon",
+                    "tag":      f"DUE {d.strftime('%d %b').upper()}",
+                    "tag_color":"#D97706",
+                    "company":  company,
+                    "action":   desc or "Complete action",
+                    "detail":   f"In {(d-today).days}d · {owner}",
+                    "icon":     "🟡",
+                })
+
+    # ── 2. Meetings: today + next 5 days ─────────────────────────────────────
+    if not meetings.empty and "Meeting Date" in meetings.columns:
+        mtg = meetings.copy()
+        mtg["Meeting Date"] = pd.to_datetime(mtg["Meeting Date"], errors="coerce")
+        for _, row in mtg.iterrows():
+            d = _safe_date(row.get("Meeting Date"))
+            if not d:
+                continue
+            delta   = (d - today).days
+            company = str(row.get("Company Name", "?"))
+            mtype   = str(row.get("Meeting Type",  "Meeting"))
+            loc     = str(row.get("Location",      ""))
+            obj     = str(row.get("Meeting Objective", ""))[:80]
+            status  = str(row.get("Meeting Status", "")).lower()
+            if status in ("cancelled", "completed"):
+                continue
+            if delta == 0:
+                items.append({
+                    "score":    110,
+                    "urgency":  "today",
+                    "tag":      "TODAY",
+                    "tag_color":"#1D4ED8",
+                    "company":  company,
+                    "action":   f"{mtype} — confirm attendance & prepare briefing",
+                    "detail":   loc or obj or "Check meeting details",
+                    "icon":     "📅",
+                })
+            elif 1 <= delta <= 3:
+                items.append({
+                    "score":    80,
+                    "urgency":  "soon",
+                    "tag":      d.strftime("%a %d %b").upper(),
+                    "tag_color":"#0891B2",
+                    "company":  company,
+                    "action":   f"Prepare for {mtype}",
+                    "detail":   obj or f"In {delta} day{'s' if delta!=1 else ''}",
+                    "icon":     "📋",
+                })
+            elif 4 <= delta <= 7:
+                items.append({
+                    "score":    50,
+                    "urgency":  "soon",
+                    "tag":      d.strftime("%a %d %b").upper(),
+                    "tag_color":"#6B7280",
+                    "company":  company,
+                    "action":   f"Upcoming {mtype} — review account notes",
+                    "detail":   obj or f"In {delta} days",
+                    "icon":     "🗓",
+                })
+
+    # ── 3. Recent meeting follow-ups (Next Steps not blank) ───────────────────
+    if not meetings.empty and "Meeting Date" in meetings.columns and "Next Steps" in meetings.columns:
+        mtg2 = meetings.copy()
+        mtg2["Meeting Date"] = pd.to_datetime(mtg2["Meeting Date"], errors="coerce")
+        recent = mtg2[
+            (mtg2["Next Steps"].notna()) &
+            (mtg2["Next Steps"].astype(str).str.strip() != "") &
+            (mtg2["Next Steps"].astype(str).str.strip().str.lower() != "nan")
+        ].sort_values("Meeting Date", ascending=False)
+        seen_co: set[str] = set()
+        for _, row in recent.iterrows():
+            d = _safe_date(row.get("Meeting Date"))
+            if not d:
+                continue
+            days_ago = (today - d).days
+            if days_ago > 21:
+                continue
+            company = str(row.get("Company Name", "?"))
+            if company in seen_co:
+                continue
+            seen_co.add(company)
+            ns = str(row.get("Next Steps", ""))[:100]
+            items.append({
+                "score":    70 - days_ago,
+                "urgency":  "soon",
+                "tag":      f"FOLLOW UP",
+                "tag_color":"#7C3AED",
+                "company":  company,
+                "action":   ns,
+                "detail":   f"From meeting {days_ago} day{'s' if days_ago!=1 else ''} ago",
+                "icon":     "↩",
+            })
+
+    # ── 4. Strategic: high-priority investors with no recent contact ──────────
+    if not investors.empty:
+        last_mtg_map: dict[str, date] = {}
+        if not meetings.empty and "Meeting Date" in meetings.columns and "Company Name" in meetings.columns:
+            m3 = meetings.copy()
+            m3["Meeting Date"] = pd.to_datetime(m3["Meeting Date"], errors="coerce")
+            for co, ts in m3.groupby("Company Name")["Meeting Date"].max().items():
+                d = _safe_date(ts)
+                if d:
+                    last_mtg_map[str(co)] = d
+
+        for _, row in investors.iterrows():
+            co     = str(row.get("Company Name", "?"))
+            status = str(row.get("Relationship Status", "")).lower()
+            if status in ("churned", "inactive", "closed"):
+                continue
+            last  = last_mtg_map.get(co)
+            score = float(row.get("Strategic Priority Score", 0) or 0)
+            days_since = (today - last).days if last else 999
+
+            if score >= 4 and days_since > 30:
+                items.append({
+                    "score":    55 + int(score) * 6,
+                    "urgency":  "strategic",
+                    "tag":      "STRATEGIC",
+                    "tag_color":"#7C3AED",
+                    "company":  co,
+                    "action":   "Schedule outreach — high-priority investor needs engagement",
+                    "detail":   f"Last contact: {days_since}d ago · Priority {score}",
+                    "icon":     "★",
+                })
+            elif not last and status not in ("churned", "closed", "inactive"):
+                journey = str(row.get("Journey Stage", ""))
+                items.append({
+                    "score":    30,
+                    "urgency":  "watch",
+                    "tag":      "NO CONTACT",
+                    "tag_color":"#6B7280",
+                    "company":  co,
+                    "action":   "Initiate first contact",
+                    "detail":   f"No meetings on record · {journey or 'Stage unknown'}",
+                    "icon":     "○",
+                })
+            elif last and days_since > 60 and status == "active":
+                items.append({
+                    "score":    35,
+                    "urgency":  "watch",
+                    "tag":      "STALLED",
+                    "tag_color":"#E67E22",
+                    "company":  co,
+                    "action":   "Re-engage — no contact for over 60 days",
+                    "detail":   f"Last meeting: {last.strftime('%d %b %Y')} ({days_since}d ago)",
+                    "icon":     "⚠",
+                })
+
+    # ── 5. Stalled opportunities ──────────────────────────────────────────────
+    if not opps.empty:
+        for _, row in opps.iterrows():
+            st_val = str(row.get("Opportunity Status", "")).lower()
+            if st_val in ("closed", "won", "lost", "cancelled", "completed"):
+                continue
+            lu = _safe_date(row.get("Last Updated") or row.get("Start Date"))
+            if lu and (today - lu).days > 60:
+                val = row.get("Est. Value (SAR)", 0) or 0
+                opp_name = str(row.get("Opportunity Name", ""))[:70]
+                items.append({
+                    "score":    40,
+                    "urgency":  "strategic",
+                    "tag":      "OPP STALLED",
+                    "tag_color":"#E67E22",
+                    "company":  str(row.get("Company Name", "?")),
+                    "action":   f"Re-engage on opportunity: {opp_name}",
+                    "detail":   f"No update in {(today-lu).days}d · {_fmt_sar(val)}",
+                    "icon":     "💼",
+                })
+
+    # ── 6. Minister / HE decisions pending ───────────────────────────────────
+    if not investors.empty and "Minister Action Required" in investors.columns:
+        for _, row in investors.iterrows():
+            v = str(row.get("Minister Action Required", "") or "").strip()
+            if v and v.lower() not in ("none required", "none", ""):
+                dl = _safe_date(row.get("Decision Required By"))
+                detail = f"Deadline: {dl.strftime('%d %b %Y')}" if dl else "No deadline set"
+                items.append({
+                    "score":    130,
+                    "urgency":  "critical",
+                    "tag":      "HE ACTION",
+                    "tag_color":"#DC2626",
+                    "company":  str(row.get("Company Name", "?")),
+                    "action":   v[:100],
+                    "detail":   detail,
+                    "icon":     "🏛",
+                })
+
+    # ── Render ────────────────────────────────────────────────────────────────
+    items.sort(key=lambda x: x["score"], reverse=True)
+    top     = items[:10]
+    n_crit  = sum(1 for i in items if i["urgency"] in ("critical", "today"))
+    n_soon  = sum(1 for i in items if i["urgency"] == "soon")
+    n_strat = sum(1 for i in items if i["urgency"] in ("strategic", "watch"))
+
+    day_label = today.strftime("%A, %d %B %Y")
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0f2d1e 0%,#1B5C3F 100%);
+                border-radius:12px;padding:18px 20px 10px 20px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div>
+          <span style="color:#C9974A;font-size:10px;font-weight:700;letter-spacing:.8px;
+                       text-transform:uppercase;">Today's Briefing</span>
+          <div style="color:#fff;font-size:17px;font-weight:700;margin-top:2px;">{day_label}</div>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <div style="text-align:center;background:rgba(220,38,38,0.25);border:1px solid rgba(220,38,38,0.5);
+                      border-radius:8px;padding:6px 14px;">
+            <div style="color:#FCA5A5;font-size:18px;font-weight:700;">{n_crit}</div>
+            <div style="color:rgba(255,255,255,0.6);font-size:9px;letter-spacing:.4px;">CRITICAL</div>
+          </div>
+          <div style="text-align:center;background:rgba(217,119,6,0.25);border:1px solid rgba(217,119,6,0.5);
+                      border-radius:8px;padding:6px 14px;">
+            <div style="color:#FCD34D;font-size:18px;font-weight:700;">{n_soon}</div>
+            <div style="color:rgba(255,255,255,0.6);font-size:9px;letter-spacing:.4px;">THIS WEEK</div>
+          </div>
+          <div style="text-align:center;background:rgba(124,58,237,0.25);border:1px solid rgba(124,58,237,0.5);
+                      border-radius:8px;padding:6px 14px;">
+            <div style="color:#C4B5FD;font-size:18px;font-weight:700;">{n_strat}</div>
+            <div style="color:rgba(255,255,255,0.6);font-size:9px;letter-spacing:.4px;">STRATEGIC</div>
+          </div>
+        </div>
+      </div>""", unsafe_allow_html=True)
+
+    if not top:
+        st.markdown("""
+        <div style="background:rgba(255,255,255,0.08);border-radius:8px;padding:14px;
+                    text-align:center;color:rgba(255,255,255,0.6);font-size:13px;">
+          All clear — no pending actions, upcoming meetings, or alerts at this time.
+        </div></div>""", unsafe_allow_html=True)
+        return
+
+    rows_html = ""
+    for item in top:
+        icon       = item["icon"]
+        tag        = item["tag"]
+        tag_color  = item["tag_color"]
+        company    = item["company"]
+        action_txt = item["action"]
+        detail     = item["detail"]
+        rows_html += f"""
+        <div style="display:flex;align-items:flex-start;gap:10px;
+                    background:rgba(255,255,255,0.06);border-radius:8px;
+                    padding:9px 12px;margin-bottom:6px;
+                    border-left:3px solid {tag_color};">
+          <span style="font-size:14px;flex-shrink:0;margin-top:1px;">{icon}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:3px;">
+              <span style="background:{tag_color};color:#fff;padding:1px 7px;border-radius:4px;
+                           font-size:9px;font-weight:700;letter-spacing:.5px;white-space:nowrap;">{tag}</span>
+              <span style="color:#C9974A;font-size:12px;font-weight:600;white-space:nowrap;
+                           overflow:hidden;text-overflow:ellipsis;max-width:180px;">{company}</span>
+            </div>
+            <div style="color:#f0fdf4;font-size:12px;font-weight:500;
+                        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{action_txt}</div>
+            <div style="color:rgba(255,255,255,0.45);font-size:10px;margin-top:2px;">{detail}</div>
+          </div>
+        </div>"""
+
+    remainder = len(items) - len(top)
+    more_html = ""
+    if remainder > 0:
+        more_html = f"""<div style="text-align:center;color:rgba(255,255,255,0.4);
+                                    font-size:11px;margin-top:4px;">
+                          + {remainder} more item{'s' if remainder!=1 else ''} below in Strategic Alerts
+                        </div>"""
+
+    st.markdown(f"""
+    <div style="columns:2;column-gap:12px;">
+      {rows_html}
+    </div>
+    {more_html}
+    </div>""", unsafe_allow_html=True)
+
 
 # ── Top KPI strip ────────────────────────────────────────────────────────────
 

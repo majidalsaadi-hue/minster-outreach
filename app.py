@@ -32,6 +32,7 @@ from config.settings     import MISA_GREEN, MISA_GOLD
 from modules.data_loader   import load_excel, validate_schema, get_summary
 from modules.persistence   import save_session, load_session
 from modules.dashboard     import (
+    render_action_advisor,
     render_kpi_cards, render_pipeline_overview, render_meeting_outcomes,
     render_investment_flow, render_opportunity_pipeline,
     render_sector_geography, render_alerts,
@@ -178,28 +179,35 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
 
-        # ── Auto-save status indicator ───────────────────────────────────────
+        # ── Persistence status ────────────────────────────────────────────────
         if st.session_state.get("dfs") is not None:
             save_status = st.session_state.get("save_status", "")
             save_time   = st.session_state.get("save_time", "")
 
             if save_status == "ok":
                 st.markdown(f"""
-                <div style="font-size:11px;color:#70C99C;margin-top:6px;text-align:center;">
-                  💾 Auto-saved {save_time}
+                <div style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);
+                            border-radius:6px;padding:8px 10px;margin-top:8px;">
+                  <div style="color:#6EE7B7;font-size:11px;font-weight:600;">
+                    Data saved automatically
+                  </div>
+                  <div style="color:rgba(255,255,255,0.45);font-size:10px;margin-top:2px;">
+                    Last saved at {save_time} · restores on next launch
+                  </div>
                 </div>""", unsafe_allow_html=True)
             elif save_status.startswith("error"):
                 err_msg = save_status.replace("error: ", "")
                 st.markdown(f"""
-                <div style="font-size:11px;color:#FF6B6B;margin-top:6px;text-align:center;">
-                  ⚠️ Save failed: {err_msg[:60]}
+                <div style="background:rgba(220,38,38,0.15);border:1px solid rgba(220,38,38,0.35);
+                            border-radius:6px;padding:8px 10px;margin-top:8px;">
+                  <div style="color:#FCA5A5;font-size:11px;font-weight:600;">Save failed</div>
+                  <div style="color:rgba(255,255,255,0.45);font-size:10px;">{err_msg[:60]}</div>
                 </div>""", unsafe_allow_html=True)
             else:
                 st.markdown("""
-                <div style="font-size:11px;color:rgba(255,255,255,0.4);
-                            margin-top:6px;text-align:center;">
-                  💾 Saving…
-                </div>""", unsafe_allow_html=True)
+                <div style="font-size:10px;color:rgba(255,255,255,0.35);
+                            margin-top:6px;text-align:center;">Saving…</div>
+                """, unsafe_allow_html=True)
 
         return page
 
@@ -248,13 +256,16 @@ def render_dashboard():
         _render_no_data_welcome()
         return
 
+    # ── Today's Briefing — action advisor ─────────────────────────────────
+    render_action_advisor(dfs, lang())
+
     # ── Row 1 + Row 2: KPI strips ──────────────────────────────────────────
     render_kpi_cards(dfs, lang())
 
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # ── Row 3: Strategic Alerts + HE Attention ────────────────────────────
+    # ── Strategic Alerts ──────────────────────────────────────────────────
     st.markdown("#### Strategic Alerts")
     render_alerts(dfs, lang())
 
