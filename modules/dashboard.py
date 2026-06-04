@@ -259,92 +259,70 @@ def render_action_advisor(dfs: dict, lang: str):
                     "icon":     "🏛",
                 })
 
-    # ── Render ────────────────────────────────────────────────────────────────
+    # ── Render — single self-contained HTML block ─────────────────────────────
     items.sort(key=lambda x: x["score"], reverse=True)
     top     = items[:10]
     n_crit  = sum(1 for i in items if i["urgency"] in ("critical", "today"))
     n_soon  = sum(1 for i in items if i["urgency"] == "soon")
     n_strat = sum(1 for i in items if i["urgency"] in ("strategic", "watch"))
-
     day_label = today.strftime("%A, %d %B %Y")
 
-    st.markdown(f"""
-    <div style="background:linear-gradient(135deg,#0f2d1e 0%,#1B5C3F 100%);
-                border-radius:12px;padding:18px 20px 10px 20px;margin-bottom:16px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div>
-          <span style="color:#C9974A;font-size:10px;font-weight:700;letter-spacing:.8px;
-                       text-transform:uppercase;">Today's Briefing</span>
-          <div style="color:#fff;font-size:17px;font-weight:700;margin-top:2px;">{day_label}</div>
-        </div>
-        <div style="display:flex;gap:10px;">
-          <div style="text-align:center;background:rgba(220,38,38,0.25);border:1px solid rgba(220,38,38,0.5);
-                      border-radius:8px;padding:6px 14px;">
-            <div style="color:#FCA5A5;font-size:18px;font-weight:700;">{n_crit}</div>
-            <div style="color:rgba(255,255,255,0.6);font-size:9px;letter-spacing:.4px;">CRITICAL</div>
-          </div>
-          <div style="text-align:center;background:rgba(217,119,6,0.25);border:1px solid rgba(217,119,6,0.5);
-                      border-radius:8px;padding:6px 14px;">
-            <div style="color:#FCD34D;font-size:18px;font-weight:700;">{n_soon}</div>
-            <div style="color:rgba(255,255,255,0.6);font-size:9px;letter-spacing:.4px;">THIS WEEK</div>
-          </div>
-          <div style="text-align:center;background:rgba(124,58,237,0.25);border:1px solid rgba(124,58,237,0.5);
-                      border-radius:8px;padding:6px 14px;">
-            <div style="color:#C4B5FD;font-size:18px;font-weight:700;">{n_strat}</div>
-            <div style="color:rgba(255,255,255,0.6);font-size:9px;letter-spacing:.4px;">STRATEGIC</div>
-          </div>
-        </div>
-      </div>""", unsafe_allow_html=True)
-
     if not top:
-        st.markdown("""
+        body_html = """
         <div style="background:rgba(255,255,255,0.08);border-radius:8px;padding:14px;
                     text-align:center;color:rgba(255,255,255,0.6);font-size:13px;">
           All clear — no pending actions, upcoming meetings, or alerts at this time.
-        </div></div>""", unsafe_allow_html=True)
-        return
-
-    rows_html = ""
-    for item in top:
-        icon       = item["icon"]
-        tag        = item["tag"]
-        tag_color  = item["tag_color"]
-        company    = item["company"]
-        action_txt = item["action"]
-        detail     = item["detail"]
-        rows_html += f"""
-        <div style="display:flex;align-items:flex-start;gap:10px;
-                    background:rgba(255,255,255,0.06);border-radius:8px;
-                    padding:9px 12px;margin-bottom:6px;
-                    border-left:3px solid {tag_color};">
-          <span style="font-size:14px;flex-shrink:0;margin-top:1px;">{icon}</span>
-          <div style="flex:1;min-width:0;">
-            <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:3px;">
-              <span style="background:{tag_color};color:#fff;padding:1px 7px;border-radius:4px;
-                           font-size:9px;font-weight:700;letter-spacing:.5px;white-space:nowrap;">{tag}</span>
-              <span style="color:#C9974A;font-size:12px;font-weight:600;white-space:nowrap;
-                           overflow:hidden;text-overflow:ellipsis;max-width:180px;">{company}</span>
-            </div>
-            <div style="color:#f0fdf4;font-size:12px;font-weight:500;
-                        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{action_txt}</div>
-            <div style="color:rgba(255,255,255,0.45);font-size:10px;margin-top:2px;">{detail}</div>
-          </div>
         </div>"""
+    else:
+        rows_html = ""
+        for item in top:
+            tc = item["tag_color"]
+            rows_html += (
+                f'<div style="display:flex;align-items:flex-start;gap:10px;'
+                f'background:rgba(255,255,255,0.06);border-radius:8px;'
+                f'padding:9px 12px;margin-bottom:6px;border-left:3px solid {tc};">'
+                f'<span style="font-size:14px;flex-shrink:0;margin-top:1px;">{item["icon"]}</span>'
+                f'<div style="flex:1;min-width:0;">'
+                f'<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:3px;">'
+                f'<span style="background:{tc};color:#fff;padding:1px 7px;border-radius:4px;'
+                f'font-size:9px;font-weight:700;letter-spacing:.5px;white-space:nowrap;">{item["tag"]}</span>'
+                f'<span style="color:#C9974A;font-size:12px;font-weight:600;">{item["company"]}</span>'
+                f'</div>'
+                f'<div style="color:#f0fdf4;font-size:12px;font-weight:500;">{item["action"]}</div>'
+                f'<div style="color:rgba(255,255,255,0.45);font-size:10px;margin-top:2px;">{item["detail"]}</div>'
+                f'</div></div>'
+            )
+        remainder = len(items) - len(top)
+        more_line = (
+            f'<div style="text-align:center;color:rgba(255,255,255,0.4);font-size:11px;margin-top:4px;">'
+            f'+ {remainder} more item{"s" if remainder!=1 else ""} in Strategic Alerts below</div>'
+            if remainder > 0 else ""
+        )
+        body_html = f'<div>{rows_html}</div>{more_line}'
 
-    remainder = len(items) - len(top)
-    more_html = ""
-    if remainder > 0:
-        more_html = f"""<div style="text-align:center;color:rgba(255,255,255,0.4);
-                                    font-size:11px;margin-top:4px;">
-                          + {remainder} more item{'s' if remainder!=1 else ''} below in Strategic Alerts
-                        </div>"""
-
-    st.markdown(f"""
-    <div style="columns:2;column-gap:12px;">
-      {rows_html}
-    </div>
-    {more_html}
-    </div>""", unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="background:linear-gradient(135deg,#0f2d1e 0%,#1B5C3F 100%);'
+        f'border-radius:12px;padding:18px 20px 14px 20px;margin-bottom:16px;">'
+        f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+        f'<div>'
+        f'<span style="color:#C9974A;font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;">Today\'s Briefing</span>'
+        f'<div style="color:#fff;font-size:17px;font-weight:700;margin-top:2px;">{day_label}</div>'
+        f'</div>'
+        f'<div style="display:flex;gap:10px;">'
+        f'<div style="text-align:center;background:rgba(220,38,38,0.25);border:1px solid rgba(220,38,38,0.5);border-radius:8px;padding:6px 14px;">'
+        f'<div style="color:#FCA5A5;font-size:18px;font-weight:700;">{n_crit}</div>'
+        f'<div style="color:rgba(255,255,255,0.6);font-size:9px;letter-spacing:.4px;">CRITICAL</div></div>'
+        f'<div style="text-align:center;background:rgba(217,119,6,0.25);border:1px solid rgba(217,119,6,0.5);border-radius:8px;padding:6px 14px;">'
+        f'<div style="color:#FCD34D;font-size:18px;font-weight:700;">{n_soon}</div>'
+        f'<div style="color:rgba(255,255,255,0.6);font-size:9px;letter-spacing:.4px;">THIS WEEK</div></div>'
+        f'<div style="text-align:center;background:rgba(124,58,237,0.25);border:1px solid rgba(124,58,237,0.5);border-radius:8px;padding:6px 14px;">'
+        f'<div style="color:#C4B5FD;font-size:18px;font-weight:700;">{n_strat}</div>'
+        f'<div style="color:rgba(255,255,255,0.6);font-size:9px;letter-spacing:.4px;">STRATEGIC</div></div>'
+        f'</div></div>'
+        f'{body_html}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ── Top KPI strip ────────────────────────────────────────────────────────────
