@@ -47,8 +47,21 @@ from modules.deals         import render as render_deals
 from modules.report_builder      import render as render_report_builder
 from modules.company_directory   import render as render_company_directory
 
-from exports.pptx_generator import generate_pptx, generate_pptx_company
-from exports.pdf_generator  import generate_pdf
+try:
+    from exports.pptx_generator import generate_pptx, generate_pptx_company
+    _PPTX_AVAILABLE = True
+except Exception:
+    _PPTX_AVAILABLE = False
+    generate_pptx         = None
+    generate_pptx_company = None
+
+try:
+    from exports.pdf_generator import generate_pdf
+    _PDF_AVAILABLE = True
+except Exception:
+    _PDF_AVAILABLE = False
+    generate_pdf = None
+
 from exports.excel_exporter import export_status_excel, generate_template
 
 
@@ -339,7 +352,9 @@ def render_export():
         </div>
         """, unsafe_allow_html=True)
         report_lang_pptx = st.selectbox("Language", ["English", "Arabic"], key="pptx_lang")
-        if st.button(T("generate_report") + " (PPTX)", use_container_width=True, disabled=(dfs is None)):
+        if not _PPTX_AVAILABLE:
+            st.warning("PPTX export requires python-pptx. Run: python -m pip install python-pptx")
+        elif st.button(T("generate_report") + " (PPTX)", use_container_width=True, disabled=(dfs is None)):
             with st.spinner(T("generating")):
                 pptx_lang = "ar" if report_lang_pptx == "Arabic" else "en"
                 pptx_bytes = generate_pptx(dfs or {}, lang=pptx_lang)
@@ -368,7 +383,9 @@ def render_export():
         </div>
         """, unsafe_allow_html=True)
         report_lang_pdf = st.selectbox("Language", ["English", "Arabic"], key="pdf_lang")
-        if st.button(T("generate_report") + " (PDF)", use_container_width=True, disabled=(dfs is None)):
+        if not _PDF_AVAILABLE:
+            st.warning("PDF export requires additional packages. Run: python -m pip install reportlab")
+        elif st.button(T("generate_report") + " (PDF)", use_container_width=True, disabled=(dfs is None)):
             with st.spinner(T("generating")):
                 pdf_lang  = "ar" if report_lang_pdf == "Arabic" else "en"
                 pdf_bytes = generate_pdf(dfs or {}, lang=pdf_lang)
@@ -451,13 +468,15 @@ def render_export():
         cc1, cc2 = st.columns([2, 1])
         selected_co = cc1.selectbox("Select Company", companies, key="pptx_company_select")
         co_lang     = cc2.selectbox("Language", ["English", "Arabic"], key="pptx_company_lang")
-        if st.button("📊 Generate Company PPTX", use_container_width=False, disabled=(dfs is None)):
+        if not _PPTX_AVAILABLE:
+            st.warning("PPTX export requires python-pptx. Run: python -m pip install python-pptx")
+        elif st.button("Generate Company PPTX", use_container_width=False, disabled=(dfs is None)):
             with st.spinner(T("generating")):
                 co_lang_code = "ar" if co_lang == "Arabic" else "en"
                 co_pptx = generate_pptx_company(dfs, selected_co, lang=co_lang_code)
             co_filename = f"MoI_{selected_co.replace(' ','_')}_{date.today().strftime('%Y-%m-%d')}.pptx"
             st.download_button(
-                f"⬇️ Download — {selected_co}",
+                f"Download — {selected_co}",
                 data=co_pptx,
                 file_name=co_filename,
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
