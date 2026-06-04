@@ -155,9 +155,12 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
     Convert legacy per-investor sheets into the new 5-sheet structure.
     Best-effort mapping; missing fields are left blank.
     """
-    action_rows = []
+    action_rows   = []
     investor_rows = []
+    opp_rows      = []
     investor_counter = 1
+    opp_id_counter   = 1
+    _OPP_SKIP = {"opportunity", "opportunities", "type", "n/a", "none", ""}
 
     for sheet_name in sheet_names:
         if not any(sheet_name.startswith(p) for p in LEGACY_SHEET_PREFIXES):
@@ -194,6 +197,34 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
             "Notes":                    "",
         })
 
+        # ── Extract opportunities from header block (rows 14-19, col H) ──────
+        for row_i in range(13, 19):          # 0-indexed rows 13-18 → Excel 14-19
+            try:
+                cell_val = df_raw.iloc[row_i, 7]   # col H = index 7
+            except (IndexError, KeyError):
+                continue
+            if cell_val is None or (isinstance(cell_val, float) and pd.isna(cell_val)):
+                continue
+            sval = str(cell_val).strip()
+            if not sval or sval.lower() in _OPP_SKIP:
+                continue
+            # Skip row-label artefacts
+            if sval[:2] in ("4 ", "¦ ", "¹ ") or (sval and sval[0] in "¦¹"):
+                continue
+            opp_rows.append({
+                "Opportunity ID":     f"OPP-{opp_id_counter:03d}",
+                "Investor ID":        inv_id,
+                "Company Name":       company,
+                "Opportunity Name":   sval,
+                "Sector":             "",
+                "Opportunity Stage":  "Exploration",
+                "Opportunity Status": "Active",
+                "Opportunity Type":   "Opportunity",
+                "Opportunity Source": "Excel Tracker Import",
+                "Last Updated":       date.today(),
+            })
+            opp_id_counter += 1
+
         # Find the data header row (contains "Action Item")
         header_row_idx = _find_header_row(df_raw)
         if header_row_idx is None:
@@ -215,17 +246,21 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
             except (ValueError, TypeError):
                 continue
 
+            desc    = _safe_get(row, col_map, "Action Item", "")
+            eng_type = _safe_get(row, col_map, "Type of Engagement", "")
+            sector  = _safe_get(row, col_map, "Sector", "")
+
             action_rows.append({
                 "Action ID":          f"ACT-{inv_id}-{action_num:03d}",
                 "Investor ID":        inv_id,
                 "Company Name":       company,
                 "Meeting ID":         "",
                 "Opportunity ID":     "",
-                "Action Description": _safe_get(row, col_map, "Action Item", ""),
+                "Action Description": desc,
                 "Assigned To":        _safe_get(row, col_map, "Assigned to", ""),
                 "Department":         "",
-                "Sector":             _safe_get(row, col_map, "Sector", ""),
-                "Type of Engagement": _safe_get(row, col_map, "Type of Engagement", ""),
+                "Sector":             sector,
+                "Type of Engagement": eng_type,
                 "Start Date":         _to_date(_safe_get(row, col_map, "Start Date", None)),
                 "Due Date":           _to_date(_safe_get(row, col_map, "Due Date", None)),
                 "Priority":           _safe_get(row, col_map, "Priority", "Medium"),
@@ -240,17 +275,36 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
                 "Updated By":         "",
             })
 
+            # Action items with Opportunity engagement type → also add to pipeline
+            if str(eng_type).strip().lower() == "opportunity" and str(desc).strip():
+                existing_names = {o["Opportunity Name"] for o in opp_rows}
+                if desc not in existing_names:
+                    opp_rows.append({
+                        "Opportunity ID":     f"OPP-{opp_id_counter:03d}",
+                        "Investor ID":        inv_id,
+                        "Company Name":       company,
+                        "Opportunity Name":   str(desc).strip(),
+                        "Sector":             sector,
+                        "Opportunity Stage":  "Exploration",
+                        "Opportunity Status": "Active",
+                        "Opportunity Type":   "Opportunity",
+                        "Opportunity Source": "Action Item Import",
+                        "Last Updated":       date.today(),
+                    })
+                    opp_id_counter += 1
+
         investor_counter += 1
 
-    investors_df   = pd.DataFrame(investor_rows) if investor_rows else _empty_investor_df()
-    actions_df     = pd.DataFrame(action_rows)   if action_rows   else _empty_actions_df()
+    investors_df = pd.DataFrame(investor_rows) if investor_rows else _empty_investor_df()
+    actions_df   = pd.DataFrame(action_rows)   if action_rows   else _empty_actions_df()
+    opps_df      = pd.DataFrame(opp_rows)      if opp_rows      else _empty_opportunity_df()
 
     return {
-        "Investor Master":    investors_df,
-        "Meeting Log":        _empty_meeting_df(),
-        "Opportunity Pipeline": _empty_opportunity_df(),
-        "Action Items":       actions_df,
-        "RM Tasks":           _empty_tasks_df(),
+        "Investor Master":      investors_df,
+        "Meeting Log":          _empty_meeting_df(),
+        "Opportunity Pipeline": opps_df,
+        "Action Items":         actions_df,
+        "RM Tasks":             _empty_tasks_df(),
     }
 
 

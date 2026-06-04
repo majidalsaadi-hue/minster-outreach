@@ -33,7 +33,7 @@ from modules.data_loader   import load_excel, validate_schema, get_summary
 from modules.persistence   import save_session, load_session
 from modules.dashboard     import (
     render_action_advisor,
-    render_kpi_cards, render_pipeline_overview, render_meeting_outcomes,
+    render_kpi_cards, render_pipeline_overview,
     render_investment_flow, render_opportunity_pipeline,
     render_sector_geography, render_alerts,
     render_minister_decision_panel, render_vision2030_panel, render_economic_impact,
@@ -120,11 +120,10 @@ def render_sidebar():
 
         # Navigation
         nav_options = {
-            T("nav_dashboard"):     "dashboard",
-            T("nav_investors"):     "investors",
-            T("nav_meetings"):      "meetings",
-            T("nav_opportunities"): "opportunities",
-            T("nav_deals"):          "deals",
+            T("nav_dashboard"):         "dashboard",
+            T("nav_investors"):         "investors",
+            T("nav_opportunities"):     "opportunities",
+            T("nav_deals"):             "deals",
             T("nav_report_builder"):    "report_builder",
             T("nav_company_directory"): "company_directory",
             T("nav_actions"):           "actions",
@@ -271,25 +270,20 @@ def render_dashboard():
 
     st.markdown("---")
 
-    # ── Charts row 1: Pipeline Overview + Meeting Outcomes ────────────────
+    # ── Charts row 1: Pipeline Overview + Investment Flow ─────────────────
     c1, c2 = st.columns(2)
     with c1:
         st.markdown(f"#### {T('dash_pipeline_overview')}")
         render_pipeline_overview(dfs, lang())
     with c2:
-        st.markdown(f"#### {T('dash_meeting_tracker')}")
-        render_meeting_outcomes(dfs, lang())
+        st.markdown(f"#### {T('dash_investment_flow')}")
+        render_investment_flow(dfs, lang())
 
     st.markdown("---")
 
-    # ── Charts row 2: Investment Flow + Sector & Geography ────────────────
-    c3, c4 = st.columns(2)
-    with c3:
-        st.markdown(f"#### {T('dash_investment_flow')}")
-        render_investment_flow(dfs, lang())
-    with c4:
-        st.markdown(f"#### {T('dash_sector_geo')}")
-        render_sector_geography(dfs, lang())
+    # ── Charts row 2: Sector & Geography (full width) ─────────────────────
+    st.markdown(f"#### {T('dash_sector_geo')}")
+    render_sector_geography(dfs, lang())
 
 
 def _render_no_data_welcome():
