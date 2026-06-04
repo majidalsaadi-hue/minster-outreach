@@ -1,22 +1,66 @@
 
-# Company Directory — at-a-glance list of all companies with key meeting info.
+# Company Directory — strategic card view of all tracked companies.
 
+import hashlib
 import pandas as pd
 import streamlit as st
 from datetime import date
 
 
-_GREEN      = "#1B5C3F"
-_GOLD       = "#C9974A"
-_RED        = "#DC2626"
-_AMBER      = "#D97706"
-_BLUE       = "#1D4ED8"
+_GREEN  = "#1B5C3F"
+_GOLD   = "#C9974A"
+_RED    = "#DC2626"
+_AMBER  = "#D97706"
+_BLUE   = "#1D4ED8"
+_PURPLE = "#7C3AED"
+
+# Sector → accent color for avatar ring
+_SECTOR_COLORS = {
+    "technology":       "#1D4ED8",
+    "tech":             "#1D4ED8",
+    "energy":           "#D97706",
+    "renewable":        "#059669",
+    "manufacturing":    "#7C3AED",
+    "finance":          "#0891B2",
+    "financial":        "#0891B2",
+    "healthcare":       "#DC2626",
+    "real estate":      "#92400E",
+    "logistics":        "#374151",
+    "tourism":          "#DB2777",
+    "mining":           "#78350F",
+    "agriculture":      "#166534",
+}
+
+
+def _sector_color(sector: str) -> str:
+    s = sector.lower()
+    for k, v in _SECTOR_COLORS.items():
+        if k in s:
+            return v
+    # Deterministic fallback from sector name
+    h = int(hashlib.md5(sector.encode()).hexdigest()[:6], 16)
+    r = (h >> 16) & 0xFF
+    g = (h >> 8)  & 0xFF
+    b = h & 0xFF
+    # Keep it dark enough for white text
+    r = max(40, min(r, 160))
+    g = max(40, min(g, 160))
+    b = max(40, min(b, 160))
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
+def _initials(name: str) -> str:
+    parts = name.split()
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[-1][0]).upper()
+    return name[:2].upper() if name else "?"
 
 
 def render(dfs: dict, lang: str = "en"):
     st.markdown(
-        f"<h2 style='color:{_GREEN};margin-bottom:4px;'>Company Directory</h2>"
-        f"<p style='color:#6b7280;margin-top:0;'>All tracked companies — sector, country & meeting schedule</p>",
+        f"<h2 style='color:{_GREEN};margin-bottom:2px;'>Investor Directory</h2>"
+        f"<p style='color:#6b7280;margin-top:0;font-size:13px;'>"
+        f"Strategic overview of all tracked investors — contact, sector & engagement</p>",
         unsafe_allow_html=True,
     )
 
@@ -27,13 +71,31 @@ def render(dfs: dict, lang: str = "en"):
         st.info("No investor data loaded. Upload an Excel tracker to populate this view.")
         return
 
-    # ── Build base table from Investor Master ─────────────────────────────────
-    keep_inv = ["Company Name", "Sector", "Country", "Investor Tier",
-                "Relationship Status", "Next Meeting Date", "Account Manager",
-                "Relationship Manager"]
+    # ── Build base table ──────────────────────────────────────────────────────
+    keep_inv = [
+        "Company Name", "Sector", "Country",
+        "Relationship Status", "Journey Stage",
+        "Key Contact Name", "Key Contact Title",
+        "Next Meeting Date", "Last Meeting Date",
+        "Account Manager", "Relationship Manager",
+        "Strategic Priority Score",
+    ]
     inv = investors[[c for c in keep_inv if c in investors.columns]].copy()
 
-    # ── Aggregate meeting stats from Meeting Log ──────────────────────────────
+    # ── Pull key contact from Meeting Log attendees if not in master ──────────
+    if not meetings.empty and "Company Name" in meetings.columns and "Investor Attendees" in meetings.columns:
+        mtg_contact = (
+            meetings[meetings["Investor Attendees"].notna()]
+            .sort_values("Meeting Date" if "Meeting Date" in meetings.columns else "Company Name",
+                         ascending=False)
+            .drop_duplicates("Company Name")[["Company Name", "Investor Attendees"]]
+            .rename(columns={"Investor Attendees": "_mtg_contact"})
+        )
+        inv = inv.merge(mtg_contact, on="Company Name", how="left")
+    else:
+        inv["_mtg_contact"] = None
+
+    # ── Aggregate meeting stats ───────────────────────────────────────────────
     if not meetings.empty and "Company Name" in meetings.columns:
         mtg = meetings.copy()
         if "Meeting Date" in mtg.columns:
@@ -55,36 +117,30 @@ def render(dfs: dict, lang: str = "en"):
             ).dt.date
         inv = inv.merge(agg, on="Company Name", how="left")
     else:
-        inv["# Meetings"]       = 0
+        inv["# Meetings"]        = 0
         inv["Last Meeting Date"] = None
 
-    if "Next Meeting Date" in inv.columns:
-        inv["Next Meeting Date"] = pd.to_datetime(
-            inv["Next Meeting Date"], errors="coerce"
-        ).dt.date
+    for col in ("Next Meeting Date", "Last Meeting Date"):
+        if col in inv.columns:
+            inv[col] = pd.to_datetime(inv[col], errors="coerce").dt.date
 
-    # ── Fill blanks ───────────────────────────────────────────────────────────
-    inv["# Meetings"]       = inv.get("# Meetings",       pd.Series()).fillna(0).astype(int)
-    inv["Sector"]           = inv.get("Sector",           pd.Series()).fillna("—")
-    inv["Country"]          = inv.get("Country",          pd.Series()).fillna("—")
-    inv["Investor Tier"]    = inv.get("Investor Tier",    pd.Series()).fillna("—")
-    inv["Relationship Status"] = inv.get("Relationship Status", pd.Series()).fillna("—")
+    inv["# Meetings"]          = inv.get("# Meetings", pd.Series()).fillna(0).astype(int)
+    inv["Sector"]              = inv.get("Sector",     pd.Series()).fillna("—")
+    inv["Country"]             = inv.get("Country",    pd.Series()).fillna("—")
+    inv["Relationship Status"] = inv.get("Relationship Status", pd.Series()).fillna("Active")
+    inv["Journey Stage"]       = inv.get("Journey Stage", pd.Series()).fillna("—")
 
-    # ── Filters row ───────────────────────────────────────────────────────────
-    fc1, fc2, fc3, fc4 = st.columns([2, 1.5, 1.5, 1.5])
+    # ── Filters ───────────────────────────────────────────────────────────────
+    fc1, fc2, fc3, fc4 = st.columns([2.5, 1.5, 1.5, 1.5])
     with fc1:
-        q = st.text_input("Search company", placeholder="Type to filter…",
+        q = st.text_input("Search", placeholder="Search company or contact…",
                           key="cd_search", label_visibility="collapsed")
     with fc2:
-        sectors = ["All sectors"] + sorted(
-            s for s in inv["Sector"].unique() if s and s != "—"
-        )
+        sectors = ["All sectors"] + sorted(s for s in inv["Sector"].unique() if s and s != "—")
         sel_sector = st.selectbox("Sector", sectors, key="cd_sector",
                                   label_visibility="collapsed")
     with fc3:
-        countries = ["All countries"] + sorted(
-            c for c in inv["Country"].unique() if c and c != "—"
-        )
+        countries = ["All countries"] + sorted(c for c in inv["Country"].unique() if c and c != "—")
         sel_country = st.selectbox("Country", countries, key="cd_country",
                                    label_visibility="collapsed")
     with fc4:
@@ -94,25 +150,25 @@ def render(dfs: dict, lang: str = "en"):
         sel_status = st.selectbox("Status", statuses, key="cd_status",
                                   label_visibility="collapsed")
 
-    # Apply filters
     view = inv.copy()
     if q:
-        view = view[view["Company Name"].str.contains(q, case=False, na=False)]
-    if sel_sector != "All sectors":
-        view = view[view["Sector"] == sel_sector]
-    if sel_country != "All countries":
-        view = view[view["Country"] == sel_country]
-    if sel_status != "All statuses":
-        view = view[view["Relationship Status"] == sel_status]
+        mask = (
+            view["Company Name"].str.contains(q, case=False, na=False)
+            | view.get("Key Contact Name", pd.Series(dtype=str)).fillna("").str.contains(q, case=False, na=False)
+        )
+        view = view[mask]
+    if sel_sector  != "All sectors":   view = view[view["Sector"] == sel_sector]
+    if sel_country != "All countries": view = view[view["Country"] == sel_country]
+    if sel_status  != "All statuses":  view = view[view["Relationship Status"] == sel_status]
 
     view = view.sort_values("Company Name").reset_index(drop=True)
 
     # ── Summary chips ─────────────────────────────────────────────────────────
-    today     = date.today()
-    total     = len(view)
-    no_mtg    = int((view["# Meetings"] == 0).sum())
-    has_next  = view["Next Meeting Date"].notna().sum() if "Next Meeting Date" in view.columns else 0
-    overdue   = 0
+    today    = date.today()
+    total    = len(view)
+    no_mtg   = int((view["# Meetings"] == 0).sum())
+    has_next = int(view["Next Meeting Date"].notna().sum()) if "Next Meeting Date" in view.columns else 0
+    overdue  = 0
     if "Next Meeting Date" in view.columns:
         overdue = int(
             view["Next Meeting Date"].apply(
@@ -121,99 +177,165 @@ def render(dfs: dict, lang: str = "en"):
         )
 
     s1, s2, s3, s4 = st.columns(4)
-    _chip(s1, str(total),   "Companies",          _GREEN)
-    _chip(s2, str(no_mtg),  "No meetings yet",    _AMBER if no_mtg else _GREEN)
-    _chip(s3, str(has_next),"Next meeting set",   _BLUE)
-    _chip(s4, str(overdue), "Overdue next mtg",   _RED if overdue else _GREEN)
+    _chip(s1, str(total),    "Total Investors",    _GREEN)
+    _chip(s2, str(no_mtg),   "No meetings yet",    _AMBER if no_mtg else _GREEN)
+    _chip(s3, str(has_next), "Next meeting set",   _BLUE)
+    _chip(s4, str(overdue),  "Overdue next mtg",   _RED if overdue else _GREEN)
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # ── Table ─────────────────────────────────────────────────────────────────
     if view.empty:
         st.warning("No companies match the current filters.")
         return
 
-    # Render as styled HTML table
-    rows_html = []
-    for _, row in view.iterrows():
-        company  = str(row.get("Company Name", "—"))
-        sector   = str(row.get("Sector",  "—"))
-        country  = str(row.get("Country", "—"))
-        tier     = str(row.get("Investor Tier", "—"))
-        status   = str(row.get("Relationship Status", "Active"))
-        n_mtg    = int(row.get("# Meetings", 0))
-        last_mtg = row.get("Last Meeting Date")
-        next_mtg = row.get("Next Meeting Date")
-        am       = str(row.get("Account Manager", "—"))
-        rm       = str(row.get("Relationship Manager", "—"))
+    # ── Card grid ─────────────────────────────────────────────────────────────
+    cards_per_row = 3
+    rows_data = [
+        view.iloc[i : i + cards_per_row]
+        for i in range(0, len(view), cards_per_row)
+    ]
 
-        last_str = _fmt_date(last_mtg) if last_mtg and str(last_mtg) not in ("NaT", "None", "nan") else "—"
-        next_str, next_color = _next_date_fmt(next_mtg, today)
+    for chunk in rows_data:
+        cols = st.columns(cards_per_row)
+        for col_idx, (_, row) in enumerate(chunk.iterrows()):
+            with cols[col_idx]:
+                _render_card(row, today)
 
-        status_badge = _status_badge(status)
-        mtg_badge    = (
-            f'<span style="background:#f3f4f6;color:#374151;padding:1px 7px;'
-            f'border-radius:10px;font-size:11px;">{n_mtg}</span>'
-        )
+    st.caption(f"{total} investor{'s' if total != 1 else ''} shown")
 
-        am_rm = f"{am}" if am != "—" else ""
-        if rm != "—":
-            am_rm = (am_rm + f" / {rm}") if am_rm else rm
 
-        rows_html.append(f"""
-        <tr>
-          <td style="font-weight:600;color:{_GREEN};">{company}</td>
-          <td>{sector}</td>
-          <td>{country}</td>
-          <td>{status_badge}</td>
-          <td style="text-align:center;">{mtg_badge}</td>
-          <td style="color:#374151;">{last_str}</td>
-          <td style="color:{next_color};font-weight:{'600' if next_color != '#374151' else '400'};">{next_str}</td>
-          <td style="font-size:11px;color:#6b7280;">{am_rm}</td>
-        </tr>""")
+# ── Card renderer ─────────────────────────────────────────────────────────────
 
-    table_html = f"""
-    <style>
-      .cd-table {{
-        width: 100%; border-collapse: collapse;
-        font-size: 13px; font-family: system-ui, sans-serif;
-      }}
-      .cd-table th {{
-        background: {_GREEN}; color: #fff;
-        padding: 9px 12px; text-align: left;
-        font-size: 12px; font-weight: 600; letter-spacing: .4px;
-        position: sticky; top: 0;
-      }}
-      .cd-table td {{
-        padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
-        vertical-align: middle;
-      }}
-      .cd-table tr:nth-child(even) td {{ background: #fafafa; }}
-      .cd-table tr:hover td {{ background: #f0fdf4; }}
-    </style>
-    <div style="overflow-x:auto;border:1px solid #e5e7eb;border-radius:8px;
-                max-height:600px;overflow-y:auto;">
-      <table class="cd-table">
-        <thead>
-          <tr>
-            <th>Company</th>
-            <th>Sector</th>
-            <th>Country</th>
-            <th>Status</th>
-            <th style="text-align:center;"># Meetings</th>
-            <th>Last Meeting</th>
-            <th>Next Meeting</th>
-            <th>AM / RM</th>
-          </tr>
-        </thead>
-        <tbody>
-          {''.join(rows_html)}
-        </tbody>
-      </table>
-    </div>
-    """
-    st.markdown(table_html, unsafe_allow_html=True)
-    st.caption(f"{total} compan{'y' if total == 1 else 'ies'} shown")
+def _render_card(row, today: date):
+    company  = str(row.get("Company Name", "—"))
+    sector   = str(row.get("Sector",  "—"))
+    country  = str(row.get("Country", "—"))
+    status   = str(row.get("Relationship Status", "Active"))
+    stage    = str(row.get("Journey Stage", "—"))
+    n_mtg    = int(row.get("# Meetings", 0))
+    last_mtg = row.get("Last Meeting Date")
+    next_mtg = row.get("Next Meeting Date")
+    am       = str(row.get("Account Manager", "—"))
+    rm       = str(row.get("Relationship Manager", "—"))
+
+    # Contact: prefer explicit columns, fall back to meeting attendees
+    contact_name  = str(row.get("Key Contact Name",  "") or "").strip()
+    contact_title = str(row.get("Key Contact Title", "") or "").strip()
+    if not contact_name:
+        mtg_att = str(row.get("_mtg_contact", "") or "").strip()
+        if mtg_att:
+            # First attendee only
+            contact_name = mtg_att.split(",")[0].split("،")[0].strip()
+
+    scolor = _sector_color(sector if sector != "—" else company)
+    avatar = _initials(company)
+    status_bg, status_fg = _status_colors(status)
+    next_str, next_color = _next_date_fmt(next_mtg, today)
+    last_str = _fmt_date(last_mtg) if last_mtg and str(last_mtg) not in ("NaT", "None", "nan") else "—"
+
+    am_rm = ""
+    if am != "—": am_rm = am
+    if rm != "—": am_rm = f"{am_rm} / {rm}" if am_rm else rm
+
+    # Priority star
+    score = row.get("Strategic Priority Score")
+    priority_dot = ""
+    try:
+        if score and float(score) >= 4:
+            priority_dot = f'<span style="color:#C9974A;font-size:13px;margin-left:4px;" title="Strategic Priority">★</span>'
+    except Exception:
+        pass
+
+    contact_html = ""
+    if contact_name:
+        contact_html = f"""
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:6px;
+                    border-top:1px solid #f0f0f0;">
+          <div style="width:28px;height:28px;border-radius:50%;background:#f3f4f6;
+                      display:flex;align-items:center;justify-content:center;
+                      font-size:11px;font-weight:600;color:#374151;flex-shrink:0;">
+            {_initials(contact_name)}
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#111827;line-height:1.2;">{contact_name}</div>
+            {"<div style='font-size:10px;color:#6b7280;'>" + contact_title + "</div>" if contact_title else ""}
+          </div>
+        </div>"""
+
+    next_html = (
+        f'<span style="color:{next_color};font-size:11px;font-weight:600;">{next_str}</span>'
+        if next_str != "—" else
+        '<span style="color:#9ca3af;font-size:11px;">No next meeting</span>'
+    )
+
+    am_rm_html = (
+        f'<div style="font-size:10px;color:#6b7280;margin-top:4px;">{am_rm}</div>'
+        if am_rm else ""
+    )
+
+    card_html = f"""
+    <div style="border:1px solid #e5e7eb;border-radius:12px;padding:16px;
+                background:#fff;height:100%;box-sizing:border-box;
+                transition:box-shadow .15s;
+                box-shadow:0 1px 3px rgba(0,0,0,.07);">
+
+      <!-- Header: avatar + company -->
+      <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;">
+        <div style="width:44px;height:44px;border-radius:10px;
+                    background:{scolor};flex-shrink:0;
+                    display:flex;align-items:center;justify-content:center;
+                    font-size:15px;font-weight:700;color:#fff;
+                    letter-spacing:.5px;">
+          {avatar}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14px;font-weight:700;color:{_GREEN};
+                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+            {company}{priority_dot}
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
+            <span style="background:#f0fdf4;color:{_GREEN};padding:1px 7px;
+                         border-radius:8px;font-size:10px;font-weight:500;">{sector}</span>
+            <span style="background:#f8fafc;color:#475569;padding:1px 7px;
+                         border-radius:8px;font-size:10px;">🌍 {country}</span>
+          </div>
+        </div>
+        <span style="background:{status_bg};color:{status_fg};padding:2px 8px;
+                     border-radius:10px;font-size:10px;font-weight:600;
+                     flex-shrink:0;white-space:nowrap;">{status}</span>
+      </div>
+
+      <!-- Contact person -->
+      {contact_html}
+
+      <!-- Meeting stats -->
+      <div style="display:flex;justify-content:space-between;align-items:center;
+                  margin-top:10px;padding-top:8px;border-top:1px solid #f0f0f0;">
+        <div>
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;
+                      letter-spacing:.4px;margin-bottom:2px;">Last Meeting</div>
+          <div style="font-size:11px;color:#374151;">{last_str}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;
+                      letter-spacing:.4px;margin-bottom:2px;">Next Meeting</div>
+          {next_html}
+        </div>
+      </div>
+
+      <!-- Footer: meetings count + AM/RM -->
+      <div style="display:flex;justify-content:space-between;align-items:center;
+                  margin-top:8px;padding-top:6px;border-top:1px solid #f0f0f0;">
+        <span style="background:#f3f4f6;color:#374151;padding:1px 8px;
+                     border-radius:8px;font-size:10px;font-weight:500;">
+          {n_mtg} meeting{'s' if n_mtg != 1 else ''}
+        </span>
+        {am_rm_html}
+      </div>
+    </div>"""
+
+    st.markdown(card_html, unsafe_allow_html=True)
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -231,14 +353,12 @@ def _fmt_date(d) -> str:
     try:
         if isinstance(d, date):
             return d.strftime("%d %b %Y")
-        dt = pd.to_datetime(d)
-        return dt.strftime("%d %b %Y")
+        return pd.to_datetime(d).strftime("%d %b %Y")
     except Exception:
         return str(d)
 
 
 def _next_date_fmt(d, today: date) -> tuple[str, str]:
-    """Returns (display_string, color)."""
     if d is None or str(d) in ("NaT", "None", "nan", ""):
         return "—", "#9ca3af"
     try:
@@ -249,26 +369,22 @@ def _next_date_fmt(d, today: date) -> tuple[str, str]:
         if delta < 0:
             return f"{label} ⚠", _RED
         elif delta <= 7:
-            return f"{label} (this week)", _AMBER
+            return f"{label} · this week", _AMBER
         elif delta <= 30:
-            return f"{label} (soon)", _BLUE
+            return f"{label} · soon", _BLUE
         else:
             return label, "#374151"
     except Exception:
         return str(d), "#374151"
 
 
-def _status_badge(status: str) -> str:
+def _status_colors(status: str) -> tuple[str, str]:
     _MAP = {
-        "active":      ("#d1fae5", "#065f46"),
-        "inactive":    ("#f3f4f6", "#6b7280"),
-        "on hold":     ("#fef3c7", "#d97706"),
-        "churned":     ("#fee2e2", "#dc2626"),
-        "prospect":    ("#ede9fe", "#7c3aed"),
-        "committed":   ("#dbeafe", "#1d4ed8"),
+        "active":    ("#d1fae5", "#065f46"),
+        "inactive":  ("#f3f4f6", "#6b7280"),
+        "on hold":   ("#fef3c7", "#d97706"),
+        "churned":   ("#fee2e2", "#dc2626"),
+        "prospect":  ("#ede9fe", "#7c3aed"),
+        "committed": ("#dbeafe", "#1d4ed8"),
     }
-    bg, fg = _MAP.get(status.lower(), ("#f3f4f6", "#374151"))
-    return (
-        f'<span style="background:{bg};color:{fg};padding:2px 8px;'
-        f'border-radius:10px;font-size:11px;font-weight:500;">{status}</span>'
-    )
+    return _MAP.get(status.lower(), ("#f3f4f6", "#374151"))

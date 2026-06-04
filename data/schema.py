@@ -11,6 +11,7 @@ SCHEMA = {
         ],
         "optional": [
             "Account Manager", "Outreach Manager",
+            "Key Contact Name", "Key Contact Title",
             "Est. Investment Value (SAR)", "Actual Commitment (SAR)",
             "Est. Jobs Created", "Saudi Content %", "Technology Transfer",
             "Deal Classification", "Vision 2030 Pillar",
