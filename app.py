@@ -248,18 +248,19 @@ def render_dashboard():
         _render_no_data_welcome()
         return
 
-    # KPI strip
+    # ── Row 1 + Row 2: KPI strips ──────────────────────────────────────────
     render_kpi_cards(dfs, lang())
-    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-    # Strategic Alerts — always at top
-    with st.container():
-        st.markdown(f"#### 🚨 {T('dash_alerts')}")
-        render_alerts(dfs, lang())
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown("---")
+
+    # ── Row 3: Strategic Alerts + HE Attention ────────────────────────────
+    st.markdown("#### Strategic Alerts")
+    render_alerts(dfs, lang())
 
     st.markdown("---")
 
-    # Pipeline + Meetings
+    # ── Charts row 1: Pipeline Overview + Meeting Outcomes ────────────────
     c1, c2 = st.columns(2)
     with c1:
         st.markdown(f"#### {T('dash_pipeline_overview')}")
@@ -270,38 +271,14 @@ def render_dashboard():
 
     st.markdown("---")
 
-    # Investment Flow + Opportunities
+    # ── Charts row 2: Investment Flow + Sector & Geography ────────────────
     c3, c4 = st.columns(2)
     with c3:
         st.markdown(f"#### {T('dash_investment_flow')}")
         render_investment_flow(dfs, lang())
     with c4:
-        st.markdown(f"#### {T('dash_opportunity_pipeline')}")
-        render_opportunity_pipeline(dfs, lang())
-
-    st.markdown("---")
-
-    # Sector & Geography
-    st.markdown(f"#### {T('dash_sector_geo')}")
-    render_sector_geography(dfs, lang())
-
-    st.markdown("---")
-
-    # Minister Decision Panel
-    st.markdown("#### 🏛️ Minister Attention Required")
-    render_minister_decision_panel(dfs, lang())
-
-    st.markdown("---")
-
-    # Vision 2030 Alignment + Deal Classification
-    st.markdown("#### 🌟 Vision 2030 Alignment")
-    render_vision2030_panel(dfs, lang())
-
-    st.markdown("---")
-
-    # Economic Impact
-    st.markdown("#### 💰 Economic Impact Scorecard")
-    render_economic_impact(dfs, lang())
+        st.markdown(f"#### {T('dash_sector_geo')}")
+        render_sector_geography(dfs, lang())
 
 
 def _render_no_data_welcome():

@@ -23,131 +23,140 @@ _PALETTE       = [MISA_GREEN, MISA_GOLD, "#2D7A54", "#E4B96A", "#0F3D2A", "#C039
 # ── Top KPI strip ────────────────────────────────────────────────────────────
 
 def render_kpi_cards(dfs: dict, lang: str):
-    investors     = dfs.get("Investor Master",    pd.DataFrame())
-    meetings      = dfs.get("Meeting Log",        pd.DataFrame())
+    investors     = dfs.get("Investor Master",      pd.DataFrame())
+    meetings      = dfs.get("Meeting Log",          pd.DataFrame())
     opportunities = dfs.get("Opportunity Pipeline", pd.DataFrame())
-    actions       = dfs.get("Action Items",       pd.DataFrame())
+    actions       = dfs.get("Action Items",         pd.DataFrame())
     today         = date.today()
 
-    total_inv     = len(investors)
-    tier1         = _count_col(investors, "Investor Tier", "Tier 1 — Strategic")
-    pipeline_val  = _sum_col(investors, "Est. Investment Value (SAR)")
-    commitment    = _sum_col(investors, "Actual Commitment (SAR)")
-    active_opps   = _count_col(opportunities, "Opportunity Status", "Active")
-    overdue       = _overdue_count(actions, today)
-    jobs_est      = _sum_col(investors, "Est. Jobs Created")
+    # ── Row 1: Opportunity KPIs ──────────────────────────────────────────────
+    total_opps   = len(opportunities)
+    active_opps  = _count_col(opportunities, "Opportunity Status", "Active")
+    opp_value    = _sum_col(opportunities, "Est. Value (SAR)")
+    if opp_value == 0:
+        opp_value = _sum_col(opportunities, "Est. Investment Value (SAR)")
+
+    # Sector breakdown for opps
+    sector_pcts: list[tuple[str, int]] = []
+    if not opportunities.empty and "Sector" in opportunities.columns:
+        sec_counts = opportunities["Sector"].dropna().value_counts()
+        for sec, cnt in sec_counts.head(4).items():
+            sector_pcts.append((str(sec), round(cnt / len(opportunities) * 100)))
+
+    c1, c2, c3 = st.columns(3)
+    _big_kpi(c1, "No# Opportunities", f"{total_opps}",
+             sub=f"{active_opps} Active  ·  {total_opps - active_opps} Other",
+             color=MISA_GREEN)
+    _big_kpi(c2, "Opportunities Total Value", _fmt_sar(opp_value),
+             sub="Estimated pipeline value",
+             color=MISA_GOLD)
+    _sector_kpi(c3, "% Opportunities per Sector", sector_pcts)
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    # ── Row 2: Investor KPIs ─────────────────────────────────────────────────
+    total_inv   = len(investors)
+    n_countries = (investors["Country"].dropna().nunique()
+                   if not investors.empty and "Country" in investors.columns else 0)
+    n_sectors   = (investors["Sector"].dropna().nunique()
+                   if not investors.empty and "Sector" in investors.columns else 0)
+
+    inv_with_opps = 0
+    if not investors.empty and not opportunities.empty and "Company Name" in opportunities.columns and "Company Name" in investors.columns:
+        co_with = set(opportunities["Company Name"].dropna().unique())
+        inv_with_opps = int(investors["Company Name"].isin(co_with).sum())
 
     mtg_month = 0
     if not meetings.empty and "Meeting Date" in meetings.columns:
-        m = pd.to_datetime(meetings["Meeting Date"], errors="coerce")
-        mtg_month = int(m.dt.month.eq(today.month).sum())
+        m_dates = pd.to_datetime(meetings["Meeting Date"], errors="coerce")
+        mtg_month = int((m_dates.dt.month == today.month).sum())
 
-    # Row 1 — pipeline metrics
-    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
-    _kpi(c1, t("total_investors", lang),      f"{total_inv}",          MISA_GREEN)
-    _kpi(c2, t("tier1_investors", lang),      f"{tier1}",              MISA_GOLD)
-    _kpi(c3, t("total_pipeline_value", lang), _fmt_sar(pipeline_val),  MISA_GREEN)
-    _kpi(c4, t("commitment_value", lang),     _fmt_sar(commitment),    MISA_GOLD)
-    _kpi(c5, t("active_opportunities", lang), f"{active_opps}",        MISA_GREEN)
-    _kpi(c6, t("meetings_this_month", lang),  f"{mtg_month}",          MISA_GREEN_LIGHT)
-    _kpi(c7, t("overdue_actions", lang),      f"{overdue}",
-         "#C0392B" if overdue > 0 else MISA_GREEN)
-
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-    # Row 2 — international IR metrics
-    _render_ir_metrics_row(investors, meetings, opportunities, actions, jobs_est, lang)
-
-
-def _render_ir_metrics_row(investors, meetings, opportunities, actions, jobs_est, lang):
-    """International investor relations benchmark KPIs — second strip."""
-    today = date.today()
-
-    # Conversion rate: meetings → opportunities (approx via counts)
-    total_meetings = len(meetings)
-    total_opps     = len(opportunities)
-    mtg_to_opp     = round(total_opps / total_meetings * 100, 1) if total_meetings > 0 else 0.0
-    bench_mto      = IR_BENCHMARKS["meeting_to_opp_conversion"] * 100
-
-    # Opportunity → commitment conversion
-    converted = _count_col(opportunities, "Opportunity Status", "Converted to Deal")
-    opp_to_commit = round(converted / total_opps * 100, 1) if total_opps > 0 else 0.0
-    bench_otc = IR_BENCHMARKS["opp_to_commitment"] * 100
-
-    # Pipeline coverage ratio vs SAR targets (use actual commitment as denominator)
-    commitment_val = _sum_col(investors, "Actual Commitment (SAR)")
-    pipeline_val   = _sum_col(investors, "Est. Investment Value (SAR)")
-    coverage_ratio = round(pipeline_val / commitment_val, 1) if commitment_val > 0 else 0.0
-    bench_cov      = IR_BENCHMARKS["pipeline_coverage_ratio"]
-
-    # Avg days in current stage (proxy via last updated)
-    avg_stage_days = _avg_stage_days(investors)
-
-    # Escalation resolution: blocked actions vs total
-    blocked = _count_col(actions, "Status", "Blocked") if not actions.empty and "Status" in actions.columns else 0
-    escalation_rate = round(blocked / max(len(actions), 1) * 100, 1)
-
-    # Minister attention items (strategic priority 4-5)
-    minister_items = 0
-    if not investors.empty and "Strategic Priority Score" in investors.columns:
-        scores = pd.to_numeric(investors["Strategic Priority Score"], errors="coerce")
-        minister_items = int((scores >= 4).sum())
-    elif not investors.empty and "Minister Action Required" in investors.columns:
-        minister_items = int(
-            (investors["Minister Action Required"] != "None Required") &
-            (investors["Minister Action Required"].notna())
-        )
+    overdue = _overdue_count(actions, today)
 
     r1, r2, r3, r4, r5, r6 = st.columns(6)
+    _kpi(r1, "Total Investors",        f"{total_inv}",       MISA_GREEN)
+    _kpi(r2, "Investor Countries",     f"{n_countries}",     MISA_GREEN_DARK)
+    _kpi(r3, "Investor Sectors",       f"{n_sectors}",       MISA_GREEN)
+    _kpi(r4, "Investors with Opps",    f"{inv_with_opps}",   MISA_GOLD)
+    _kpi(r5, "Meetings This Month",    f"{mtg_month}",       MISA_GREEN)
+    _kpi(r6, "Overdue Actions",        f"{overdue}",
+         "#C0392B" if overdue > 0 else MISA_GREEN)
 
-    _ir_kpi(r1, "Mtg→Opp Rate",    f"{mtg_to_opp}%",
-            f"Benchmark {bench_mto:.0f}%", mtg_to_opp >= bench_mto)
-    _ir_kpi(r2, "Deal Win Rate",   f"{opp_to_commit}%",
-            f"Benchmark {bench_otc:.0f}%", opp_to_commit >= bench_otc)
-    _ir_kpi(r3, "Pipeline Coverage", f"{coverage_ratio:.1f}x",
-            f"Benchmark {bench_cov}x", coverage_ratio >= bench_cov)
-    _ir_kpi(r4, "Avg Days in Stage", f"{avg_stage_days}d",
-            f"Target <{IR_BENCHMARKS['avg_days_to_close']}d", avg_stage_days <= IR_BENCHMARKS["avg_days_to_close"])
-    _ir_kpi(r5, "Blocked Actions",  f"{blocked} ({escalation_rate}%)",
-            "Target 0%", blocked == 0)
-    _ir_kpi(r6, "Minister Items",   f"{minister_items}",
-            "Needs HE attention", minister_items == 0)
+
+def _big_kpi(col, label: str, value: str, sub: str, color: str):
+    col.markdown(f"""
+    <div style="background:{color};padding:18px 16px 14px 16px;border-radius:10px;
+                min-height:110px;display:flex;flex-direction:column;justify-content:center;">
+      <div style="color:rgba(255,255,255,0.75);font-size:10px;font-weight:600;
+                  letter-spacing:.6px;text-transform:uppercase;margin-bottom:6px;">{label}</div>
+      <div style="color:#fff;font-size:32px;font-weight:700;line-height:1.1;">{value}</div>
+      <div style="color:rgba(255,255,255,0.75);font-size:11px;margin-top:6px;">{sub}</div>
+    </div>""", unsafe_allow_html=True)
+
+
+def _sector_kpi(col, label: str, items: list[tuple[str, int]]):
+    bars_html = ""
+    for sec, pct in items:
+        bars_html += f"""
+        <div style="display:flex;align-items:center;margin-bottom:4px;gap:6px;">
+          <span style="width:72px;font-size:10px;color:#374151;white-space:nowrap;
+                       overflow:hidden;text-overflow:ellipsis;">{sec}</span>
+          <div style="flex:1;background:#e5e7eb;border-radius:3px;height:7px;overflow:hidden;">
+            <div style="background:{MISA_GREEN};height:100%;width:{pct}%;"></div>
+          </div>
+          <span style="width:30px;font-size:10px;font-weight:600;color:{MISA_GREEN};
+                       text-align:right;">{pct}%</span>
+        </div>"""
+    if not items:
+        bars_html = "<div style='font-size:11px;color:#9ca3af;'>No sector data</div>"
+    col.markdown(f"""
+    <div style="background:#fff;border:2px solid {MISA_GREEN};padding:14px 12px;
+                border-radius:10px;min-height:110px;">
+      <div style="color:#6b7280;font-size:10px;font-weight:600;letter-spacing:.6px;
+                  text-transform:uppercase;margin-bottom:10px;">{label}</div>
+      {bars_html}
+    </div>""", unsafe_allow_html=True)
 
 
 def _kpi(col, label, value, color):
     col.markdown(f"""
-    <div style="background:{color};padding:14px 10px;border-radius:8px;
-                text-align:center;height:90px;display:flex;
+    <div style="background:{color};padding:12px 8px;border-radius:8px;
+                text-align:center;min-height:76px;display:flex;
                 flex-direction:column;justify-content:center;">
-      <div style="color:rgba(255,255,255,0.8);font-size:10px;font-weight:500;
-                  margin-bottom:4px;">{label}</div>
-      <div style="color:#fff;font-size:22px;font-weight:700;line-height:1.1;">{value}</div>
-    </div>""", unsafe_allow_html=True)
-
-
-def _ir_kpi(col, label, value, bench_label, on_target: bool):
-    border = MISA_GREEN if on_target else "#C0392B"
-    icon   = "✓" if on_target else "⚠"
-    col.markdown(f"""
-    <div style="background:#fff;border:2px solid {border};padding:10px 8px;
-                border-radius:8px;text-align:center;height:80px;">
-      <div style="font-size:10px;color:#6B6B6B;margin-bottom:2px;">{label}</div>
-      <div style="font-size:18px;font-weight:700;color:{border};">{value}</div>
-      <div style="font-size:9px;color:{border};">{icon} {bench_label}</div>
+      <div style="color:rgba(255,255,255,0.8);font-size:9px;font-weight:600;
+                  letter-spacing:.5px;text-transform:uppercase;margin-bottom:3px;">{label}</div>
+      <div style="color:#fff;font-size:20px;font-weight:700;line-height:1.1;">{value}</div>
     </div>""", unsafe_allow_html=True)
 
 
 # ── Pipeline Overview ─────────────────────────────────────────────────────────
 
 def render_pipeline_overview(dfs: dict, lang: str):
-    investors = dfs.get("Investor Master", pd.DataFrame())
+    investors = dfs.get("Investor Master",      pd.DataFrame())
+    opps      = dfs.get("Opportunity Pipeline", pd.DataFrame())
     if investors.empty:
         st.info(t("no_data", lang)); return
 
     col1, col2 = st.columns(2)
 
     with col1:
-        if "Relationship Status" in investors.columns:
+        # Journey stage funnel — shows the investor lifecycle
+        stage_order = ["Awareness", "Initial Contact", "Engagement",
+                        "Opportunity Matching", "Active Negotiation",
+                        "Committed", "Post-Investment"]
+        if "Journey Stage" in investors.columns:
+            jc = investors["Journey Stage"].value_counts().reset_index()
+            jc.columns = ["Stage", "Count"]
+            # preserve meaningful order where possible
+            jc["_ord"] = jc["Stage"].apply(
+                lambda s: stage_order.index(s) if s in stage_order else 99)
+            jc = jc.sort_values("_ord").drop(columns="_ord")
+            fig = px.bar(jc, x="Count", y="Stage", orientation="h",
+                         title="Investor Journey Stages",
+                         color_discrete_sequence=[MISA_GREEN])
+            fig.update_layout(**_layout())
+            st.plotly_chart(fig, use_container_width=True)
+        elif "Relationship Status" in investors.columns:
             sc = investors["Relationship Status"].value_counts().reset_index()
             sc.columns = ["Status", "Count"]
             fig = px.pie(sc, values="Count", names="Status",
@@ -158,7 +167,16 @@ def render_pipeline_overview(dfs: dict, lang: str):
             st.plotly_chart(fig, use_container_width=True)
 
     with col2:
-        if "Investor Tier" in investors.columns:
+        # Opportunity pipeline stages funnel
+        if not opps.empty and "Opportunity Stage" in opps.columns:
+            oc = opps["Opportunity Stage"].value_counts().reset_index()
+            oc.columns = ["Stage", "Count"]
+            fig2 = px.funnel(oc, x="Count", y="Stage",
+                             title="Opportunity Stages",
+                             color_discrete_sequence=[MISA_GOLD])
+            fig2.update_layout(**_layout())
+            st.plotly_chart(fig2, use_container_width=True)
+        elif "Investor Tier" in investors.columns:
             tc = investors["Investor Tier"].value_counts().reset_index()
             tc.columns = ["Tier", "Count"]
             fig2 = px.bar(tc, x="Count", y="Tier", orientation="h",
@@ -492,11 +510,49 @@ def render_alerts(dfs: dict, lang: str):
         actions, investors, meetings, today
     )
 
-    a1, a2, a3, a4 = st.columns(4)
-    _alert_box(a1, t("alerts_overdue",     lang), overdue_items,  "#C0392B", "🔴")
-    _alert_box(a2, t("alerts_upcoming",    lang), due_soon_items, "#C9974A", "🟡")
-    _alert_box(a3, t("alerts_stalled",     lang), stalled,        "#E67E22", "⚠️")
-    _alert_box(a4, t("alerts_no_engagement",lang), no_engagement, "#7F8C8D", "⚫")
+    # HE / Minister attention items
+    he_items = _compute_he_alerts(investors, actions)
+
+    a1, a2, a3, a4, a5 = st.columns(5)
+    _alert_box(a1, "Overdue Actions",          overdue_items,  "#C0392B", "🔴")
+    _alert_box(a2, "Due Soon",                 due_soon_items, "#C9974A", "🟡")
+    _alert_box(a3, "Stalled Relationships",    stalled,        "#E67E22", "⚠")
+    _alert_box(a4, "No Recent Engagement",     no_engagement,  "#7F8C8D", "●")
+    _alert_box(a5, "Needs HE Attention",       he_items,       "#7C3AED", "★")
+
+
+def _compute_he_alerts(investors: pd.DataFrame, actions: pd.DataFrame) -> list[str]:
+    items = []
+    if not investors.empty:
+        if "Minister Action Required" in investors.columns:
+            for _, row in investors.iterrows():
+                v = str(row.get("Minister Action Required", "") or "")
+                if v and v.lower() not in ("none required", "none", ""):
+                    items.append(f"{row.get('Company Name','?')} — {v[:60]}")
+        if "Blocker Level" in investors.columns:
+            for _, row in investors.iterrows():
+                bl = str(row.get("Blocker Level", "") or "")
+                if "ministerial" in bl.lower() or "cabinet" in bl.lower():
+                    co = row.get("Company Name", "?")
+                    if not any(co in i for i in items):
+                        items.append(f"{co} — {bl[:60]}")
+        if "Strategic Priority Score" in investors.columns:
+            scores = pd.to_numeric(investors["Strategic Priority Score"], errors="coerce")
+            hi = investors[scores >= 4]
+            for _, row in hi.iterrows():
+                co = row.get("Company Name", "?")
+                if not any(co in i for i in items):
+                    items.append(f"{co} — Strategic priority {row.get('Strategic Priority Score')}")
+    if not actions.empty and "Priority" in actions.columns and "Status" in actions.columns:
+        hi_acts = actions[
+            (actions["Priority"].isin(["Very High"])) &
+            (~actions["Status"].isin(["Completed", "Cancelled"]))
+        ]
+        for _, row in hi_acts.iterrows():
+            label = f"{row.get('Company Name','?')} — {str(row.get('Action Description',''))[:50]}"
+            if label not in items:
+                items.append(label)
+    return items
 
 
 def _compute_alerts(actions, investors, meetings, today):
