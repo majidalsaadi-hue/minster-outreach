@@ -1070,7 +1070,7 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
                       font_size=13, color=MGRAY, align=PP_ALIGN.CENTER)
     else:
         CARD_W  = Inches(6.28)
-        CARD_H  = Inches(1.58)
+        CARD_H  = Inches(1.65)
         GAP_X   = Inches(0.13)
         GAP_Y   = Inches(0.12)
         COL_X   = [Inches(0.24), Inches(0.24) + CARD_W + GAP_X]
@@ -1133,36 +1133,57 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
                               font_size=7.5, bold=True, color=_rgb(pfg))
                 pill_x += pw + Inches(0.06)
 
-            # Row 3: Narrative description of the opportunity
-            desc_str, impact_str = _build_opportunity_narrative(opp, acts, idx)
-            _add_text_box(slide, desc_str,
-                          IX, cy + Inches(0.62), IW, Inches(0.30),
-                          font_size=8.5, color=DARK)
+            # Rows 3+: Action history list matched by sector/keyword
+            _ACT_DOT = {
+                "Completed":   MISA_GREEN, "Inprogress":  MISA_GOLD,
+                "In Progress": MISA_GOLD,  "Not Started": "#AAAAAA",
+                "Blocked":     "#C0392B",  "Cancelled":   "#CCCCCC",
+            }
+            matched_acts = _match_acts_to_opp(opp_name, acts)
+            act_y = cy + Inches(0.62)
+            ACT_ROW = Inches(0.32)
+            shown_acts = 0
+            for _, ar in matched_acts.head(3).iterrows():
+                if act_y + ACT_ROW > cy + CARD_H - Inches(0.04):
+                    break
+                ad  = str(ar.get("Action Description", "") or "").strip()
+                rem = str(ar.get("Remarks",            "") or "").strip()
+                st  = str(ar.get("Status",             "") or "").strip()
+                if not ad or ad in ("nan",):
+                    continue
+                dot_col = _rgb(_ACT_DOT.get(st, "#AAAAAA"))
+                _add_rect(slide, IX, act_y + Inches(0.04), Inches(0.07), Inches(0.07),
+                          fill_color=dot_col, line_color=dot_col)
+                _add_text_box(slide, ad[:72], IX + Inches(0.11), act_y,
+                              IW - Inches(0.11), Inches(0.17),
+                              font_size=7.5, color=DARK)
+                if rem and rem not in ("nan", "Key notes", ""):
+                    _add_text_box(slide, f"↳ {rem[:72]}", IX + Inches(0.14), act_y + Inches(0.17),
+                                  IW - Inches(0.14), Inches(0.14),
+                                  font_size=6.5, color=MGRAY)
+                act_y += ACT_ROW
+                shown_acts += 1
 
-            # Row 4: Expected impact
-            _add_text_box(slide, impact_str,
-                          IX, cy + Inches(0.96), IW, Inches(0.22),
-                          font_size=8, color=_rgb(MISA_GREEN))
+            if shown_acts == 0:
+                # No matched actions — show stage context
+                stage_map = {
+                    "Committed": "secured and committed", "Negotiation": "in active negotiation",
+                    "Exploration": "in early-stage exploration", "Active": "actively progressing",
+                    "Opportunity Matching": "being matched to MISA priorities",
+                }
+                stage_desc = stage_map.get(stage, "under development")
+                _add_text_box(slide, f"Engagement {stage_desc}. No actions logged yet.",
+                              IX, cy + Inches(0.62), IW, Inches(0.24),
+                              font_size=8, color=MGRAY)
 
-            # Row 5: Compact value + dates metadata
-            meta_parts = []
-            has_val = est_val is not None and not (isinstance(est_val, float) and pd.isna(est_val))
-            if has_val:
-                meta_parts.append(_fmt_sar(est_val))
-            if start_d and not (isinstance(start_d, float) and pd.isna(start_d)):
-                try:
-                    meta_parts.append(f"Start: {pd.to_datetime(start_d).strftime('%d %b %Y')}")
-                except Exception:
-                    pass
-            if due_d and not (isinstance(due_d, float) and pd.isna(due_d)):
-                try:
-                    meta_parts.append(f"Target: {pd.to_datetime(due_d).strftime('%d %b %Y')}")
-                except Exception:
-                    pass
-            if meta_parts:
-                _add_text_box(slide, "  |  ".join(meta_parts),
-                              IX, cy + Inches(1.22), IW, Inches(0.18),
-                              font_size=7, color=MGRAY)
+            # Summary footer inside card
+            if not matched_acts.empty and "Status" in matched_acts.columns:
+                n_tot  = len(matched_acts)
+                n_done = int(matched_acts["Status"].str.lower().str.contains("complet").sum())
+                _add_text_box(slide,
+                              f"{n_done}/{n_tot} completed",
+                              IX, cy + CARD_H - Inches(0.18), IW, Inches(0.16),
+                              font_size=6.5, color=MGRAY)
 
     # ── Gold footer
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
@@ -1333,6 +1354,36 @@ def _add_mini_table(slide, df, headers, cols, left, top, width):
             _add_text_box(slide, str(val)[:28], x + Inches(0.04), y + Inches(0.04),
                           col_w - Inches(0.08), row_h - Inches(0.05),
                           font_size=7, color=DARK)
+
+
+def _match_acts_to_opp(opp_name: str, acts) -> "pd.DataFrame":
+    """Return action items related to an opportunity.
+    Matches first by Sector column, then by keywords in Action Description."""
+    if acts is None or acts.empty:
+        return pd.DataFrame()
+    keywords = [w for w in opp_name.lower().split() if len(w) > 3]
+    if not keywords:
+        return pd.DataFrame()
+    pattern = "|".join(keywords[:5])
+    # Sector match is most reliable (e.g. Sector="Health" → "Enter Health" opp)
+    if "Sector" in acts.columns:
+        try:
+            mask = acts["Sector"].fillna("").str.lower().str.contains(pattern, regex=True)
+            result = acts[mask]
+            if not result.empty:
+                return result
+        except Exception:
+            pass
+    # Fall back: keyword in action description
+    if "Action Description" in acts.columns:
+        try:
+            mask = acts["Action Description"].fillna("").str.lower().str.contains(pattern, regex=True)
+            result = acts[mask]
+            if not result.empty:
+                return result
+        except Exception:
+            pass
+    return pd.DataFrame()
 
 
 def _fetch_logo_bytes(company: str, website: str = ""):
