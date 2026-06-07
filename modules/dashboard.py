@@ -578,49 +578,56 @@ def render_kpi_cards(dfs: dict, lang: str):
 
 
 def _big_kpi(col, label: str, value: str, sub: str, color: str):
-    col.markdown(f"""
-    <div style="background:{color};padding:18px 16px 14px 16px;border-radius:10px;
-                min-height:110px;display:flex;flex-direction:column;justify-content:center;">
-      <div style="color:rgba(255,255,255,0.75);font-size:10px;font-weight:600;
-                  letter-spacing:.6px;text-transform:uppercase;margin-bottom:6px;">{label}</div>
-      <div style="color:#fff;font-size:32px;font-weight:700;line-height:1.1;">{value}</div>
-      <div style="color:rgba(255,255,255,0.75);font-size:11px;margin-top:6px;">{sub}</div>
-    </div>""", unsafe_allow_html=True)
+    col.markdown(
+        f'<div style="background:{color};padding:18px 16px 14px 16px;border-radius:10px;'
+        f'min-height:110px;display:flex;flex-direction:column;justify-content:center;">'
+        f'<div style="color:rgba(255,255,255,0.75);font-size:10px;font-weight:600;'
+        f'letter-spacing:.6px;text-transform:uppercase;margin-bottom:6px;">{label}</div>'
+        f'<div style="color:#fff;font-size:32px;font-weight:700;line-height:1.1;">{value}</div>'
+        f'<div style="color:rgba(255,255,255,0.75);font-size:11px;margin-top:6px;">{sub}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _sector_kpi(col, label: str, items: list[tuple[str, int]]):
     bars_html = ""
     for sec, pct in items:
-        bars_html += f"""
-        <div style="display:flex;align-items:center;margin-bottom:4px;gap:6px;">
-          <span style="width:72px;font-size:10px;color:#374151;white-space:nowrap;
-                       overflow:hidden;text-overflow:ellipsis;">{sec}</span>
-          <div style="flex:1;background:#e5e7eb;border-radius:3px;height:7px;overflow:hidden;">
-            <div style="background:{MISA_GREEN};height:100%;width:{pct}%;"></div>
-          </div>
-          <span style="width:30px;font-size:10px;font-weight:600;color:{MISA_GREEN};
-                       text-align:right;">{pct}%</span>
-        </div>"""
+        bars_html += (
+            f'<div style="display:flex;align-items:center;margin-bottom:4px;gap:6px;">'
+            f'<span style="width:72px;font-size:10px;color:#374151;white-space:nowrap;'
+            f'overflow:hidden;text-overflow:ellipsis;">{sec}</span>'
+            f'<div style="flex:1;background:#e5e7eb;border-radius:3px;height:7px;overflow:hidden;">'
+            f'<div style="background:{MISA_GREEN};height:100%;width:{pct}%;"></div>'
+            f'</div>'
+            f'<span style="width:30px;font-size:10px;font-weight:600;color:{MISA_GREEN};'
+            f'text-align:right;">{pct}%</span>'
+            f'</div>'
+        )
     if not items:
         bars_html = "<div style='font-size:11px;color:#9ca3af;'>No sector data</div>"
-    col.markdown(f"""
-    <div style="background:#fff;border:2px solid {MISA_GREEN};padding:14px 12px;
-                border-radius:10px;min-height:110px;">
-      <div style="color:#6b7280;font-size:10px;font-weight:600;letter-spacing:.6px;
-                  text-transform:uppercase;margin-bottom:10px;">{label}</div>
-      {bars_html}
-    </div>""", unsafe_allow_html=True)
+    col.markdown(
+        f'<div style="background:#fff;border:2px solid {MISA_GREEN};padding:14px 12px;'
+        f'border-radius:10px;min-height:110px;">'
+        f'<div style="color:#6b7280;font-size:10px;font-weight:600;letter-spacing:.6px;'
+        f'text-transform:uppercase;margin-bottom:10px;">{label}</div>'
+        f'{bars_html}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _kpi(col, label, value, color):
-    col.markdown(f"""
-    <div style="background:{color};padding:12px 8px;border-radius:8px;
-                text-align:center;min-height:76px;display:flex;
-                flex-direction:column;justify-content:center;">
-      <div style="color:rgba(255,255,255,0.8);font-size:9px;font-weight:600;
-                  letter-spacing:.5px;text-transform:uppercase;margin-bottom:3px;">{label}</div>
-      <div style="color:#fff;font-size:20px;font-weight:700;line-height:1.1;">{value}</div>
-    </div>""", unsafe_allow_html=True)
+    col.markdown(
+        f'<div style="background:{color};padding:12px 8px;border-radius:8px;'
+        f'text-align:center;min-height:76px;display:flex;'
+        f'flex-direction:column;justify-content:center;">'
+        f'<div style="color:rgba(255,255,255,0.8);font-size:9px;font-weight:600;'
+        f'letter-spacing:.5px;text-transform:uppercase;margin-bottom:3px;">{label}</div>'
+        f'<div style="color:#fff;font-size:20px;font-weight:700;line-height:1.1;">{value}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ── Pipeline Overview ─────────────────────────────────────────────────────────
@@ -946,25 +953,24 @@ def render_economic_impact(dfs: dict, lang: str):
     # Saudi content breakdown
     col1, col2, col3 = st.columns(3)
 
-    col1.markdown(f"""
-    <div style="background:{MISA_GREEN};padding:16px;border-radius:10px;text-align:center;">
-      <div style="color:rgba(255,255,255,0.8);font-size:11px;">Total Pipeline</div>
-      <div style="color:#fff;font-size:24px;font-weight:700;">{_fmt_sar(total_pipeline)}</div>
-    </div>""", unsafe_allow_html=True)
+    col1.markdown(
+        f'<div style="background:{MISA_GREEN};padding:16px;border-radius:10px;text-align:center;">'
+        f'<div style="color:rgba(255,255,255,0.8);font-size:11px;">Total Pipeline</div>'
+        f'<div style="color:#fff;font-size:24px;font-weight:700;">{_fmt_sar(total_pipeline)}</div>'
+        f'</div>', unsafe_allow_html=True)
 
-    col2.markdown(f"""
-    <div style="background:{MISA_GOLD};padding:16px;border-radius:10px;text-align:center;">
-      <div style="color:rgba(255,255,255,0.8);font-size:11px;">Actual Commitments</div>
-      <div style="color:#fff;font-size:24px;font-weight:700;">{_fmt_sar(total_committed)}</div>
-    </div>""", unsafe_allow_html=True)
+    col2.markdown(
+        f'<div style="background:{MISA_GOLD};padding:16px;border-radius:10px;text-align:center;">'
+        f'<div style="color:rgba(255,255,255,0.8);font-size:11px;">Actual Commitments</div>'
+        f'<div style="color:#fff;font-size:24px;font-weight:700;">{_fmt_sar(total_committed)}</div>'
+        f'</div>', unsafe_allow_html=True)
 
-    col3.markdown(f"""
-    <div style="background:{MISA_GREEN_LIGHT};padding:16px;border-radius:10px;text-align:center;">
-      <div style="color:rgba(255,255,255,0.8);font-size:11px;">Est. Jobs Created</div>
-      <div style="color:#fff;font-size:24px;font-weight:700;">
-        {f"{int(total_jobs):,}" if total_jobs > 0 else "—"}
-      </div>
-    </div>""", unsafe_allow_html=True)
+    jobs_str = f"{int(total_jobs):,}" if total_jobs > 0 else "—"
+    col3.markdown(
+        f'<div style="background:{MISA_GREEN_LIGHT};padding:16px;border-radius:10px;text-align:center;">'
+        f'<div style="color:rgba(255,255,255,0.8);font-size:11px;">Est. Jobs Created</div>'
+        f'<div style="color:#fff;font-size:24px;font-weight:700;">{jobs_str}</div>'
+        f'</div>', unsafe_allow_html=True)
 
     # Saudi content & tech transfer breakdown
     if not investors.empty:
@@ -1091,12 +1097,12 @@ def _compute_alerts(actions, investors, meetings, today):
 def _alert_box(col, title, items, color, icon):
     count = len(items)
     badge = color if count > 0 else MISA_GREEN
-    col.markdown(f"""
-    <div style="border:2px solid {badge};border-radius:8px;
-                padding:12px;min-height:130px;">
-      <div style="color:{badge};font-weight:700;font-size:13px;margin-bottom:8px;">
-        {icon} {title} ({count})
-      </div>""", unsafe_allow_html=True)
+    col.markdown(
+        f'<div style="border:2px solid {badge};border-radius:8px;padding:12px;min-height:130px;">'
+        f'<div style="color:{badge};font-weight:700;font-size:13px;margin-bottom:8px;">'
+        f'{icon} {title} ({count})</div>',
+        unsafe_allow_html=True,
+    )
     for item in items[:5]:
         col.markdown(f"<div style='font-size:11px;color:#333;margin-bottom:3px;'>{item}</div>",
                      unsafe_allow_html=True)
