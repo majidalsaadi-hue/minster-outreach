@@ -637,6 +637,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         brief_text    = (obj or kd or "—")[:135]
         major_outcome = (dm or ns or "—")[:135]
 
+    # Fall back to pending actions for brief when no meeting data
+    if brief_text in ("—", "") and not acts.empty:
+        pending_fb = acts[~acts["Status"].isin(["Completed", "Cancelled"])] if "Status" in acts.columns else acts
+        src = pending_fb if not pending_fb.empty else acts
+        if not src.empty:
+            brief_text = str(src.iloc[0].get("Action Description", "") or "")[:135]
+
     # Fall back to completed actions for major outcome
     if major_outcome in ("—", "") and not acts.empty and "Status" in acts.columns:
         done = acts[acts["Status"].str.lower().str.contains("complet", na=False)]
@@ -657,7 +664,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   Inches(5.05), Inches(0.52), font_size=7.5, color=DARK)
 
     # ── Vertical divider ────────────────────────────────────────────────────────
-    DIVX = Inches(8.85)
+    DIVX = Inches(9.3)
     _add_rect(slide, DIVX, Inches(2.17), Inches(0.02), Inches(4.83),
               fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
 
@@ -793,7 +800,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     HDR_Y = Inches(3.28)
     HDR_H = Inches(0.30)
     ROW_H = Inches(0.38)
-    CW    = [Inches(w) for w in [0.32, 3.62, 1.48, 1.16, 0.84, 0.93]]
+    CW    = [Inches(w) for w in [0.35, 4.10, 1.60, 1.20, 0.80, 0.75]]
     CX    = [TBL_L + sum(CW[:j]) for j in range(len(CW))]
     HDRS  = ["#", "Action Item", "Assigned To", "Status", "Due", "Progress"]
 
@@ -991,140 +998,166 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
 
 def _co_slide_opps_deals(prs, company, opps, deals, lang):
-    """Slide 2 — Investment Opportunities (left ~65%) + Deal Progress (right ~35%)."""
+    """Slide 2 — Minister-grade opportunity cards, full-width 2-column grid."""
     slide = _blank_slide(prs)
 
-    # ── Green header band ────────────────────────────────────────────────────────
+    # ── Green header band
     _add_rect(slide, Inches(0), Inches(0), Inches(13.33), Inches(0.9),
               fill_color=GREEN, line_color=GREEN)
-    _add_text_box(slide, f"{company} — Opportunities & Deal Progress",
+    _add_text_box(slide, f"{company} — Investment Opportunities",
                   Inches(0.3), Inches(0.08), Inches(10.0), Inches(0.74),
                   font_size=20, bold=True, color=WHITE)
     _add_text_box(slide, date.today().strftime("%d %b %Y"),
                   Inches(10.5), Inches(0.25), Inches(2.5), Inches(0.5),
                   font_size=11, color=GOLD, align=PP_ALIGN.RIGHT)
 
-    # Vertical divider
-    DIVX = Inches(8.72)
-    _add_rect(slide, DIVX, Inches(0.9), Inches(0.02), Inches(6.1),
-              fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
-
-    # ── LEFT: Opportunities ──────────────────────────────────────────────────────
+    # ── KPI strip (4 cards across full width)
     total_val   = _sum_col(opps, "Est. Value (SAR)")
     n_opps      = len(opps)
     n_active    = int((opps["Opportunity Status"] == "Active").sum())    if not opps.empty and "Opportunity Status" in opps.columns else 0
     n_committed = int((opps["Opportunity Stage"]  == "Committed").sum()) if not opps.empty and "Opportunity Stage"  in opps.columns else 0
-    n_high      = int((opps["Confidence Level"]   == "High").sum())      if not opps.empty and "Confidence Level"   in opps.columns else 0
 
-    _add_rect(slide, Inches(0.3), Inches(0.95), Inches(8.3), Inches(0.36),
-              fill_color=_rgb("#F0FFF4"), line_color=_rgb("#86EFAC"))
-    _add_text_box(slide, f"Investment Opportunities ({n_opps})   |   Pipeline: {_fmt_sar(total_val)}",
-                  Inches(0.35), Inches(0.97), Inches(8.2), Inches(0.32),
-                  font_size=11, bold=True, color=_rgb(MISA_GREEN))
-
-    # KPI mini-cards
-    kcard_w = Inches(2.55)
+    kw = Inches(3.13)
     for i, (val, lbl, col) in enumerate([
-        (str(n_active),    "Active Opportunities", MISA_GREEN),
-        (str(n_committed), "Committed",             MISA_GOLD),
-        (str(n_high),      "High Confidence",       "#1D4ED8"),
+        (str(n_opps),         "Total Opportunities", MISA_GREEN),
+        (str(n_active),       "Active",              MISA_GREEN),
+        (str(n_committed),    "Committed",           MISA_GOLD),
+        (_fmt_sar(total_val), "Pipeline Value",      MISA_GREEN),
     ]):
-        kx = Inches(0.3) + i * (kcard_w + Inches(0.12))
-        _add_rect(slide, kx, Inches(1.40), kcard_w, Inches(0.55),
+        kx = Inches(0.3) + i * (kw + Inches(0.08))
+        _add_rect(slide, kx, Inches(0.97), kw, Inches(0.56),
                   fill_color=_rgb(col), line_color=_rgb(col))
-        _add_text_box(slide, val, kx, Inches(1.42), kcard_w, Inches(0.28),
-                      font_size=18, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-        _add_text_box(slide, lbl, kx, Inches(1.70), kcard_w, Inches(0.18),
+        _add_text_box(slide, val, kx, Inches(0.99), kw, Inches(0.30),
+                      font_size=16, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        _add_text_box(slide, lbl, kx, Inches(1.29), kw, Inches(0.18),
                       font_size=7.5, color=WHITE, align=PP_ALIGN.CENTER)
 
-    # Opportunity table (up to 11 rows)
-    if not opps.empty:
-        hdrs  = ["Opportunity Name", "Stage", "Value (SAR)", "Confidence", "Status"]
-        c_map = ["Opportunity Name", "Opportunity Stage", "Est. Value (SAR)", "Confidence Level", "Opportunity Status"]
-        _add_mini_table(slide, opps.head(11), hdrs, c_map,
-                        Inches(0.3), Inches(2.05), Inches(8.32))
+    # ── Minister-grade opportunity cards
+    _STAGE_COL = {
+        "Committed":   "#065F46", "Negotiation":         "#92400E",
+        "Exploration": "#1D4ED8", "Active":              "#1B5C3F",
+        "Suspended":   "#6B7280", "Blocked":             "#991B1B",
+        "On Track":    "#1B5C3F", "Opportunity Matching":"#1D4ED8",
+    }
+    _STAGE_LIGHT = {
+        "Committed":   "#D1FAE5", "Negotiation":         "#FEF3C7",
+        "Exploration": "#DBEAFE", "Active":              "#D1FAE5",
+        "Suspended":   "#F3F4F6", "Blocked":             "#FEE2E2",
+        "On Track":    "#D1FAE5", "Opportunity Matching":"#DBEAFE",
+    }
+    _STATUS_BG = {"Active":"#D1FAE5","Inactive":"#F3F4F6","On Hold":"#FEF3C7","Completed":"#D1FAE5"}
+    _STATUS_FG = {"Active":"#065F46","Inactive":"#374151","On Hold":"#92400E","Completed":"#065F46"}
+    _CONF_BG   = {"High":"#D1FAE5","Medium":"#FEF3C7","Low":"#FEE2E2"}
+    _CONF_FG   = {"High":"#065F46","Medium":"#92400E","Low":"#991B1B"}
+
+    if opps.empty:
+        _add_text_box(slide,
+                      "No opportunities have been recorded for this investor.",
+                      Inches(0.3), Inches(2.3), Inches(12.73), Inches(0.5),
+                      font_size=13, color=MGRAY, align=PP_ALIGN.CENTER)
     else:
-        _add_text_box(slide, "No opportunities in pipeline yet.",
-                      Inches(0.3), Inches(2.1), Inches(8.2), Inches(0.4),
-                      font_size=11, color=MGRAY)
+        CARD_W  = Inches(6.28)
+        CARD_H  = Inches(1.58)
+        GAP_X   = Inches(0.13)
+        GAP_Y   = Inches(0.12)
+        COL_X   = [Inches(0.24), Inches(0.24) + CARD_W + GAP_X]
+        START_Y = Inches(1.73)
 
-    # ── RIGHT: Deal Progress ─────────────────────────────────────────────────────
-    RX = DIVX + Inches(0.18)
-    RW = Inches(13.33) - RX - Inches(0.15)
+        for idx, (_, opp) in enumerate(opps.head(6).iterrows()):
+            row_i = idx // 2
+            col_i = idx % 2
+            cx    = COL_X[col_i]
+            cy    = START_Y + row_i * (CARD_H + GAP_Y)
 
-    n_deals    = len(deals)
-    n_blocked  = int((deals["Deal Status"]        == "Blocked").sum())  if not deals.empty and "Deal Status"        in deals.columns else 0
-    n_critical = int((deals["Challenge Severity"] == "Critical").sum()) if not deals.empty and "Challenge Severity" in deals.columns else 0
+            opp_name   = (str(opp.get("Opportunity Name",   "") or "")).strip() or "Unnamed Opportunity"
+            stage      = (str(opp.get("Opportunity Stage",  "") or "")).strip()
+            status     = (str(opp.get("Opportunity Status", "") or "")).strip()
+            confidence = (str(opp.get("Confidence Level",   "") or "")).strip()
+            sector     = (str(opp.get("Sector",             "") or "")).strip()
+            est_val    = opp.get("Est. Value (SAR)")
+            start_d    = opp.get("Start Date")
+            due_d      = opp.get("Due Date")
+            notes      = (str(opp.get("Notes", "") or opp.get("Remarks", "") or "")).strip()
+            opp_type   = (str(opp.get("Opportunity Type", "") or "")).strip()
 
-    _add_rect(slide, RX, Inches(0.95), RW, Inches(0.36),
-              fill_color=_rgb("#FFF5F5") if n_blocked else _rgb("#F5F5F5"),
-              line_color=RED if n_blocked else _rgb("#CCCCCC"))
-    _add_text_box(slide,
-                  f"Deal Progress ({n_deals})  Blocked: {n_blocked}  Critical: {n_critical}",
-                  RX + Inches(0.05), Inches(0.97), RW - Inches(0.08), Inches(0.32),
-                  font_size=9, bold=True, color=RED if n_blocked else DARK)
+            accent_hex = _STAGE_COL.get(stage, "#1B5C3F")
+            light_hex  = _STAGE_LIGHT.get(stage, "#D1FAE5")
 
-    _DS_COL = {"Critical": "#C0392B", "High": MISA_GOLD, "Medium": "#888888", "Low": MISA_GREEN}
+            # Card background + outer border
+            _add_rect(slide, cx, cy, CARD_W, CARD_H,
+                      fill_color=WHITE, line_color=_rgb("#D1D5DB"))
+            # Left accent bar
+            _add_rect(slide, cx, cy, Inches(0.09), CARD_H,
+                      fill_color=_rgb(accent_hex), line_color=_rgb(accent_hex))
+            # Top light stripe
+            _add_rect(slide, cx + Inches(0.09), cy, CARD_W - Inches(0.09), Inches(0.04),
+                      fill_color=_rgb(light_hex), line_color=_rgb(light_hex))
 
-    dy = Inches(1.40)
-    # Severity breakdown
-    if not deals.empty and "Challenge Severity" in deals.columns:
-        _add_text_box(slide, "Severity", RX, dy, RW, Inches(0.20),
-                      font_size=8, bold=True, color=DARK)
-        dy += Inches(0.22)
-        for sev in ["Critical", "High", "Medium", "Low"]:
-            cnt = int((deals["Challenge Severity"] == sev).sum())
-            if cnt == 0:
-                continue
-            bw = max(RW * cnt / max(n_deals, 1), Inches(0.08))
-            dc = _rgb(_DS_COL[sev])
-            _add_rect(slide, RX, dy, bw, Inches(0.22), fill_color=dc, line_color=dc)
-            _add_text_box(slide, f"{sev}: {cnt}", RX + Inches(0.04), dy,
-                          RW - Inches(0.06), Inches(0.22), font_size=8, color=WHITE)
-            dy += Inches(0.26)
+            IX = cx + Inches(0.16)
+            IW = CARD_W - Inches(0.24)
 
-    # Stage breakdown
-    dy += Inches(0.10)
-    if not deals.empty and "Deal Stage" in deals.columns:
-        _add_text_box(slide, "By Stage", RX, dy, RW, Inches(0.20),
-                      font_size=8, bold=True, color=DARK)
-        dy += Inches(0.22)
-        for stg, cnt in deals["Deal Stage"].value_counts().items():
-            bw = max(RW * cnt / max(n_deals, 1), Inches(0.08))
-            _add_rect(slide, RX, dy, bw, Inches(0.20), fill_color=GREEN, line_color=GREEN)
-            _add_text_box(slide, f"{str(stg)[:20]}: {cnt}", RX + Inches(0.04), dy,
-                          RW - Inches(0.06), Inches(0.20), font_size=7.5, color=WHITE)
-            dy += Inches(0.24)
-            if dy > Inches(4.0):
-                break
+            # Row 1: Opportunity name — large, bold, green
+            _add_text_box(slide, opp_name[:62],
+                          IX, cy + Inches(0.08), IW, Inches(0.26),
+                          font_size=11, bold=True, color=GREEN)
 
-    # Deal list
-    dy += Inches(0.12)
-    _add_text_box(slide, "Deals", RX, dy, RW, Inches(0.22),
-                  font_size=8, bold=True, color=DARK)
-    dy += Inches(0.24)
-    if not deals.empty:
-        for _, dl in deals.head(8).iterrows():
-            if dy > Inches(6.8):
-                break
-            dname = str(dl.get("Deal Name",          "") or "")[:28]
-            dstg  = str(dl.get("Deal Stage",         "") or "")[:14]
-            dstat = str(dl.get("Deal Status",        "") or "")
-            dsev  = str(dl.get("Challenge Severity", "") or "")
-            dc    = _rgb(_DS_COL.get(dsev, "#888888"))
-            _add_rect(slide, RX, dy + Inches(0.04), Inches(0.08), Inches(0.08),
-                      fill_color=dc, line_color=dc)
-            _add_text_box(slide, dname, RX + Inches(0.12), dy,
-                          RW - Inches(0.12), Inches(0.18), font_size=8, color=DARK)
-            _add_text_box(slide, f"{dstg}  ·  {dstat}  ·  {dsev}",
-                          RX + Inches(0.12), dy + Inches(0.18),
-                          RW - Inches(0.12), Inches(0.14), font_size=6.5, color=MGRAY)
-            dy += Inches(0.36)
-    else:
-        _add_text_box(slide, "No deals in progress.", RX, dy, RW, Inches(0.28),
-                      font_size=9, color=MGRAY)
+            # Row 2: Stage / Status / Confidence pills
+            pill_y = cy + Inches(0.37)
+            pill_x = IX
+            pills = []
+            if stage:
+                pills.append((stage[:16],      accent_hex,                              "#FFFFFF"))
+            if status and status not in ("—", ""):
+                pills.append((status,          _STATUS_BG.get(status, "#F3F4F6"),       _STATUS_FG.get(status, "#374151")))
+            if confidence and confidence not in ("—", ""):
+                pills.append((f"{confidence} *", _CONF_BG.get(confidence, "#F3F4F6"),  _CONF_FG.get(confidence, "#374151")))
+            for pill_txt, pbg, pfg in pills:
+                pw = Inches(min(1.72, max(0.70, len(pill_txt) * 0.072)))
+                _add_rect(slide, pill_x, pill_y, pw, Inches(0.21),
+                          fill_color=_rgb(pbg), line_color=_rgb(pbg))
+                _add_text_box(slide, pill_txt.strip(), pill_x + Inches(0.04), pill_y + Inches(0.02),
+                              pw - Inches(0.08), Inches(0.17),
+                              font_size=7.5, bold=True, color=_rgb(pfg))
+                pill_x += pw + Inches(0.06)
 
-    # Gold footer
+            # Row 3: Pipeline value (gold, large) + sector label
+            has_val = est_val is not None and not (isinstance(est_val, float) and pd.isna(est_val))
+            val_str = _fmt_sar(est_val) if has_val else "Value TBD"
+            _add_text_box(slide, val_str,
+                          IX, cy + Inches(0.62), Inches(3.40), Inches(0.28),
+                          font_size=13, bold=True, color=GOLD)
+            if sector:
+                _add_text_box(slide, f"Sector: {sector[:30]}",
+                              IX + Inches(3.50), cy + Inches(0.66), Inches(2.55), Inches(0.22),
+                              font_size=8, color=MGRAY)
+
+            # Row 4: Dates + opportunity type
+            date_parts = []
+            if opp_type and opp_type not in ("—", "Opportunity"):
+                date_parts.append(f"Type: {opp_type}")
+            if start_d and not (isinstance(start_d, float) and pd.isna(start_d)):
+                try:
+                    date_parts.append(f"Start: {pd.to_datetime(start_d).strftime('%d %b %Y')}")
+                except Exception:
+                    pass
+            if due_d and not (isinstance(due_d, float) and pd.isna(due_d)):
+                try:
+                    date_parts.append(f"Due: {pd.to_datetime(due_d).strftime('%d %b %Y')}")
+                except Exception:
+                    pass
+            date_str = "  |  ".join(date_parts)
+            if date_str:
+                _add_text_box(slide, date_str,
+                              IX, cy + Inches(0.94), IW, Inches(0.20),
+                              font_size=8, color=DARK)
+
+            # Row 5: Notes / remarks
+            if notes:
+                _add_text_box(slide, f"  {notes[:90]}",
+                              IX, cy + Inches(1.18), IW, Inches(0.24),
+                              font_size=7.5, color=MGRAY)
+
+    # ── Gold footer
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
               fill_color=GOLD, line_color=GOLD)
     _add_text_box(slide, "CONFIDENTIAL | Ministry of Investment — وزارة الاستثمار",
