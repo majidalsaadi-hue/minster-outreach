@@ -1,6 +1,11 @@
 
-# Investor Master List — view, add, edit investor records.
+# Investor Master — card-based view with live logos and today's news.
 
+import hashlib
+import html as html_mod
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 import pandas as pd
 import streamlit as st
 from datetime import date
@@ -14,108 +19,335 @@ from config.translations import t
 from modules.persistence import save_session
 
 
+_GREEN  = "#1B5C3F"
+_GOLD   = "#C9974A"
+_RED    = "#DC2626"
+
+_STATUS_STYLE = {
+    "active":    ("#D1FAE5", "#065F46"),
+    "inactive":  ("#F3F4F6", "#6B7280"),
+    "on hold":   ("#FEF3C7", "#92400E"),
+    "churned":   ("#FEE2E2", "#991B1B"),
+    "prospect":  ("#EDE9FE", "#6D28D9"),
+    "committed": ("#DBEAFE", "#1E40AF"),
+}
+
+_STAGE_COLOR = {
+    "Awareness":             "#6B7280",
+    "Initial Contact":       "#0891B2",
+    "Engagement":            "#1D4ED8",
+    "Opportunity Matching":  "#D97706",
+    "Active Negotiation":    "#B45309",
+    "Committed":             "#059669",
+    "Post-Investment":       _GREEN,
+}
+
+
+# ── Logo & News helpers (cached) ──────────────────────────────────────────────
+
+def _guess_domain(company: str) -> str:
+    name = company.lower()
+    for w in [" group", " capital", " asset management", " management",
+              " holdings", " limited", " ltd", " inc", " corp", " plc",
+              " partners", " advisors", " international", " global"]:
+        name = name.replace(w, "")
+    return name.strip().replace(" ", "").replace(".", "").replace("-", "") + ".com"
+
+
+def _logo_url(company: str) -> str:
+    return f"https://logo.clearbit.com/{_guess_domain(company)}"
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_news(company: str) -> list[dict]:
+    """Fetch up to 3 recent news items from Google News RSS."""
+    try:
+        q   = urllib.parse.quote(company)
+        url = f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = resp.read()
+        root  = ET.fromstring(data)
+        items = []
+        for item in root.findall(".//item")[:3]:
+            title = item.findtext("title", "").strip()
+            link  = item.findtext("link",  "").strip()
+            pub   = item.findtext("pubDate", "").strip()
+            # Strip source suffix  "Title — Source"
+            if " - " in title:
+                title = title.rsplit(" - ", 1)[0].strip()
+            elif " — " in title:
+                title = title.rsplit(" — ", 1)[0].strip()
+            if title:
+                items.append({"title": title, "link": link, "pub": pub[:16]})
+        return items
+    except Exception:
+        return []
+
+
+def _initials(name: str) -> str:
+    parts = name.split()
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[-1][0]).upper()
+    return name[:2].upper() if name else "?"
+
+
+def _avatar_color(name: str) -> str:
+    h = int(hashlib.md5(name.encode()).hexdigest()[:6], 16)
+    r = max(40, min((h >> 16) & 0xFF, 150))
+    g = max(40, min((h >> 8)  & 0xFF, 150))
+    b = max(40, min(h & 0xFF,          150))
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
+def _fmt_sar(val) -> str:
+    try:
+        v = float(val)
+        if v >= 1e9:  return f"SAR {v/1e9:.1f}B"
+        if v >= 1e6:  return f"SAR {v/1e6:.0f}M"
+        if v > 0:     return f"SAR {v:,.0f}"
+    except Exception:
+        pass
+    return ""
+
+
+# ── Main render ───────────────────────────────────────────────────────────────
+
 def render(dfs: dict, lang: str):
     investors = dfs.get("Investor Master", pd.DataFrame())
 
-    st.markdown(f"### {t('nav_investors', lang)}")
-
-    # ── Filters ───────────────────────────────────────────────────────────────
-    with st.expander(t("filter", lang), expanded=False):
-        fc1, fc2, fc3, fc4 = st.columns(4)
-        filter_tier    = fc1.multiselect(t("investor_tier", lang),   INVESTOR_TIERS, default=[])
-        filter_status  = fc2.multiselect(t("relationship_status", lang), INVESTOR_STATUSES, default=[])
-        filter_sector  = fc3.multiselect(t("sector", lang),          SECTORS, default=[])
-        filter_country = fc4.multiselect(t("country", lang),         COUNTRIES, default=[])
-
-    filtered = investors.copy()
-    if not filtered.empty:
-        if filter_tier    and "Investor Tier"         in filtered.columns:
-            filtered = filtered[filtered["Investor Tier"].isin(filter_tier)]
-        if filter_status  and "Relationship Status"   in filtered.columns:
-            filtered = filtered[filtered["Relationship Status"].isin(filter_status)]
-        if filter_sector  and "Sector"                in filtered.columns:
-            filtered = filtered[filtered["Sector"].isin(filter_sector)]
-        if filter_country and "Country"               in filtered.columns:
-            filtered = filtered[filtered["Country"].isin(filter_country)]
-
-    # ── Add investor button ───────────────────────────────────────────────────
-    with st.expander(f"➕ {t('add_investor', lang)}", expanded=False):
-        _add_investor_form(dfs, lang)
-
-    # ── Table ─────────────────────────────────────────────────────────────────
-    if filtered.empty:
-        st.info(t("no_data", lang))
-        return
-
-    display_cols = [
-        c for c in [
-            "Investor ID", "Company Name", "Country", "Sector",
-            "Investor Tier", "Relationship Status", "Journey Stage",
-            "Relationship Manager", "Account Manager",
-            "Est. Investment Value (SAR)", "Next Meeting Date",
-            "Escalation Flag",
-        ] if c in filtered.columns
-    ]
-
-    styled = filtered[display_cols].copy()
-
-    # Colour-code the status column via a caption trick
-    st.dataframe(
-        styled,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Est. Investment Value (SAR)": st.column_config.NumberColumn(
-                format="SAR %,.0f"
-            ),
-            "Next Meeting Date": st.column_config.DateColumn(),
-            "Escalation Flag": st.column_config.SelectboxColumn(
-                options=ESCALATION_FLAGS
-            ),
-            "Investor Tier": st.column_config.SelectboxColumn(
-                options=INVESTOR_TIERS
-            ),
-            "Relationship Status": st.column_config.SelectboxColumn(
-                options=INVESTOR_STATUSES
-            ),
-            "Journey Stage": st.column_config.SelectboxColumn(
-                options=JOURNEY_STAGES
-            ),
-        },
+    st.markdown(
+        f"<h2 style='color:{_GREEN};margin-bottom:2px;'>Investor Portfolio</h2>"
+        f"<p style='color:#6b7280;font-size:13px;margin-top:0;'>"
+        f"Live view of all tracked investors with news &amp; engagement status</p>",
+        unsafe_allow_html=True,
     )
 
-    st.caption(f"{len(filtered)} {t('investors_count', lang)}")
+    # ── Add investor ──────────────────────────────────────────────────────────
+    with st.expander("+ Add New Investor", expanded=False):
+        _add_investor_form(dfs, lang)
 
-    # ── Investor detail drill-down ─────────────────────────────────────────────
-    if not filtered.empty and "Company Name" in filtered.columns:
-        selected_company = st.selectbox(
-            t("investor_profile", lang),
-            ["— select —"] + sorted(filtered["Company Name"].dropna().unique().tolist()),
+    if investors.empty:
+        st.info("No investor data loaded.")
+        return
+
+    # ── Search + filters ──────────────────────────────────────────────────────
+    fc1, fc2, fc3, fc4 = st.columns([2.5, 1.5, 1.5, 1.5])
+    with fc1:
+        q = st.text_input("Search", placeholder="Search investor…",
+                          key="inv_search", label_visibility="collapsed")
+    with fc2:
+        sectors  = ["All sectors"]  + sorted(s for s in investors.get("Sector",  pd.Series()).dropna().unique() if s)
+        sel_sec  = st.selectbox("Sector",  sectors,  key="inv_sec",  label_visibility="collapsed")
+    with fc3:
+        countries = ["All countries"] + sorted(c for c in investors.get("Country", pd.Series()).dropna().unique() if c)
+        sel_cty   = st.selectbox("Country", countries, key="inv_cty", label_visibility="collapsed")
+    with fc4:
+        statuses  = ["All statuses"] + sorted(s for s in investors.get("Relationship Status", pd.Series()).dropna().unique() if s)
+        sel_stat  = st.selectbox("Status",  statuses,  key="inv_stat", label_visibility="collapsed")
+
+    view = investors.copy()
+    if q:
+        view = view[view["Company Name"].fillna("").str.contains(q, case=False, na=False)]
+    if sel_sec  != "All sectors":   view = view[view.get("Sector",              pd.Series()) == sel_sec]
+    if sel_cty  != "All countries": view = view[view.get("Country",             pd.Series()) == sel_cty]
+    if sel_stat != "All statuses":  view = view[view.get("Relationship Status", pd.Series()) == sel_stat]
+    view = view.reset_index(drop=True)
+
+    st.caption(f"{len(view)} investor{'s' if len(view)!=1 else ''}")
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+    if view.empty:
+        st.warning("No investors match the current filters.")
+        return
+
+    # ── Card grid — 3 per row ─────────────────────────────────────────────────
+    cols_per_row = 3
+    for chunk_start in range(0, len(view), cols_per_row):
+        chunk = view.iloc[chunk_start : chunk_start + cols_per_row]
+        cols  = st.columns(cols_per_row)
+        for ci, (_, row) in enumerate(chunk.iterrows()):
+            with cols[ci]:
+                _render_investor_card(row)
+
+    # ── Profile drill-down ────────────────────────────────────────────────────
+    st.markdown("---")
+    if "Company Name" in view.columns:
+        selected = st.selectbox(
+            "Open investor profile",
+            ["— select to open profile —"] + sorted(view["Company Name"].dropna().unique().tolist()),
+            key="inv_profile_select",
         )
-        if selected_company != "— select —":
-            _render_investor_profile(selected_company, dfs, lang)
+        if selected != "— select to open profile —":
+            _render_investor_profile(selected, dfs, lang)
 
+
+# ── Investor card ─────────────────────────────────────────────────────────────
+
+def _render_investor_card(row):
+    company  = str(row.get("Company Name", "?"))
+    sector   = str(row.get("Sector",   "—") or "—")
+    country  = str(row.get("Country",  "—") or "—")
+    status   = str(row.get("Relationship Status", "Active") or "Active")
+    stage    = str(row.get("Journey Stage", "—") or "—")
+    rm       = str(row.get("Relationship Manager", "") or "")
+    am       = str(row.get("Account Manager", "") or "")
+    est_val  = _fmt_sar(row.get("Est. Investment Value (SAR)"))
+    priority = row.get("Strategic Priority Score")
+    next_mtg = row.get("Next Meeting Date")
+    contact_name  = str(row.get("Key Contact Name",  "") or "")
+    contact_title = str(row.get("Key Contact Title", "") or "")
+
+    color     = _avatar_color(company)
+    initials  = _initials(company)
+    logo      = _logo_url(company)
+    st_bg, st_fg = _STATUS_STYLE.get(status.lower(), ("#F3F4F6", "#374151"))
+    sc_color  = _STAGE_COLOR.get(stage, "#6B7280")
+
+    priority_star = ""
+    try:
+        if priority and float(priority) >= 4:
+            priority_star = f'<span style="color:{_GOLD};font-size:12px;margin-left:4px;">★</span>'
+    except Exception:
+        pass
+
+    next_str = ""
+    if next_mtg and str(next_mtg) not in ("NaT", "None", "nan", ""):
+        try:
+            d = pd.to_datetime(next_mtg).date()
+            delta = (d - date.today()).days
+            if delta < 0:
+                next_str = f'<span style="color:{_RED};font-size:10px;">⚠ Next mtg: {d.strftime("%d %b")} (overdue)</span>'
+            elif delta <= 7:
+                next_str = f'<span style="color:#D97706;font-size:10px;">Next mtg: {d.strftime("%d %b")} (this week)</span>'
+            else:
+                next_str = f'<span style="color:#6B7280;font-size:10px;">Next mtg: {d.strftime("%d %b %Y")}</span>'
+        except Exception:
+            pass
+
+    contact_html = ""
+    if contact_name:
+        contact_html = (
+            f'<div style="display:flex;align-items:center;gap:6px;margin:8px 0 4px 0;'
+            f'padding-top:8px;border-top:1px solid #f0f0f0;">'
+            f'<div style="width:24px;height:24px;border-radius:50%;background:#f3f4f6;'
+            f'display:flex;align-items:center;justify-content:center;'
+            f'font-size:9px;font-weight:700;color:#374151;flex-shrink:0;">'
+            f'{_initials(contact_name)}</div>'
+            f'<div><div style="font-size:11px;font-weight:600;color:#111827;">{contact_name}</div>'
+            f'{"<div style=font-size:9px;color:#6b7280;>" + contact_title + "</div>" if contact_title else ""}'
+            f'</div></div>'
+        )
+
+    rm_am = ""
+    parts = [p for p in [rm, am] if p and p not in ("—", "TBD", "nan")]
+    if parts:
+        rm_am = f'<div style="font-size:10px;color:#9CA3AF;margin-top:4px;">{" / ".join(parts)}</div>'
+
+    # Fetch news
+    news_items = _fetch_news(company)
+    news_html  = ""
+    if news_items:
+        news_html = (
+            '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #f0f0f0;">'
+            '<div style="font-size:9px;font-weight:700;color:#9CA3AF;letter-spacing:.5px;'
+            'text-transform:uppercase;margin-bottom:5px;">Latest News</div>'
+        )
+        for n in news_items[:2]:
+            title = html_mod.escape(n["title"])[:90]
+            pub   = n.get("pub", "")[:11]
+            link  = n.get("link", "#")
+            news_html += (
+                f'<div style="margin-bottom:5px;">'
+                f'<a href="{link}" target="_blank" style="color:#1D4ED8;font-size:10px;'
+                f'font-weight:500;text-decoration:none;line-height:1.3;display:block;">{title}</a>'
+                f'<span style="color:#9CA3AF;font-size:9px;">{pub}</span>'
+                f'</div>'
+            )
+        news_html += '</div>'
+    else:
+        news_html = '<div style="margin-top:8px;font-size:10px;color:#D1D5DB;">No recent news found</div>'
+
+    card = (
+        f'<div style="border:1px solid #E5E7EB;border-radius:12px;padding:14px;'
+        f'background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:4px;">'
+
+        # ── Logo + name row
+        f'<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;">'
+        f'<div style="flex-shrink:0;width:44px;height:44px;position:relative;">'
+        f'<img src="{logo}" width="44" height="44" '
+        f'style="width:44px;height:44px;object-fit:contain;border-radius:8px;border:1px solid #f0f0f0;" '
+        f'onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\';">'
+        f'<div style="display:none;width:44px;height:44px;border-radius:8px;background:{color};'
+        f'align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;'
+        f'position:absolute;top:0;left:0;">{initials}</div>'
+        f'</div>'
+        f'<div style="flex:1;min-width:0;">'
+        f'<div style="font-size:14px;font-weight:700;color:{_GREEN};line-height:1.2;">'
+        f'{company}{priority_star}</div>'
+        f'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">'
+        f'<span style="background:#f0fdf4;color:{_GREEN};padding:1px 7px;border-radius:6px;font-size:10px;">{sector}</span>'
+        f'<span style="background:#f8fafc;color:#475569;padding:1px 7px;border-radius:6px;font-size:10px;">🌍 {country}</span>'
+        f'</div></div>'
+        f'<span style="background:{st_bg};color:{st_fg};padding:2px 8px;border-radius:10px;'
+        f'font-size:10px;font-weight:600;flex-shrink:0;">{status}</span>'
+        f'</div>'
+
+        # ── Stage bar
+        f'<div style="background:#f3f4f6;border-radius:4px;height:4px;margin-bottom:6px;overflow:hidden;">'
+        f'<div style="background:{sc_color};height:100%;width:100%;border-radius:4px;opacity:.7;"></div>'
+        f'</div>'
+        f'<div style="font-size:10px;color:{sc_color};font-weight:600;margin-bottom:6px;">{stage}</div>'
+
+        # ── Contact
+        f'{contact_html}'
+
+        # ── Value + next meeting
+        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">'
+        f'{"<span style=font-size:12px;font-weight:700;color:" + _GOLD + ";>" + est_val + "</span>" if est_val else "<span></span>"}'
+        f'{next_str}'
+        f'</div>'
+
+        # ── AM/RM
+        f'{rm_am}'
+
+        # ── News
+        f'{news_html}'
+        f'</div>'
+    )
+
+    st.markdown(card, unsafe_allow_html=True)
+    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+
+
+# ── Add investor form ─────────────────────────────────────────────────────────
 
 def _add_investor_form(dfs: dict, lang: str):
     with st.form("add_investor_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
-        company   = c1.text_input(t("company_name", lang))
-        country   = c2.selectbox(t("country", lang), COUNTRIES)
+        company = c1.text_input("Company Name")
+        country = c2.selectbox("Country", COUNTRIES)
         c3, c4 = st.columns(2)
-        sector    = c3.selectbox(t("sector", lang), SECTORS)
-        tier      = c4.selectbox(t("investor_tier", lang), INVESTOR_TIERS)
+        sector  = c3.selectbox("Sector", SECTORS)
+        tier    = c4.selectbox("Investor Tier", INVESTOR_TIERS)
         c5, c6 = st.columns(2)
-        rm        = c5.text_input(t("rm", lang))
-        am        = c6.text_input(t("am", lang) + " (leave blank if TBD)")
+        rm      = c5.text_input("Relationship Manager")
+        am      = c6.text_input("Account Manager")
         c7, c8 = st.columns(2)
-        stage     = c7.selectbox(t("journey_stage", lang), JOURNEY_STAGES)
-        status    = c8.selectbox(t("relationship_status", lang), INVESTOR_STATUSES)
+        stage   = c7.selectbox("Journey Stage", JOURNEY_STAGES)
+        status  = c8.selectbox("Relationship Status", INVESTOR_STATUSES)
         c9, c10 = st.columns(2)
-        est_val   = c9.number_input(t("est_investment", lang), min_value=0.0, step=1_000_000.0)
-        next_mtg  = c10.date_input(t("next_meeting_date", lang), value=None)
-        notes     = st.text_area(t("notes", lang))
+        contact_name  = c9.text_input("Key Contact Name")
+        contact_title = c10.text_input("Key Contact Title / Position")
+        c11, c12 = st.columns(2)
+        est_val  = c11.number_input("Est. Investment Value (SAR)", min_value=0.0, step=1_000_000.0)
+        next_mtg = c12.date_input("Next Meeting Date", value=None)
+        notes    = st.text_area("Notes")
 
-        if st.form_submit_button(t("add_new", lang)):
+        if st.form_submit_button("Add Investor", use_container_width=True):
+            if not company:
+                st.warning("Company name is required.")
+                return
             investors = dfs.get("Investor Master", pd.DataFrame())
             new_id    = _next_id(investors, "Investor ID", "INV")
             new_row   = {
@@ -128,10 +360,10 @@ def _add_investor_form(dfs: dict, lang: str):
                 "Account Manager":          am or "TBD",
                 "Journey Stage":            stage,
                 "Relationship Status":      status,
+                "Key Contact Name":         contact_name,
+                "Key Contact Title":        contact_title,
                 "Est. Investment Value (SAR)": est_val if est_val > 0 else None,
-                "Actual Commitment (SAR)":  None,
-                "Last Meeting Date":        None,
-                "Next Meeting Date":        next_mtg,
+                "Next Meeting Date":         next_mtg,
                 "Last Updated":             date.today(),
                 "Escalation Flag":          "None",
                 "Notes":                    notes,
@@ -140,207 +372,177 @@ def _add_investor_form(dfs: dict, lang: str):
                 [investors, pd.DataFrame([new_row])], ignore_index=True
             )
             save_session(dfs)
-            st.success(f"✅ {company} added ({new_id})")
+            st.success(f"{company} added ({new_id})")
             st.rerun()
 
 
+# ── Investor profile (detail view) ────────────────────────────────────────────
+
 def _render_investor_profile(company: str, dfs: dict, lang: str):
-    investors    = dfs.get("Investor Master",     pd.DataFrame())
-    actions      = dfs.get("Action Items",        pd.DataFrame())
-    meetings     = dfs.get("Meeting Log",         pd.DataFrame())
-    opportunities= dfs.get("Opportunity Pipeline",pd.DataFrame())
-    tasks        = dfs.get("RM Tasks",            pd.DataFrame())
-    deals        = dfs.get("Deal Progress",       pd.DataFrame())
+    investors     = dfs.get("Investor Master",      pd.DataFrame())
+    actions       = dfs.get("Action Items",         pd.DataFrame())
+    meetings      = dfs.get("Meeting Log",          pd.DataFrame())
+    opportunities = dfs.get("Opportunity Pipeline", pd.DataFrame())
+    tasks         = dfs.get("RM Tasks",             pd.DataFrame())
+    deals         = dfs.get("Deal Progress",        pd.DataFrame())
 
     row = investors[investors["Company Name"] == company].iloc[0]
 
-    # ── Company header banner ─────────────────────────────────────────────────
-    tier       = row.get("Investor Tier", "—")
-    tier_color = TIER_COLORS.get(tier, MISA_GREEN)
-    status     = row.get("Relationship Status", "—")
-    stage      = row.get("Journey Stage", "—")
+    status   = str(row.get("Relationship Status", "Active"))
+    stage    = str(row.get("Journey Stage", "—"))
+    country  = str(row.get("Country", "—"))
+    sector   = str(row.get("Sector",  "—"))
+    rm       = str(row.get("Relationship Manager", "—"))
+    am       = str(row.get("Account Manager", "TBD"))
+    contact  = str(row.get("Key Contact Name",  "") or "")
+    ctitle   = str(row.get("Key Contact Title", "") or "")
 
-    st.markdown(f"""
-    <div style="background:{MISA_GREEN};border-radius:10px;padding:16px 20px;margin:12px 0;">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <div style="color:white;font-size:22px;font-weight:700;">{company}</div>
-          <div style="color:rgba(255,255,255,0.75);font-size:13px;margin-top:2px;">
-            {row.get('Country','—')} &nbsp;|&nbsp; {row.get('Sector','—')} &nbsp;|&nbsp; RM: {row.get('Relationship Manager','—')} &nbsp;|&nbsp; AM: {row.get('Account Manager','TBD')}
-          </div>
-        </div>
-        <div style="text-align:right;">
-          <div style="background:{tier_color};color:white;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">{tier}</div>
-          <div style="color:rgba(255,255,255,0.75);font-size:12px;margin-top:4px;">{stage}</div>
-        </div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    logo         = _logo_url(company)
+    color        = _avatar_color(company)
+    initials     = _initials(company)
+    sc_color     = _STAGE_COLOR.get(stage, _GREEN)
+    st_bg, st_fg = _STATUS_STYLE.get(status.lower(), ("#F3F4F6", "#374151"))
+    est_val      = _fmt_sar(row.get("Est. Investment Value (SAR)"))
+    commitment   = _fmt_sar(row.get("Actual Commitment (SAR)"))
 
-    # ── Key metrics strip ─────────────────────────────────────────────────────
-    est  = row.get("Est. Investment Value (SAR)")
-    cmmt = row.get("Actual Commitment (SAR)")
-    jobs = row.get("Est. Jobs Created")
-    priority = row.get("Strategic Priority Score", "—")
-    min_action = row.get("Minister Action Required", "None Required")
+    contact_block = ""
+    if contact:
+        contact_block = (
+            f'<div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,0.8);">'
+            f'Contact: <strong style="color:#fff;">{contact}</strong>'
+            f'{" · " + ctitle if ctitle else ""}</div>'
+        )
+
+    st.markdown(
+        f'<div style="background:linear-gradient(135deg,#0f2d1e,{_GREEN});'
+        f'border-radius:12px;padding:20px 24px;margin:12px 0;">'
+        f'<div style="display:flex;align-items:center;gap:14px;">'
+        f'<img src="{logo}" width="56" height="56" '
+        f'style="width:56px;height:56px;object-fit:contain;border-radius:10px;'
+        f'border:2px solid rgba(255,255,255,0.2);background:#fff;padding:2px;" '
+        f'onerror="this.style.display=\'none\';">'
+        f'<div style="flex:1;">'
+        f'<div style="color:#fff;font-size:22px;font-weight:700;">{company}</div>'
+        f'<div style="color:rgba(255,255,255,0.7);font-size:13px;margin-top:3px;">'
+        f'{sector} &nbsp;·&nbsp; {country} &nbsp;·&nbsp; RM: {rm} &nbsp;·&nbsp; AM: {am}'
+        f'</div>'
+        f'{contact_block}'
+        f'</div>'
+        f'<div style="text-align:right;">'
+        f'<span style="background:{st_bg};color:{st_fg};padding:3px 12px;border-radius:12px;'
+        f'font-size:12px;font-weight:700;">{status}</span>'
+        f'<div style="color:{sc_color};font-size:11px;font-weight:600;margin-top:6px;'
+        f'background:rgba(255,255,255,0.15);padding:2px 10px;border-radius:8px;">{stage}</div>'
+        f'{"<div style=color:" + _GOLD + ";font-size:13px;font-weight:700;margin-top:6px;>" + est_val + "</div>" if est_val else ""}'
+        f'{"<div style=color:rgba(255,255,255,0.6);font-size:11px;>Committed: " + commitment + "</div>" if commitment else ""}'
+        f'</div></div></div>',
+        unsafe_allow_html=True,
+    )
+
+    # Key metrics
+    est   = row.get("Est. Investment Value (SAR)")
+    cmmt  = row.get("Actual Commitment (SAR)")
+    jobs  = row.get("Est. Jobs Created")
+    prio  = row.get("Strategic Priority Score", "—")
+    min_a = row.get("Minister Action Required", "None Required")
 
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Est. Investment", f"SAR {est:,.0f}" if pd.notna(est) and est else "—")
+    m1.metric("Est. Investment", f"SAR {est:,.0f}"  if pd.notna(est)  and est  else "—")
     m2.metric("Commitment",      f"SAR {cmmt:,.0f}" if pd.notna(cmmt) and cmmt else "—")
-    m3.metric("Est. Jobs",       f"{int(jobs):,}" if pd.notna(jobs) and jobs else "—")
-    m4.metric("Priority Score",  str(priority) if str(priority) not in ("—", "nan", "") else "—")
-    m5.metric("Minister Action", str(min_action) if str(min_action) not in ("None Required", "nan", "") else "None")
+    m3.metric("Est. Jobs",       f"{int(jobs):,}"   if pd.notna(jobs) and jobs else "—")
+    m4.metric("Priority Score",  str(prio) if str(prio) not in ("—", "nan", "") else "—")
+    m5.metric("Minister Action", str(min_a) if str(min_a) not in ("None Required", "nan", "") else "None")
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    # Linked data
+    def _link(df, col, val):
+        return df[df[col] == val] if not df.empty and col in df.columns else pd.DataFrame()
 
-    # ── Filter linked data ────────────────────────────────────────────────────
-    linked_meetings = meetings[meetings["Company Name"] == company] if not meetings.empty and "Company Name" in meetings.columns else pd.DataFrame()
-    linked_opps     = opportunities[opportunities["Company Name"] == company] if not opportunities.empty and "Company Name" in opportunities.columns else pd.DataFrame()
-    linked_actions  = actions[actions["Company Name"] == company] if not actions.empty and "Company Name" in actions.columns else pd.DataFrame()
-    linked_tasks    = tasks[tasks["Linked Investor"] == company] if not tasks.empty and "Linked Investor" in tasks.columns else pd.DataFrame()
-    linked_deals    = deals[deals["Company Name"] == company] if not deals.empty and "Company Name" in deals.columns else pd.DataFrame()
+    linked_meetings = _link(meetings,      "Company Name", company)
+    linked_opps     = _link(opportunities, "Company Name", company)
+    linked_actions  = _link(actions,       "Company Name", company)
+    linked_tasks    = _link(tasks,         "Linked Investor", company)
+    linked_deals    = _link(deals,         "Company Name", company)
 
-    # Separate challenges from action items
     if not linked_actions.empty and "Type of Engagement" in linked_actions.columns:
-        linked_challenges = linked_actions[linked_actions["Type of Engagement"] == "Challenge"]
+        linked_challenges   = linked_actions[linked_actions["Type of Engagement"] == "Challenge"]
         linked_actions_only = linked_actions[linked_actions["Type of Engagement"] != "Challenge"]
     else:
         linked_challenges   = pd.DataFrame()
         linked_actions_only = linked_actions
 
-    # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_meetings, tab_opps, tab_challenges, tab_actions, tab_tasks, tab_deals = st.tabs([
-        f"🤝 Meetings ({len(linked_meetings)})",
-        f"🎯 Opportunities ({len(linked_opps)})",
-        f"⚠️ Challenges ({len(linked_challenges)})",
-        f"✅ Action Items ({len(linked_actions_only)})",
-        f"📋 RM Tasks ({len(linked_tasks)})",
-        f"🏦 Deals ({len(linked_deals)})",
+    tabs = st.tabs([
+        f"Opportunities ({len(linked_opps)})",
+        f"Action Items ({len(linked_actions_only)})",
+        f"Challenges ({len(linked_challenges)})",
+        f"Meetings ({len(linked_meetings)})",
+        f"RM Tasks ({len(linked_tasks)})",
+        f"Deals ({len(linked_deals)})",
     ])
 
-    # ── Meetings tab ──────────────────────────────────────────────────────────
-    with tab_meetings:
-        if linked_meetings.empty:
-            st.info("No meetings logged for this company yet.")
-        else:
-            cols = [c for c in [
-                "Meeting Date", "Meeting Type", "Meeting Status",
-                "Meeting Objective", "Key Discussion Points",
-                "Decisions Made", "Blockers Identified",
-                "Next Steps", "Follow-Up Owner", "Follow-Up Due Date",
-            ] if c in linked_meetings.columns]
-            st.dataframe(
-                linked_meetings[cols].sort_values("Meeting Date", ascending=False)
-                if "Meeting Date" in linked_meetings.columns else linked_meetings[cols],
-                use_container_width=True, hide_index=True,
-            )
-
-    # ── Opportunities tab ─────────────────────────────────────────────────────
-    with tab_opps:
+    with tabs[0]:
         if linked_opps.empty:
-            st.info("No opportunities linked to this company yet.")
+            st.info("No opportunities linked yet.")
         else:
-            cols = [c for c in [
-                "Opportunity Name", "Opportunity Stage", "Opportunity Status",
-                "Est. Value (SAR)", "Confidence Level", "Target Closure Date",
-                "Blockers", "Escalation Required", "Notes",
-            ] if c in linked_opps.columns]
+            cols = [c for c in ["Opportunity Name", "Opportunity Stage", "Opportunity Status",
+                                 "Est. Value (SAR)", "Confidence Level", "Target Closure Date",
+                                 "Blockers", "Escalation Required"] if c in linked_opps.columns]
             st.dataframe(linked_opps[cols], use_container_width=True, hide_index=True)
 
-    # ── Challenges tab ────────────────────────────────────────────────────────
-    with tab_challenges:
-        if linked_challenges.empty:
-            st.info("No challenges logged for this company.")
+    with tabs[1]:
+        if linked_actions_only.empty:
+            st.info("No action items yet.")
         else:
-            cols = [c for c in [
-                "Action Description", "Status", "Priority",
-                "Due Date", "Assigned To", "Escalation Flag", "Remarks",
-            ] if c in linked_challenges.columns]
+            cols = [c for c in ["Action Description", "Type of Engagement", "Status", "Priority",
+                                 "Progress", "Due Date", "Assigned To", "Remarks"] if c in linked_actions_only.columns]
+            df_sorted = linked_actions_only[cols].sort_values("Due Date") if "Due Date" in linked_actions_only.columns else linked_actions_only[cols]
+            st.dataframe(df_sorted, use_container_width=True, hide_index=True)
+
+    with tabs[2]:
+        if linked_challenges.empty:
+            st.info("No challenges logged.")
+        else:
+            cols = [c for c in ["Action Description", "Status", "Priority", "Due Date",
+                                 "Assigned To", "Escalation Flag", "Remarks"] if c in linked_challenges.columns]
             st.dataframe(linked_challenges[cols], use_container_width=True, hide_index=True)
 
-    # ── Action Items tab ──────────────────────────────────────────────────────
-    with tab_actions:
-        if linked_actions_only.empty:
-            st.info("No action items for this company.")
+    with tabs[3]:
+        if linked_meetings.empty:
+            st.info("No meetings logged.")
         else:
-            cols = [c for c in [
-                "Action ID", "Action Description", "Type of Engagement",
-                "Status", "Priority", "Progress",
-                "Due Date", "Assigned To", "Department",
-                "Escalation Flag", "Next Action", "Next Action Date",
-            ] if c in linked_actions_only.columns]
-            st.dataframe(
-                linked_actions_only[cols].sort_values("Due Date", ascending=True)
-                if "Due Date" in linked_actions_only.columns else linked_actions_only[cols],
-                use_container_width=True, hide_index=True,
-            )
+            cols = [c for c in ["Meeting Date", "Meeting Type", "Meeting Status", "Meeting Objective",
+                                 "Key Discussion Points", "Decisions Made", "Next Steps",
+                                 "Follow-Up Owner", "Follow-Up Due Date"] if c in linked_meetings.columns]
+            df_sorted = linked_meetings[cols].sort_values("Meeting Date", ascending=False) if "Meeting Date" in linked_meetings.columns else linked_meetings[cols]
+            st.dataframe(df_sorted, use_container_width=True, hide_index=True)
 
-    # ── RM Tasks tab ──────────────────────────────────────────────────────────
-    with tab_tasks:
+    with tabs[4]:
         if linked_tasks.empty:
-            st.info("No RM tasks linked to this company.")
+            st.info("No RM tasks linked.")
         else:
-            cols = [c for c in [
-                "Task ID", "Task Title", "Priority", "Status",
-                "Due Date", "Notes",
-            ] if c in linked_tasks.columns]
+            cols = [c for c in ["Task ID", "Task Title", "Priority", "Status", "Due Date", "Notes"] if c in linked_tasks.columns]
             st.dataframe(linked_tasks[cols], use_container_width=True, hide_index=True)
 
-    # ── Deals tab ─────────────────────────────────────────────────────────────
-    with tab_deals:
+    with tabs[5]:
         if linked_deals.empty:
-            st.info("No deals in progress for this company.")
+            st.info("No deals in progress.")
         else:
-            cols = [c for c in [
-                "Deal ID", "Deal Name", "Deal Stage", "Deal Status",
-                "Challenge Severity", "Challenge Classification",
-                "Est. Value (SAR)", "Escalation Required", "Escalation Level",
-                "Escalation Status", "Assigned Owner", "Target Resolution Date",
-                "Last Updated",
-            ] if c in linked_deals.columns]
-            st.dataframe(linked_deals[cols], use_container_width=True, hide_index=True,
-                         column_config={
-                             "Est. Value (SAR)":       st.column_config.NumberColumn(format="SAR %,.0f"),
-                             "Target Resolution Date": st.column_config.DateColumn(),
-                             "Last Updated":           st.column_config.DateColumn(),
-                         })
-            # Per-deal challenge detail for this company
-            for _, drow in linked_deals.iterrows():
-                deal_id   = str(drow.get("Deal ID", "—"))
-                deal_name = str(drow.get("Deal Name", "—"))
-                severity  = str(drow.get("Challenge Severity", ""))
-                status    = str(drow.get("Deal Status", ""))
-                flag = "🔴 " if (severity == "Critical" or status == "Blocked") else ("🟠 " if severity == "High" else "")
-                with st.expander(f"{flag}{deal_id} — {deal_name}", expanded=False):
-                    d1, d2 = st.columns(2)
-                    d1.markdown(f"**Stage:** {drow.get('Deal Stage', '—')}")
-                    d1.markdown(f"**Status:** {status or '—'}")
-                    d1.markdown(f"**Challenge Classification:** {drow.get('Challenge Classification', '—')}")
-                    d2.markdown(f"**Escalation Level:** {drow.get('Escalation Level', '—')}")
-                    d2.markdown(f"**Escalation Status:** {drow.get('Escalation Status', '—')}")
-                    d2.markdown(f"**Assigned Owner:** {drow.get('Assigned Owner', '—')}")
-                    challenge_desc = str(drow.get("Challenge Description", "") or "")
-                    proposed_sol   = str(drow.get("Proposed Solution", "") or "")
-                    if challenge_desc:
-                        st.markdown(f"**Challenge:** {challenge_desc}")
-                    if proposed_sol:
-                        st.markdown(f"**Proposed Solution:** {proposed_sol}")
+            cols = [c for c in ["Deal ID", "Deal Name", "Deal Stage", "Deal Status",
+                                 "Challenge Severity", "Est. Value (SAR)", "Escalation Required",
+                                 "Assigned Owner", "Target Resolution Date"] if c in linked_deals.columns]
+            st.dataframe(linked_deals[cols], use_container_width=True, hide_index=True)
 
-    # ── Notes ─────────────────────────────────────────────────────────────────
     notes = str(row.get("Notes", "") or "")
-    if notes:
+    if notes and notes not in ("nan", ""):
         st.markdown(f"**Notes:** {notes}")
 
 
 def _next_id(df: pd.DataFrame, id_col: str, prefix: str) -> str:
     if df.empty or id_col not in df.columns:
         return f"{prefix}-001"
-    existing = df[id_col].dropna().tolist()
     nums = []
-    for v in existing:
+    for v in df[id_col].dropna():
         try:
             nums.append(int(str(v).split("-")[-1]))
         except ValueError:
             pass
-    next_num = max(nums) + 1 if nums else 1
-    return f"{prefix}-{next_num:03d}"
+    return f"{prefix}-{(max(nums)+1 if nums else 1):03d}"
