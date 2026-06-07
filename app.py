@@ -44,7 +44,6 @@ from modules.opportunities import render as render_opportunities
 from modules.actions       import render as render_actions, render_action_summary_widget
 from modules.tasks         import render as render_tasks
 from modules.report_builder      import render as render_report_builder
-from modules.company_directory   import render as render_company_directory
 
 try:
     from exports.pptx_generator import generate_pptx, generate_pptx_company
@@ -136,7 +135,6 @@ def render_sidebar():
             T("nav_investors"):         "investors",
             T("nav_opportunities"):     "opportunities",
             T("nav_report_builder"):    "report_builder",
-            T("nav_company_directory"): "company_directory",
             T("nav_actions"):           "actions",
             T("nav_tasks"):             "tasks",
             T("nav_export"):            "export",
@@ -538,11 +536,6 @@ def main():
         else:
             render_report_builder(dfs, lang())
 
-    elif page == "company_directory":
-        if dfs is None:
-            _require_data()
-        else:
-            render_company_directory(dfs, lang())
 
     elif page == "actions":
         if dfs is None:
