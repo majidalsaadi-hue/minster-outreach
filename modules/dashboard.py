@@ -366,6 +366,133 @@ def render_action_advisor(dfs: dict, lang: str):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
+# ── Active Opportunities — Minister View ─────────────────────────────────────
+
+def render_active_opportunities_panel(dfs: dict, lang: str):
+    """
+    Minister-grade investment opportunity panel shown on the dashboard.
+    Shows approved active opportunities grouped by company with total value.
+    Falls back to Action Items with Opportunity type if pipeline is empty.
+    """
+    _STAGE_C = {
+        "Exploration":        "#6B7280",
+        "Due Diligence":      "#1D4ED8",
+        "Active Negotiation": "#D97706",
+        "Committed":          "#059669",
+        "Post-Investment":    MISA_GREEN,
+    }
+
+    opps    = dfs.get("Opportunity Pipeline", pd.DataFrame())
+    actions = dfs.get("Action Items",         pd.DataFrame())
+
+    # Fallback: synthesise from action items when pipeline is empty
+    if opps.empty and not actions.empty and "Type of Engagement" in actions.columns:
+        opp_acts = actions[
+            actions["Type of Engagement"].str.strip().str.lower() == "opportunity"
+        ].copy()
+        if not opp_acts.empty:
+            opp_acts["Opportunity Status"] = "Active"
+            opp_acts["Opportunity Stage"]  = "Exploration"
+            opp_acts["Confidence Level"]   = "Medium"
+            opps = opp_acts.rename(columns={"Action Description": "Opportunity Name"})
+
+    if opps.empty:
+        return
+
+    # Only show active / under-review rows
+    if "Opportunity Status" in opps.columns:
+        active = opps[
+            opps["Opportunity Status"].str.lower().isin(["active", "under review", ""])
+        ].copy()
+        if active.empty:
+            active = opps.copy()
+    else:
+        active = opps.copy()
+
+    total_val   = _sum_col(active, "Est. Value (SAR)")
+    n_active    = len(active)
+    n_committed = int((active.get("Opportunity Stage", pd.Series()) == "Committed").sum()) \
+                  if "Opportunity Stage" in active.columns else 0
+    n_companies = active["Company Name"].dropna().nunique() \
+                  if "Company Name" in active.columns else 0
+
+    # ── Gradient header ───────────────────────────────────────────────────────
+    st.markdown(
+        f'<div style="background:linear-gradient(135deg,#071a0f 0%,{MISA_GREEN} 100%);'
+        f'border-radius:14px;padding:20px 26px;margin-bottom:14px;">'
+        f'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">'
+        f'<div>'
+        f'<div style="color:{MISA_GOLD};font-size:10px;font-weight:700;letter-spacing:1px;'
+        f'text-transform:uppercase;margin-bottom:5px;">Active Investment Opportunities</div>'
+        f'<div style="color:#fff;font-size:26px;font-weight:700;line-height:1.1;">'
+        f'{n_active} Opportunities</div>'
+        f'<div style="color:rgba(255,255,255,0.6);font-size:12px;margin-top:5px;">'
+        f'{n_companies} companies &nbsp;·&nbsp; {n_committed} committed'
+        f'{"&nbsp;·&nbsp;" + str(n_active - n_committed) + " in progress" if n_active - n_committed > 0 else ""}'
+        f'</div>'
+        f'</div>'
+        f'<div style="text-align:right;">'
+        f'<div style="color:rgba(255,255,255,0.5);font-size:11px;margin-bottom:4px;">Total Pipeline Value</div>'
+        f'<div style="color:{MISA_GOLD};font-size:32px;font-weight:700;">'
+        f'{_fmt_sar(total_val) if total_val else "—"}</div>'
+        f'</div>'
+        f'</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    if "Company Name" not in active.columns:
+        return
+
+    companies = active["Company Name"].dropna().unique().tolist()
+    cols = st.columns(min(3, len(companies)) if companies else 1)
+    for i, co in enumerate(companies[:6]):
+        co_opps   = active[active["Company Name"] == co]
+        co_val    = _sum_col(co_opps, "Est. Value (SAR)")
+        n_co      = len(co_opps)
+        n_co_comm = int((co_opps.get("Opportunity Stage", pd.Series()) == "Committed").sum()) \
+                    if "Opportunity Stage" in co_opps.columns else 0
+
+        opp_rows = ""
+        for _, row in co_opps.iterrows():
+            stage = str(row.get("Opportunity Stage", "Exploration"))
+            name  = str(row.get("Opportunity Name",  "—"))[:70]
+            val   = row.get("Est. Value (SAR)")
+            sc    = _STAGE_C.get(stage, "#6B7280")
+            vs    = _fmt_sar(float(val)) if val and str(val) not in ("nan", "None", "") else ""
+            opp_rows += (
+                f'<div style="display:flex;align-items:center;gap:6px;'
+                f'padding:5px 8px;border-radius:5px;margin-bottom:3px;'
+                f'background:#f9fafb;border-left:3px solid {sc};">'
+                f'<div style="flex:1;min-width:0;">'
+                f'<div style="font-size:11px;font-weight:600;color:#111827;'
+                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</div>'
+                f'<div style="font-size:9px;color:{sc};font-weight:600;">{stage}</div>'
+                f'</div>'
+                f'{"<span style=font-size:10px;font-weight:700;color:" + MISA_GOLD + ";flex-shrink:0;>" + vs + "</span>" if vs else ""}'
+                f'</div>'
+            )
+
+        with cols[i % len(cols)]:
+            st.markdown(
+                f'<div style="border:1px solid #E5E7EB;border-radius:10px;padding:12px;'
+                f'margin-bottom:10px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.05);">'
+                f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+                f'<div>'
+                f'<div style="font-size:13px;font-weight:700;color:{MISA_GREEN};">{co}</div>'
+                f'<div style="font-size:9px;color:#9CA3AF;margin-top:2px;">'
+                f'{n_co} opp{"s" if n_co!=1 else ""}'
+                f'{"  ·  " + str(n_co_comm) + " committed" if n_co_comm else ""}'
+                f'</div>'
+                f'</div>'
+                f'{"<div style=font-size:12px;font-weight:700;color:" + MISA_GOLD + ";>" + _fmt_sar(co_val) + "</div>" if co_val else ""}'
+                f'</div>'
+                f'{opp_rows}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+
 # ── Top KPI strip ────────────────────────────────────────────────────────────
 
 def render_kpi_cards(dfs: dict, lang: str):

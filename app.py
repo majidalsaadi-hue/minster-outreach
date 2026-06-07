@@ -37,6 +37,7 @@ from modules.dashboard     import (
     render_investment_flow, render_opportunity_pipeline,
     render_sector_geography, render_alerts,
     render_minister_decision_panel, render_vision2030_panel, render_economic_impact,
+    render_active_opportunities_panel,
 )
 from modules.investors     import render as render_investors
 from modules.meetings      import render as render_meetings
@@ -275,6 +276,11 @@ def render_dashboard():
     render_kpi_cards(dfs, lang())
 
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown("---")
+
+    # ── Active Investment Opportunities (minister view) ────────────────────
+    render_active_opportunities_panel(dfs, lang())
+
     st.markdown("---")
 
     # ── Strategic Alerts ──────────────────────────────────────────────────
