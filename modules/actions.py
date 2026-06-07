@@ -83,20 +83,22 @@ def render_action_summary_widget(dfs: dict, lang: str):
         )
     st.markdown('</div></div>', unsafe_allow_html=True)
 
-    # Top-3 critical items
+    # Top-4 critical items — white card so text is always visible
     top_items = (urgent["blocked"] + urgent["overdue"] + urgent["due_today"])[:4]
     for item in top_items:
         sc = _RED if item["urgency"] in ("blocked", "overdue") else _AMBER
         st.markdown(
             f'<div style="display:flex;align-items:flex-start;gap:8px;'
-            f'padding:5px 8px;border-radius:6px;margin-bottom:3px;'
-            f'background:rgba(255,255,255,0.06);border-left:3px solid {sc};">'
+            f'padding:6px 10px;border-radius:6px;margin-bottom:4px;'
+            f'background:#fff;border-left:3px solid {sc};'
+            f'box-shadow:0 1px 3px rgba(0,0,0,0.07);">'
             f'<div style="flex:1;min-width:0;">'
-            f'<span style="color:{_GOLD};font-size:10px;font-weight:600;">'
-            f'{item["company"]}</span>'
-            f'<span style="color:rgba(255,255,255,0.5);font-size:9px;"> · {item["tag"]}</span>'
-            f'<div style="color:rgba(255,255,255,0.8);font-size:10px;margin-top:2px;">'
-            f'{item["desc"][:80]}</div>'
+            f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">'
+            f'<span style="color:{_GREEN};font-size:10px;font-weight:700;">{item["company"]}</span>'
+            f'<span style="background:{sc};color:#fff;padding:1px 5px;border-radius:3px;'
+            f'font-size:8px;font-weight:700;">{item["tag"]}</span>'
+            f'</div>'
+            f'<div style="color:#1F2937;font-size:10px;line-height:1.4;">{item["desc"][:80]}</div>'
             f'</div></div>',
             unsafe_allow_html=True,
         )
@@ -336,47 +338,45 @@ def _render_priority_panel(actions: pd.DataFrame, today):
         unsafe_allow_html=True,
     )
 
-    # Priority item rows
-    st.markdown(
-        '<div style="background:#0a1a10;border-radius:0 0 12px 12px;'
-        'padding:12px 16px;margin-bottom:16px;">',
-        unsafe_allow_html=True,
-    )
-
+    # Priority item cards — light background so dark text is always visible
     all_urgent = (
-        [(i, "blocked",   "#FCA5A5") for i in buckets["blocked"]]
-        + [(i, "overdue",   "#FCA5A5") for i in buckets["overdue"]]
-        + [(i, "due_today", "#FCD34D") for i in buckets["due_today"]]
-        + [(i, "due_soon",  "rgba(255,255,255,0.55)") for i in buckets["due_soon"]]
+        [(i, "blocked",   _RED)   for i in buckets["blocked"]]
+        + [(i, "overdue",   _RED)   for i in buckets["overdue"]]
+        + [(i, "due_today", _AMBER) for i in buckets["due_today"]]
+        + [(i, "due_soon",  _GRAY)  for i in buckets["due_soon"]]
     )[:10]
 
+    st.markdown("<div style='margin-bottom:16px;'>", unsafe_allow_html=True)
     cols = st.columns(2)
-    for idx, (item, urgency, tag_color) in enumerate(all_urgent):
-        border_c = _RED   if urgency in ("blocked", "overdue") else \
-                   _AMBER if urgency == "due_today" else "#4B5563"
+    for idx, (item, urgency, border_c) in enumerate(all_urgent):
+        prio_badge = ""
+        if item["priority"] in ("High", "Very High"):
+            pc = _PRIO_COLOR.get(item["priority"], _RED)
+            prio_badge = (f'<span style="background:{pc};color:#fff;padding:1px 5px;'
+                          f'border-radius:4px;font-size:8px;margin-left:4px;">'
+                          f'{item["priority"]}</span>')
+        tag_bg = _RED if urgency in ("blocked", "overdue") else \
+                 _AMBER if urgency == "due_today" else _GRAY
+        due_str = f'  ·  📅 {item["due"].strftime("%d %b")}' if item["due"] else ""
         with cols[idx % 2]:
             st.markdown(
-                f'<div style="display:flex;gap:8px;align-items:flex-start;'
-                f'padding:7px 10px;border-radius:7px;margin-bottom:5px;'
-                f'background:rgba(255,255,255,0.05);border-left:3px solid {border_c};">'
-                f'<div style="flex:1;min-width:0;">'
-                f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">'
-                f'<span style="color:{_GOLD};font-size:11px;font-weight:700;">{item["company"]}</span>'
-                f'<span style="background:rgba(255,255,255,0.12);color:{tag_color};'
-                f'padding:1px 6px;border-radius:4px;font-size:8px;font-weight:700;">'
-                f'{item["tag"]}</span>'
-                f'{"<span style=background:" + _PRIO_COLOR.get(item["priority"],_GRAY) + "55;color:#fff;padding:1px 5px;border-radius:4px;font-size:8px;>" + item["priority"] + "</span>" if item["priority"] in ("High","Very High") else ""}'
+                f'<div style="background:#fff;border:1px solid #E5E7EB;border-left:3px solid {border_c};'
+                f'border-radius:7px;padding:8px 12px;margin-bottom:8px;'
+                f'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+                f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">'
+                f'<span style="color:{_GREEN};font-size:11px;font-weight:700;">{item["company"]}</span>'
+                f'<span style="background:{tag_bg};color:#fff;padding:1px 6px;border-radius:4px;'
+                f'font-size:8px;font-weight:700;">{item["tag"]}</span>'
+                f'{prio_badge}'
                 f'</div>'
-                f'<div style="color:rgba(255,255,255,0.85);font-size:10px;line-height:1.3;">'
+                f'<div style="color:#1F2937;font-size:11px;line-height:1.4;margin-bottom:3px;">'
                 f'{item["desc"]}</div>'
-                f'<div style="color:rgba(255,255,255,0.4);font-size:9px;margin-top:3px;">'
-                f'👤 {item["owner"]}'
-                f'{"  ·  📅 " + item["due"].strftime("%d %b") if item["due"] else ""}'
-                f'</div></div></div>',
+                f'<div style="color:#6B7280;font-size:9px;">'
+                f'👤 {item["owner"]}{due_str}</div>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
-
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── Status summary strip ──────────────────────────────────────────────────────

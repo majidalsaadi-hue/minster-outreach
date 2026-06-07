@@ -312,49 +312,42 @@ def render_action_advisor(dfs: dict, lang: str):
     )
 
     # ── Company boxes in a 2-column Streamlit layout ──────────────────────────
-    st.markdown(
-        '<div style="background:#0a1f14;padding:12px 16px 4px 16px;'
-        'border-radius:0 0 12px 12px;margin-bottom:16px;">',
-        unsafe_allow_html=True,
-    )
-
     cols = st.columns(2)
     for ci, company in enumerate(sorted_companies):
         co_items = company_groups[company]
         n_co_crit = sum(1 for i in co_items if i["urgency"] in ("critical", "today"))
-        worst_color = co_items[0]["tag_color"]  # first = highest score
+        worst_color = co_items[0]["tag_color"]
 
-        # Build rows for this company
         rows_html = ""
         for item in co_items:
             tc = item["tag_color"]
             rows_html += (
                 f'<div style="display:flex;align-items:flex-start;gap:8px;'
                 f'padding:6px 8px;margin-bottom:4px;border-radius:6px;'
-                f'background:rgba(255,255,255,0.05);border-left:2px solid {tc};">'
+                f'background:#f8f9fa;border-left:3px solid {tc};">'
                 f'<span style="background:{tc};color:#fff;padding:1px 5px;border-radius:3px;'
                 f'font-size:8px;font-weight:700;white-space:nowrap;flex-shrink:0;">{item["tag"]}</span>'
                 f'<div style="min-width:0;">'
-                f'<div style="color:#f0fdf4;font-size:11px;font-weight:500;">{item["action"]}</div>'
-                f'<div style="color:rgba(255,255,255,0.4);font-size:9px;margin-top:1px;">{item["detail"]}</div>'
+                f'<div style="color:#1F2937;font-size:11px;font-weight:500;line-height:1.3;">{item["action"]}</div>'
+                f'<div style="color:#6B7280;font-size:9px;margin-top:2px;">{item["detail"]}</div>'
                 f'</div></div>'
             )
 
-        badge = (
-            f'<span style="background:rgba(220,38,38,0.4);color:#FCA5A5;'
-            f'padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">'
-            f'{n_co_crit} critical</span>'
-            if n_co_crit else
-            f'<span style="background:rgba(217,119,6,0.3);color:#FCD34D;'
-            f'padding:2px 8px;border-radius:10px;font-size:10px;">'
-            f'{len(co_items)} item{"s" if len(co_items)!=1 else ""}</span>'
-        )
+        if n_co_crit:
+            badge = (f'<span style="background:#FEE2E2;color:#991B1B;'
+                     f'padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">'
+                     f'{n_co_crit} critical</span>')
+        else:
+            badge = (f'<span style="background:#FEF3C7;color:#92400E;'
+                     f'padding:2px 8px;border-radius:10px;font-size:10px;">'
+                     f'{len(co_items)} item{"s" if len(co_items)!=1 else ""}</span>')
 
         box_html = (
-            f'<div style="border:1px solid {worst_color}60;border-radius:8px;'
-            f'padding:10px 12px;margin-bottom:10px;background:rgba(255,255,255,0.04);">'
-            f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
-            f'<span style="color:#C9974A;font-size:13px;font-weight:700;">{company}</span>'
+            f'<div style="border:1px solid {worst_color}50;border-radius:10px;'
+            f'padding:12px 14px;margin-bottom:12px;background:#fff;'
+            f'box-shadow:0 1px 4px rgba(0,0,0,0.08);">'
+            f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+            f'<span style="color:{MISA_GREEN};font-size:13px;font-weight:700;">{company}</span>'
             f'{badge}'
             f'</div>'
             f'{rows_html}'
@@ -363,7 +356,7 @@ def render_action_advisor(dfs: dict, lang: str):
         with cols[ci % 2]:
             st.markdown(box_html, unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
 
 # ── Active Opportunities — Minister View ─────────────────────────────────────
