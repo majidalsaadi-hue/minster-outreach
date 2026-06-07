@@ -283,20 +283,9 @@ def render_dashboard():
 
     st.markdown("---")
 
-    # ── Charts row 1: Pipeline Overview + Investment Flow ─────────────────
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f"#### {T('dash_pipeline_overview')}")
-        render_pipeline_overview(dfs, lang())
-    with c2:
-        st.markdown(f"#### {T('dash_investment_flow')}")
-        render_investment_flow(dfs, lang())
-
-    st.markdown("---")
-
-    # ── Charts row 2: Sector & Geography (full width) ─────────────────────
-    st.markdown(f"#### {T('dash_sector_geo')}")
-    render_sector_geography(dfs, lang())
+    # ── Investment Flow ───────────────────────────────────────────────────
+    st.markdown(f"#### {T('dash_investment_flow')}")
+    render_investment_flow(dfs, lang())
 
 
 def _render_no_data_welcome():

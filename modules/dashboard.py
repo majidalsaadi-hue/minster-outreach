@@ -261,49 +261,16 @@ def render_action_advisor(dfs: dict, lang: str):
 
     # ── Render — single self-contained HTML block ─────────────────────────────
     items.sort(key=lambda x: x["score"], reverse=True)
-    top     = items[:10]
     n_crit  = sum(1 for i in items if i["urgency"] in ("critical", "today"))
     n_soon  = sum(1 for i in items if i["urgency"] == "soon")
     n_strat = sum(1 for i in items if i["urgency"] in ("strategic", "watch"))
     day_label = today.strftime("%A, %d %B %Y")
 
-    if not top:
-        body_html = """
-        <div style="background:rgba(255,255,255,0.08);border-radius:8px;padding:14px;
-                    text-align:center;color:rgba(255,255,255,0.6);font-size:13px;">
-          All clear — no pending actions, upcoming meetings, or alerts at this time.
-        </div>"""
-    else:
-        rows_html = ""
-        for item in top:
-            tc = item["tag_color"]
-            rows_html += (
-                f'<div style="display:flex;align-items:flex-start;gap:10px;'
-                f'background:rgba(255,255,255,0.06);border-radius:8px;'
-                f'padding:9px 12px;margin-bottom:6px;border-left:3px solid {tc};">'
-                f'<span style="font-size:14px;flex-shrink:0;margin-top:1px;">{item["icon"]}</span>'
-                f'<div style="flex:1;min-width:0;">'
-                f'<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:3px;">'
-                f'<span style="background:{tc};color:#fff;padding:1px 7px;border-radius:4px;'
-                f'font-size:9px;font-weight:700;letter-spacing:.5px;white-space:nowrap;">{item["tag"]}</span>'
-                f'<span style="color:#C9974A;font-size:12px;font-weight:600;">{item["company"]}</span>'
-                f'</div>'
-                f'<div style="color:#f0fdf4;font-size:12px;font-weight:500;">{item["action"]}</div>'
-                f'<div style="color:rgba(255,255,255,0.45);font-size:10px;margin-top:2px;">{item["detail"]}</div>'
-                f'</div></div>'
-            )
-        remainder = len(items) - len(top)
-        more_line = (
-            f'<div style="text-align:center;color:rgba(255,255,255,0.4);font-size:11px;margin-top:4px;">'
-            f'+ {remainder} more item{"s" if remainder!=1 else ""} in Strategic Alerts below</div>'
-            if remainder > 0 else ""
-        )
-        body_html = f'<div>{rows_html}</div>{more_line}'
-
+    # ── Header bar (always render as one complete block) ──────────────────────
     st.markdown(
         f'<div style="background:linear-gradient(135deg,#0f2d1e 0%,#1B5C3F 100%);'
-        f'border-radius:12px;padding:18px 20px 14px 20px;margin-bottom:16px;">'
-        f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+        f'border-radius:12px 12px 0 0;padding:16px 20px 14px 20px;">'
+        f'<div style="display:flex;align-items:center;justify-content:space-between;">'
         f'<div>'
         f'<span style="color:#C9974A;font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;">Today\'s Briefing</span>'
         f'<div style="color:#fff;font-size:17px;font-weight:700;margin-top:2px;">{day_label}</div>'
@@ -318,11 +285,85 @@ def render_action_advisor(dfs: dict, lang: str):
         f'<div style="text-align:center;background:rgba(124,58,237,0.25);border:1px solid rgba(124,58,237,0.5);border-radius:8px;padding:6px 14px;">'
         f'<div style="color:#C4B5FD;font-size:18px;font-weight:700;">{n_strat}</div>'
         f'<div style="color:rgba(255,255,255,0.6);font-size:9px;letter-spacing:.4px;">STRATEGIC</div></div>'
-        f'</div></div>'
-        f'{body_html}'
-        f'</div>',
+        f'</div></div></div>',
         unsafe_allow_html=True,
     )
+
+    if not items:
+        st.markdown(
+            '<div style="background:#0f2d1e;border-radius:0 0 12px 12px;padding:16px 20px;'
+            'text-align:center;color:rgba(255,255,255,0.6);font-size:13px;margin-bottom:16px;">'
+            'All clear — no pending actions or alerts at this time.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    # ── Group items by company ────────────────────────────────────────────────
+    from collections import defaultdict
+    company_groups: dict[str, list] = defaultdict(list)
+    for item in items:
+        company_groups[item["company"]].append(item)
+
+    # Sort companies by highest score within the group
+    sorted_companies = sorted(
+        company_groups.keys(),
+        key=lambda c: max(i["score"] for i in company_groups[c]),
+        reverse=True,
+    )
+
+    # ── Company boxes in a 2-column Streamlit layout ──────────────────────────
+    st.markdown(
+        '<div style="background:#0a1f14;padding:12px 16px 4px 16px;'
+        'border-radius:0 0 12px 12px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+
+    cols = st.columns(2)
+    for ci, company in enumerate(sorted_companies):
+        co_items = company_groups[company]
+        n_co_crit = sum(1 for i in co_items if i["urgency"] in ("critical", "today"))
+        worst_color = co_items[0]["tag_color"]  # first = highest score
+
+        # Build rows for this company
+        rows_html = ""
+        for item in co_items:
+            tc = item["tag_color"]
+            rows_html += (
+                f'<div style="display:flex;align-items:flex-start;gap:8px;'
+                f'padding:6px 8px;margin-bottom:4px;border-radius:6px;'
+                f'background:rgba(255,255,255,0.05);border-left:2px solid {tc};">'
+                f'<span style="background:{tc};color:#fff;padding:1px 5px;border-radius:3px;'
+                f'font-size:8px;font-weight:700;white-space:nowrap;flex-shrink:0;">{item["tag"]}</span>'
+                f'<div style="min-width:0;">'
+                f'<div style="color:#f0fdf4;font-size:11px;font-weight:500;">{item["action"]}</div>'
+                f'<div style="color:rgba(255,255,255,0.4);font-size:9px;margin-top:1px;">{item["detail"]}</div>'
+                f'</div></div>'
+            )
+
+        badge = (
+            f'<span style="background:rgba(220,38,38,0.4);color:#FCA5A5;'
+            f'padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">'
+            f'{n_co_crit} critical</span>'
+            if n_co_crit else
+            f'<span style="background:rgba(217,119,6,0.3);color:#FCD34D;'
+            f'padding:2px 8px;border-radius:10px;font-size:10px;">'
+            f'{len(co_items)} item{"s" if len(co_items)!=1 else ""}</span>'
+        )
+
+        box_html = (
+            f'<div style="border:1px solid {worst_color}60;border-radius:8px;'
+            f'padding:10px 12px;margin-bottom:10px;background:rgba(255,255,255,0.04);">'
+            f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
+            f'<span style="color:#C9974A;font-size:13px;font-weight:700;">{company}</span>'
+            f'{badge}'
+            f'</div>'
+            f'{rows_html}'
+            f'</div>'
+        )
+        with cols[ci % 2]:
+            st.markdown(box_html, unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ── Top KPI strip ────────────────────────────────────────────────────────────
@@ -335,18 +376,30 @@ def render_kpi_cards(dfs: dict, lang: str):
     today         = date.today()
 
     # ── Row 1: Opportunity KPIs ──────────────────────────────────────────────
-    total_opps   = len(opportunities)
-    active_opps  = _count_col(opportunities, "Opportunity Status", "Active")
-    opp_value    = _sum_col(opportunities, "Est. Value (SAR)")
+    # If Opportunity Pipeline is empty, count from Action Items (Type of Engagement=Opportunity)
+    _opps_source = opportunities
+    if opportunities.empty and not actions.empty and "Type of Engagement" in actions.columns:
+        _opp_acts = actions[
+            actions["Type of Engagement"].str.strip().str.lower() == "opportunity"
+        ].copy()
+        if not _opp_acts.empty:
+            _opp_acts["Opportunity Status"] = "Active"
+            _opps_source = _opp_acts.rename(columns={"Action Description": "Opportunity Name"})
+
+    total_opps   = len(_opps_source)
+    active_opps  = _count_col(_opps_source, "Opportunity Status", "Active")
+    opp_value    = _sum_col(_opps_source, "Est. Value (SAR)")
     if opp_value == 0:
-        opp_value = _sum_col(opportunities, "Est. Investment Value (SAR)")
+        opp_value = _sum_col(investors, "Est. Investment Value (SAR)")
 
     # Sector breakdown for opps
     sector_pcts: list[tuple[str, int]] = []
-    if not opportunities.empty and "Sector" in opportunities.columns:
-        sec_counts = opportunities["Sector"].dropna().value_counts()
+    _sec_src = _opps_source if not _opps_source.empty else investors
+    if not _sec_src.empty and "Sector" in _sec_src.columns:
+        sec_counts = _sec_src["Sector"].dropna().replace("", pd.NA).dropna().value_counts()
+        total_sec  = sec_counts.sum() or 1
         for sec, cnt in sec_counts.head(4).items():
-            sector_pcts.append((str(sec), round(cnt / len(opportunities) * 100)))
+            sector_pcts.append((str(sec), round(cnt / total_sec * 100)))
 
     c1, c2, c3 = st.columns(3)
     _big_kpi(c1, "No# Opportunities", f"{total_opps}",
@@ -367,9 +420,18 @@ def render_kpi_cards(dfs: dict, lang: str):
                    if not investors.empty and "Sector" in investors.columns else 0)
 
     inv_with_opps = 0
-    if not investors.empty and not opportunities.empty and "Company Name" in opportunities.columns and "Company Name" in investors.columns:
-        co_with = set(opportunities["Company Name"].dropna().unique())
-        inv_with_opps = int(investors["Company Name"].isin(co_with).sum())
+    if not investors.empty and "Company Name" in investors.columns:
+        # Primary: count from Opportunity Pipeline
+        if not opportunities.empty and "Company Name" in opportunities.columns:
+            co_with = set(opportunities["Company Name"].dropna().unique())
+            inv_with_opps = int(investors["Company Name"].isin(co_with).sum())
+        # Fallback: count from Action Items where Type of Engagement = Opportunity
+        elif not actions.empty and "Type of Engagement" in actions.columns and "Company Name" in actions.columns:
+            opp_cos = set(
+                actions[actions["Type of Engagement"].str.strip().str.lower() == "opportunity"]
+                ["Company Name"].dropna().unique()
+            )
+            inv_with_opps = int(investors["Company Name"].isin(opp_cos).sum())
 
     mtg_month = 0
     if not meetings.empty and "Meeting Date" in meetings.columns:
