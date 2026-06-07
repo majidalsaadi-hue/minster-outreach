@@ -103,7 +103,7 @@ def generate_pptx_company(dfs: dict, company: str, lang: str = "en") -> bytes:
     inv_dls  = deals[deals["Company Name"] == company]                 if not deals.empty         and "Company Name" in deals.columns         else pd.DataFrame()
 
     _co_slide_cover_profile(prs, company, inv_row, inv_opps, inv_acts, inv_mtgs, inv_dls, lang)
-    _co_slide_opps_deals(prs, company, inv_opps, inv_dls, lang)
+    _co_slide_opps_deals(prs, company, inv_row, inv_opps, inv_dls, inv_acts, lang)
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -592,15 +592,23 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     # ── Green header band ────────────────────────────────────────────
     _add_rect(slide, Inches(0), Inches(0), Inches(13.33), Inches(0.82),
               fill_color=GREEN, line_color=GREEN)
+    # Try to show company logo in header
+    _s1_name_x = Inches(0.3)
+    if not inv_row.empty:
+        _s1_logo_b = _fetch_logo_bytes(company, _mv(inv_row, "Website", ""))
+        if _s1_logo_b:
+            try:
+                slide.shapes.add_picture(
+                    io.BytesIO(_s1_logo_b), Inches(0.22), Inches(0.14), Inches(0.52), Inches(0.52))
+                _s1_name_x = Inches(0.86)
+            except Exception:
+                pass
     _add_text_box(slide, company,
-                  Inches(0.3), Inches(0.07), Inches(9.0), Inches(0.68),
+                  _s1_name_x, Inches(0.07), Inches(8.3), Inches(0.68),
                   font_size=26, bold=True, color=WHITE)
-    tier = str(inv_row.get("Investor Tier", "") or "") if not inv_row.empty else ""
-    _add_text_box(slide, tier, Inches(8.8), Inches(0.14),
-                  Inches(4.2), Inches(0.35), font_size=12, color=GOLD, align=PP_ALIGN.RIGHT)
     _add_text_box(slide,
                   f"Investor Status Report — {date.today().strftime('%d %B %Y')}",
-                  Inches(8.8), Inches(0.49), Inches(4.2), Inches(0.26),
+                  Inches(8.8), Inches(0.30), Inches(4.2), Inches(0.40),
                   font_size=8, color=_rgb("CCCCCC"), align=PP_ALIGN.RIGHT)
 
     # ── White metadata band ──────────────────────────────────────────
@@ -627,7 +635,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     # ── Brief + Major Outcome strip ──────────────────────────────────
     BRIEF_Y = Inches(1.46)
-    BRIEF_H = Inches(0.66)
+    BRIEF_H = Inches(0.90)
     _add_rect(slide, Inches(0), BRIEF_Y, Inches(13.33), BRIEF_H,
               fill_color=_rgb("#F5F5F0"), line_color=_rgb("#E4E4DC"))
 
@@ -640,27 +648,27 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_rect(slide, Inches(10.10), BRIEF_Y + Inches(0.08), Inches(0.02),
               BRIEF_H - Inches(0.16), fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
 
-    # Panel 1: Strategic Goal
-    _add_text_box(slide, "STRATEGIC GOAL", Inches(0.3), BRIEF_Y + Inches(0.06),
-                  Inches(1.00), Inches(0.18), font_size=6.5, bold=True, color=_rgb(MISA_GREEN))
-    _add_text_box(slide, goal_text, Inches(1.34), BRIEF_Y + Inches(0.05),
-                  Inches(4.95), Inches(0.52), font_size=7.5, color=DARK)
+    # Panel 1: Strategic Goal  (label inline left, text fills rest)
+    _add_text_box(slide, "STRATEGIC GOAL", Inches(0.3), BRIEF_Y + Inches(0.07),
+                  Inches(1.16), Inches(0.22), font_size=9, bold=True, color=_rgb(MISA_GREEN))
+    _add_text_box(slide, goal_text, Inches(1.50), BRIEF_Y + Inches(0.06),
+                  Inches(4.78), Inches(0.74), font_size=9, color=DARK)
 
     # Panel 2: Ministry Strategy
-    _add_text_box(slide, "MINISTRY STRATEGY", Inches(6.50), BRIEF_Y + Inches(0.06),
-                  Inches(3.45), Inches(0.18), font_size=6.5, bold=True, color=_rgb(MISA_GOLD))
-    _add_text_box(slide, strat_text, Inches(6.50), BRIEF_Y + Inches(0.25),
-                  Inches(3.45), Inches(0.36), font_size=7.5, color=DARK)
+    _add_text_box(slide, "MINISTRY STRATEGY", Inches(6.50), BRIEF_Y + Inches(0.07),
+                  Inches(3.45), Inches(0.22), font_size=9, bold=True, color=_rgb(MISA_GOLD))
+    _add_text_box(slide, strat_text, Inches(6.50), BRIEF_Y + Inches(0.32),
+                  Inches(3.45), Inches(0.52), font_size=9, color=DARK)
 
     # Panel 3: Minister Action
-    _add_text_box(slide, "MINISTER ACTION", Inches(10.20), BRIEF_Y + Inches(0.06),
-                  Inches(2.93), Inches(0.18), font_size=6.5, bold=True, color=RED)
-    _add_text_box(slide, action_text, Inches(10.20), BRIEF_Y + Inches(0.25),
-                  Inches(2.93), Inches(0.36), font_size=7.5, color=DARK)
+    _add_text_box(slide, "MINISTER ACTION", Inches(10.20), BRIEF_Y + Inches(0.07),
+                  Inches(2.93), Inches(0.22), font_size=9, bold=True, color=RED)
+    _add_text_box(slide, action_text, Inches(10.20), BRIEF_Y + Inches(0.32),
+                  Inches(2.93), Inches(0.52), font_size=9, color=DARK)
 
     # ── Vertical divider ────────────────────────────────────────────────────────
-    DIVX = Inches(9.3)
-    _add_rect(slide, DIVX, Inches(2.17), Inches(0.02), Inches(4.83),
+    DIVX = Inches(10.2)
+    _add_rect(slide, DIVX, Inches(2.41), Inches(0.02), Inches(4.59),
               fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -671,9 +679,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     end_dt   = today_d + timedelta(days=45)
     tot_days = (end_dt - start_dt).days
 
-    AXIS_Y = Inches(2.60)
+    AXIS_Y = Inches(2.84)
     AXIS_L = Inches(0.55)
-    AXIS_W = Inches(7.95)
+    AXIS_W = Inches(9.20)
     DOT_R  = Inches(0.09)
     SQ     = Inches(0.10)
 
@@ -689,7 +697,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             return None
 
     _add_text_box(slide, "Engagement Timeline",
-                  Inches(0.3), Inches(2.17), Inches(8.3), Inches(0.20),
+                  Inches(0.3), Inches(2.41), Inches(9.8), Inches(0.20),
                   font_size=9, bold=True, color=DARK)
 
     # Month ticks
@@ -767,7 +775,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       fill_color=scol, line_color=scol)
 
     # Compact legend
-    leg_y = Inches(2.85)
+    leg_y = Inches(3.09)
     lx = Inches(0.55)
     for lbl, col in [("Completed mtg", MISA_GREEN), ("Scheduled", MISA_GOLD), ("Cancelled", "#AAAAAA")]:
         _add_rect(slide, lx, leg_y + Inches(0.02), Inches(0.11), Inches(0.11),
@@ -788,14 +796,14 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     n_total   = len(acts)
     n_pending = len(acts[~acts["Status"].isin(["Completed", "Cancelled"])]) if not acts.empty and "Status" in acts.columns else 0
     _add_text_box(slide, f"Action Items  —  {n_total} total  |  {n_pending} pending",
-                  Inches(0.3), Inches(3.04), Inches(8.35), Inches(0.20),
+                  Inches(0.3), Inches(3.28), Inches(9.75), Inches(0.20),
                   font_size=9, bold=True, color=DARK)
 
     TBL_L = Inches(0.3)
-    HDR_Y = Inches(3.28)
+    HDR_Y = Inches(3.52)
     HDR_H = Inches(0.30)
     ROW_H = Inches(0.38)
-    CW    = [Inches(w) for w in [0.35, 4.10, 1.60, 1.20, 0.80, 0.75]]
+    CW    = [Inches(w) for w in [0.40, 4.85, 1.65, 1.20, 0.80, 0.70]]
     CX    = [TBL_L + sum(CW[:j]) for j in range(len(CW))]
     HDRS  = ["#", "Action Item", "Assigned To", "Status", "Due", "Progress"]
 
@@ -812,9 +820,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         if "Due Date" in pend_df.columns:
             pend_df["_due"] = pd.to_datetime(pend_df["Due Date"], errors="coerce")
             pend_df = pend_df.sort_values("_due")
-        display_acts = pd.concat([pend_df, done_df], ignore_index=True).head(9)
+        display_acts = pd.concat([pend_df, done_df], ignore_index=True).head(8)
     else:
-        display_acts = acts.head(9) if not acts.empty else pd.DataFrame()
+        display_acts = acts.head(8) if not acts.empty else pd.DataFrame()
 
     _SBG = {
         "Completed":   "#E8F5E9", "In Progress": "#FFF8E1", "Inprogress": "#FFF8E1",
@@ -895,9 +903,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     RW = Inches(13.33) - RX - Inches(0.15)
 
     # Action status bars
-    _add_text_box(slide, "Action Items", RX, Inches(2.22), RW, Inches(0.24),
+    _add_text_box(slide, "Action Items", RX, Inches(2.46), RW, Inches(0.24),
                   font_size=9, bold=True, color=DARK)
-    y_r = Inches(2.52)
+    y_r = Inches(2.76)
     for sname, scol in [("Completed","#2D7A54"), ("In Progress",MISA_GOLD),
                         ("Not Started","#888888"), ("Blocked","#C0392B"), ("Cancelled","#AAAAAA")]:
         cnt = int(acts["Status"].value_counts().get(sname, 0)) if not acts.empty and "Status" in acts.columns else 0
@@ -992,15 +1000,25 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   font_size=10, color=WHITE, align=PP_ALIGN.CENTER)
 
 
-def _co_slide_opps_deals(prs, company, opps, deals, lang):
+def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
     """Slide 2 — Minister-grade opportunity cards, full-width 2-column grid."""
     slide = _blank_slide(prs)
 
     # ── Green header band
     _add_rect(slide, Inches(0), Inches(0), Inches(13.33), Inches(0.9),
               fill_color=GREEN, line_color=GREEN)
+    _s2_name_x = Inches(0.3)
+    if not inv_row.empty:
+        _s2_logo_b = _fetch_logo_bytes(company, _mv(inv_row, "Website", ""))
+        if _s2_logo_b:
+            try:
+                slide.shapes.add_picture(
+                    io.BytesIO(_s2_logo_b), Inches(0.22), Inches(0.14), Inches(0.52), Inches(0.52))
+                _s2_name_x = Inches(0.86)
+            except Exception:
+                pass
     _add_text_box(slide, f"{company} — Investment Opportunities",
-                  Inches(0.3), Inches(0.08), Inches(10.0), Inches(0.74),
+                  _s2_name_x, Inches(0.08), Inches(10.0), Inches(0.74),
                   font_size=20, bold=True, color=WHITE)
     _add_text_box(slide, date.today().strftime("%d %b %Y"),
                   Inches(10.5), Inches(0.25), Inches(2.5), Inches(0.5),
@@ -1115,42 +1133,36 @@ def _co_slide_opps_deals(prs, company, opps, deals, lang):
                               font_size=7.5, bold=True, color=_rgb(pfg))
                 pill_x += pw + Inches(0.06)
 
-            # Row 3: Pipeline value (gold, large) + sector label
-            has_val = est_val is not None and not (isinstance(est_val, float) and pd.isna(est_val))
-            val_str = _fmt_sar(est_val) if has_val else "Value TBD"
-            _add_text_box(slide, val_str,
-                          IX, cy + Inches(0.62), Inches(3.40), Inches(0.28),
-                          font_size=13, bold=True, color=GOLD)
-            if sector:
-                _add_text_box(slide, f"Sector: {sector[:30]}",
-                              IX + Inches(3.50), cy + Inches(0.66), Inches(2.55), Inches(0.22),
-                              font_size=8, color=MGRAY)
+            # Row 3: Narrative description of the opportunity
+            desc_str, impact_str = _build_opportunity_narrative(opp)
+            _add_text_box(slide, desc_str,
+                          IX, cy + Inches(0.62), IW, Inches(0.30),
+                          font_size=8.5, color=DARK)
 
-            # Row 4: Dates + opportunity type
-            date_parts = []
-            if opp_type and opp_type not in ("—", "Opportunity"):
-                date_parts.append(f"Type: {opp_type}")
+            # Row 4: Expected impact
+            _add_text_box(slide, impact_str,
+                          IX, cy + Inches(0.96), IW, Inches(0.22),
+                          font_size=8, color=_rgb(MISA_GREEN))
+
+            # Row 5: Compact value + dates metadata
+            meta_parts = []
+            has_val = est_val is not None and not (isinstance(est_val, float) and pd.isna(est_val))
+            if has_val:
+                meta_parts.append(_fmt_sar(est_val))
             if start_d and not (isinstance(start_d, float) and pd.isna(start_d)):
                 try:
-                    date_parts.append(f"Start: {pd.to_datetime(start_d).strftime('%d %b %Y')}")
+                    meta_parts.append(f"Start: {pd.to_datetime(start_d).strftime('%d %b %Y')}")
                 except Exception:
                     pass
             if due_d and not (isinstance(due_d, float) and pd.isna(due_d)):
                 try:
-                    date_parts.append(f"Due: {pd.to_datetime(due_d).strftime('%d %b %Y')}")
+                    meta_parts.append(f"Target: {pd.to_datetime(due_d).strftime('%d %b %Y')}")
                 except Exception:
                     pass
-            date_str = "  |  ".join(date_parts)
-            if date_str:
-                _add_text_box(slide, date_str,
-                              IX, cy + Inches(0.94), IW, Inches(0.20),
-                              font_size=8, color=DARK)
-
-            # Row 5: Notes / remarks
-            if notes:
-                _add_text_box(slide, f"  {notes[:90]}",
-                              IX, cy + Inches(1.18), IW, Inches(0.24),
-                              font_size=7.5, color=MGRAY)
+            if meta_parts:
+                _add_text_box(slide, "  |  ".join(meta_parts),
+                              IX, cy + Inches(1.22), IW, Inches(0.18),
+                              font_size=7, color=MGRAY)
 
     # ── Gold footer
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
@@ -1321,6 +1333,72 @@ def _add_mini_table(slide, df, headers, cols, left, top, width):
             _add_text_box(slide, str(val)[:28], x + Inches(0.04), y + Inches(0.04),
                           col_w - Inches(0.08), row_h - Inches(0.05),
                           font_size=7, color=DARK)
+
+
+def _fetch_logo_bytes(company: str, website: str = ""):
+    """Fetch company logo for PPTX embedding. Returns bytes or None."""
+    import urllib.request, urllib.parse
+    urls = []
+    if website:
+        domain = website.replace("https://", "").replace("http://", "").split("/")[0].strip()
+        if domain:
+            urls.append(f"https://logo.clearbit.com/{domain}")
+            urls.append(f"https://www.google.com/s2/favicons?domain={domain}&sz=64")
+    if not urls:
+        slug = urllib.parse.quote(company.lower().replace(" ", ""))
+        urls.append(f"https://logo.clearbit.com/{slug}.com")
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = resp.read()
+                if data and len(data) > 200:
+                    return data
+        except Exception:
+            continue
+    return None
+
+
+def _build_opportunity_narrative(opp) -> tuple:
+    """Return (description, impact) narrative strings for an opportunity card."""
+    stage      = str(opp.get("Opportunity Stage",  "") or "").strip()
+    opp_type   = str(opp.get("Opportunity Type",   "") or "").strip()
+    sector     = str(opp.get("Sector",             "") or "").strip()
+    confidence = str(opp.get("Confidence Level",   "") or "").strip()
+    notes      = str(opp.get("Notes", "") or opp.get("Remarks", "") or "").strip()
+    est_val    = opp.get("Est. Value (SAR)")
+    blockers   = str(opp.get("Blockers", "") or "").strip()
+
+    type_part  = f"{opp_type} opportunity" if opp_type and opp_type not in ("—", "") else "Investment opportunity"
+    sect_part  = f" in {sector}" if sector and sector not in ("—", "") else ""
+    stage_map  = {
+        "Committed":           "secured and committed",
+        "Negotiation":         "in active negotiation",
+        "Exploration":         "in early-stage exploration",
+        "Active":              "actively progressing",
+        "Opportunity Matching":"being matched to MISA priorities",
+        "Suspended":           "temporarily suspended",
+        "Blocked":             "blocked — requires escalation",
+        "On Track":            "on track for closure",
+    }
+    stage_desc = stage_map.get(stage, f"at {stage} stage" if stage else "under development")
+    desc = f"{type_part}{sect_part}, {stage_desc}."
+    if notes and notes not in ("nan",) and len(notes) > 5:
+        desc += f" {notes[:70]}"
+
+    has_val   = est_val is not None and not (isinstance(est_val, float) and pd.isna(est_val))
+    conf_map  = {"High": "strong probability of closure", "Medium": "moderate confidence", "Low": "early-stage probability"}
+    conf_str  = conf_map.get(confidence, "")
+    impact_parts = []
+    if has_val:
+        impact_parts.append(f"Estimated value {_fmt_sar(est_val)}")
+    if conf_str:
+        impact_parts.append(conf_str)
+    if blockers and blockers not in ("nan", "—", ""):
+        impact_parts.append(f"Blocker: {blockers[:35]}")
+    impact = "; ".join(impact_parts) + "." if impact_parts else "Aligned with Vision 2030 investment targets."
+
+    return desc[:105], impact[:90]
 
 
 def _build_strategic_brief(acts, opps, meetings, inv_row):
