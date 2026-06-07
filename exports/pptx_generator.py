@@ -631,29 +631,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_rect(slide, Inches(0), BRIEF_Y, Inches(13.33), BRIEF_H,
               fill_color=_rgb("#F5F5F0"), line_color=_rgb("#E4E4DC"))
 
-    brief_text    = "—"
-    major_outcome = "—"
-    if not meetings.empty and "Meeting Date" in meetings.columns:
-        last_mtg  = meetings.sort_values("Meeting Date", ascending=False).iloc[0]
-        obj  = str(last_mtg.get("Meeting Objective",     "") or "")
-        kd   = str(last_mtg.get("Key Discussion Points", "") or "")
-        dm   = str(last_mtg.get("Decisions Made",        "") or "")
-        ns   = str(last_mtg.get("Next Steps",            "") or "")
-        brief_text    = (obj or kd or "—")[:135]
-        major_outcome = (dm or ns or "—")[:135]
-
-    # Fall back to pending actions for brief when no meeting data
-    if brief_text in ("—", "") and not acts.empty:
-        pending_fb = acts[~acts["Status"].isin(["Completed", "Cancelled"])] if "Status" in acts.columns else acts
-        src = pending_fb if not pending_fb.empty else acts
-        if not src.empty:
-            brief_text = str(src.iloc[0].get("Action Description", "") or "")[:135]
-
-    # Fall back to completed actions for major outcome
-    if major_outcome in ("—", "") and not acts.empty and "Status" in acts.columns:
-        done = acts[acts["Status"].str.lower().str.contains("complet", na=False)]
-        if not done.empty:
-            major_outcome = "✓ " + str(done.iloc[-1].get("Action Description", "") or "")[:120]
+    # ── Strategic brief — synthesised from all action items ────────────────────
+    goal_text, strat_text, action_text = _build_strategic_brief(acts, opps, meetings, inv_row)
 
     # Dividers — split brief strip into 3 panels
     _add_rect(slide, Inches(6.40), BRIEF_Y + Inches(0.08), Inches(0.02),
@@ -661,28 +640,23 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_rect(slide, Inches(10.10), BRIEF_Y + Inches(0.08), Inches(0.02),
               BRIEF_H - Inches(0.16), fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
 
-    # Panel 1: Brief
-    _add_text_box(slide, "Brief", Inches(0.3), BRIEF_Y + Inches(0.06),
-                  Inches(0.62), Inches(0.2), font_size=7, bold=True, color=_rgb(MISA_GREEN))
-    _add_text_box(slide, brief_text, Inches(0.95), BRIEF_Y + Inches(0.05),
-                  Inches(5.35), Inches(0.52), font_size=7.5, color=DARK)
+    # Panel 1: Strategic Goal
+    _add_text_box(slide, "STRATEGIC GOAL", Inches(0.3), BRIEF_Y + Inches(0.06),
+                  Inches(1.00), Inches(0.18), font_size=6.5, bold=True, color=_rgb(MISA_GREEN))
+    _add_text_box(slide, goal_text, Inches(1.34), BRIEF_Y + Inches(0.05),
+                  Inches(4.95), Inches(0.52), font_size=7.5, color=DARK)
 
-    # Panel 2: Major Outcome
-    _add_text_box(slide, "Major Outcome", Inches(6.50), BRIEF_Y + Inches(0.06),
-                  Inches(1.50), Inches(0.2), font_size=7, bold=True, color=_rgb(MISA_GOLD))
-    _add_text_box(slide, major_outcome, Inches(8.08), BRIEF_Y + Inches(0.05),
-                  Inches(1.90), Inches(0.52), font_size=7.5, color=DARK)
+    # Panel 2: Ministry Strategy
+    _add_text_box(slide, "MINISTRY STRATEGY", Inches(6.50), BRIEF_Y + Inches(0.06),
+                  Inches(3.45), Inches(0.18), font_size=6.5, bold=True, color=_rgb(MISA_GOLD))
+    _add_text_box(slide, strat_text, Inches(6.50), BRIEF_Y + Inches(0.25),
+                  Inches(3.45), Inches(0.36), font_size=7.5, color=DARK)
 
-    # Panel 3: Company Rep
-    rep_name_ppt = _mv(inv_row, "Company Rep") if not inv_row.empty else "—"
-    rep_pos_ppt  = _mv(inv_row, "Rep Position") if not inv_row.empty else ""
-    _add_text_box(slide, "Company Rep", Inches(10.20), BRIEF_Y + Inches(0.06),
-                  Inches(1.30), Inches(0.2), font_size=7, bold=True, color=_rgb("#1D4ED8"))
-    _add_text_box(slide, rep_name_ppt, Inches(11.58), BRIEF_Y + Inches(0.05),
-                  Inches(1.60), Inches(0.28), font_size=8, bold=True, color=DARK)
-    if rep_pos_ppt and rep_pos_ppt != "—":
-        _add_text_box(slide, rep_pos_ppt[:28], Inches(11.58), BRIEF_Y + Inches(0.35),
-                      Inches(1.60), Inches(0.20), font_size=7, color=MGRAY)
+    # Panel 3: Minister Action
+    _add_text_box(slide, "MINISTER ACTION", Inches(10.20), BRIEF_Y + Inches(0.06),
+                  Inches(2.93), Inches(0.18), font_size=6.5, bold=True, color=RED)
+    _add_text_box(slide, action_text, Inches(10.20), BRIEF_Y + Inches(0.25),
+                  Inches(2.93), Inches(0.36), font_size=7.5, color=DARK)
 
     # ── Vertical divider ────────────────────────────────────────────────────────
     DIVX = Inches(9.3)
@@ -1347,6 +1321,113 @@ def _add_mini_table(slide, df, headers, cols, left, top, width):
             _add_text_box(slide, str(val)[:28], x + Inches(0.04), y + Inches(0.04),
                           col_w - Inches(0.08), row_h - Inches(0.05),
                           font_size=7, color=DARK)
+
+
+def _build_strategic_brief(acts, opps, meetings, inv_row):
+    """
+    Synthesise a minister-grade strategic brief from all action items.
+    Returns (goal_text, ministry_strategy, minister_action).
+    """
+    company     = _mv(inv_row, "Company Name", "this investor") if not inv_row.empty else "this investor"
+    sector      = _mv(inv_row, "Sector", "")                   if not inv_row.empty else ""
+    stage       = _mv(inv_row, "Journey Stage", "")            if not inv_row.empty else ""
+    blocker_lvl = _mv(inv_row, "Blocker Level", "None")        if not inv_row.empty else "None"
+    minister_act = _mv(inv_row, "Minister Action Required", "") if not inv_row.empty else ""
+
+    # ── Parse action items ────────────────────────────────────────────────────
+    total = len(acts) if not acts.empty else 0
+    completed = in_prog = blocked_n = 0
+    high_descs    = []
+    blocker_descs = []
+    eng_counts: dict = {}
+
+    if not acts.empty and "Status" in acts.columns:
+        sl = acts["Status"].fillna("")
+        completed = int(sl.str.lower().str.contains("complet").sum())
+        blocked_n = int((sl == "Blocked").sum())
+        in_prog   = int(sl.isin(["In Progress", "Inprogress"]).sum())
+
+        if "Priority" in acts.columns:
+            for _, r in acts[acts["Priority"] == "High"].head(3).iterrows():
+                d = str(r.get("Action Description", "")).strip()
+                if d and d not in ("nan", ""):
+                    high_descs.append(d[:55])
+
+        for _, r in acts[acts["Status"] == "Blocked"].head(2).iterrows():
+            d = str(r.get("Action Description", "")).strip()
+            if d and d not in ("nan", ""):
+                blocker_descs.append(d[:48])
+
+        if "Type of Engagement" in acts.columns:
+            for t in acts["Type of Engagement"].dropna():
+                ts = str(t).strip()
+                if ts and ts not in ("nan", ""):
+                    eng_counts[ts] = eng_counts.get(ts, 0) + 1
+
+    top_engs = [e for e, _ in sorted(eng_counts.items(), key=lambda x: -x[1])][:3]
+
+    # ── Parse opportunities ───────────────────────────────────────────────────
+    n_opps     = len(opps) if not opps.empty else 0
+    opp_val    = _sum_col(opps, "Est. Value (SAR)")
+    opp_names  = []
+    opp_stages = []
+    if not opps.empty:
+        if "Opportunity Name" in opps.columns:
+            opp_names = [str(n).strip() for n in opps["Opportunity Name"].dropna().head(2)
+                         if str(n).strip() not in ("nan", "")]
+        if "Opportunity Stage" in opps.columns:
+            opp_stages = list(opps["Opportunity Stage"].dropna().unique()[:3])
+
+    pct = round(completed / total * 100) if total > 0 else 0
+    sector_str = f" in the {sector} sector" if sector and sector not in ("—", "") else ""
+
+    # ── GOAL ─────────────────────────────────────────────────────────────────
+    if opp_names:
+        goal = f"Ministry aims to advance {company}'s investment{sector_str} by delivering: {', '.join(opp_names)}."
+    elif top_engs:
+        goal = f"Secure committed investment{sector_str} through structured {', '.join(top_engs[:2]).lower()} with {company}."
+    else:
+        goal = f"Build strategic partnership with {company}{sector_str} and progress engagement to commitment stage."
+    if opp_val > 0:
+        goal += f"  Target pipeline: {_fmt_sar(opp_val)}."
+
+    # ── STRATEGY ─────────────────────────────────────────────────────────────
+    if total > 0:
+        strat = f"{pct}% of {total} actions complete ({completed} done"
+        if in_prog:
+            strat += f", {in_prog} in progress"
+        strat += "). "
+    else:
+        strat = "Engagement in early stage. "
+
+    if top_engs:
+        strat += f"MISA approach: {', '.join(top_engs[:2])}. "
+    if opp_stages:
+        strat += f"Opportunities at: {', '.join(opp_stages[:2])}."
+    if n_opps == 0:
+        strat += "Next step: formalise opportunity pipeline."
+
+    # ── MINISTER ACTION ───────────────────────────────────────────────────────
+    if minister_act and minister_act not in ("None Required", "—", ""):
+        m_act = f"ACTION REQUIRED: {minister_act}. Immediate senior-level engagement needed."
+    elif blocked_n > 0 and blocker_descs:
+        m_act = f"ESCALATE: '{blocker_descs[0]}' — ministerial intervention required to unblock and restore momentum."
+    elif blocked_n > 0:
+        m_act = f"{blocked_n} action{'s' if blocked_n > 1 else ''} blocked. Minister to intervene directly — signal MISA's commitment to resolve."
+    elif blocker_lvl not in ("None", "—", "nan", ""):
+        m_act = f"Blocker level: {blocker_lvl}. Minister to champion resolution and reassure company at executive level."
+    elif high_descs:
+        m_act = f"Champion: '{high_descs[0]}'. Ministerial endorsement will accelerate delivery and signal strategic priority."
+    elif stage in ("Active Negotiation",):
+        m_act = "Deal in negotiation. Minister to maintain executive contact — closing requires a clear political commitment signal from ministry leadership."
+    elif stage in ("Committed", "Post-Investment"):
+        m_act = "Investment committed. Minister to publicly acknowledge relationship and identify next expansion opportunity."
+    elif pct >= 70 and n_opps > 0:
+        m_act = "Engagement maturing. Minister to initiate commitment conversation — redirect dialogue to deal closure and headline terms."
+    else:
+        m_act = "Strengthen partnership: arrange senior bilateral meeting, present MISA's strategic value proposition and Vision 2030 alignment."
+
+    return goal[:220], strat.strip()[:220], m_act[:220]
 
 
 def _mv(row, key: str, default: str = "—") -> str:
