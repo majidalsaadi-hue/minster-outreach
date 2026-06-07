@@ -6,12 +6,13 @@ SCHEMA = {
     "Investor Master": {
         "required": [
             "Investor ID", "Company Name", "Country", "Sector",
-            "Investor Tier", "Relationship Manager", "Journey Stage",
-            "Relationship Status",
+            "Relationship Manager", "Journey Stage",
         ],
         "optional": [
             "Account Manager", "Outreach Manager",
             "Key Contact Name", "Key Contact Title",
+            "Company Size (Global)", "Company Size (KSA)",
+            "Investor Tier", "Relationship Status",
             "Est. Investment Value (SAR)", "Actual Commitment (SAR)",
             "Est. Jobs Created", "Saudi Content %", "Technology Transfer",
             "Deal Classification", "Vision 2030 Pillar",

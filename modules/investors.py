@@ -1,8 +1,9 @@
 
-# Investor Master — card-based view with live logos and today's news.
+# Investor Master — card-based view with live logos, Wikidata enrichment, and today's news.
 
 import hashlib
 import html as html_mod
+import json
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -11,26 +12,16 @@ import streamlit as st
 from datetime import date
 
 from config.settings import (
-    SECTORS, COUNTRIES, INVESTOR_TIERS, INVESTOR_STATUSES,
-    JOURNEY_STAGES, ESCALATION_FLAGS, MISA_GREEN, MISA_GOLD,
-    STATUS_COLORS, TIER_COLORS,
+    SECTORS, COUNTRIES, JOURNEY_STAGES, ESCALATION_FLAGS,
+    MISA_GREEN, MISA_GOLD, STATUS_COLORS,
 )
 from config.translations import t
 from modules.persistence import save_session
 
 
-_GREEN  = "#1B5C3F"
-_GOLD   = "#C9974A"
-_RED    = "#DC2626"
-
-_STATUS_STYLE = {
-    "active":    ("#D1FAE5", "#065F46"),
-    "inactive":  ("#F3F4F6", "#6B7280"),
-    "on hold":   ("#FEF3C7", "#92400E"),
-    "churned":   ("#FEE2E2", "#991B1B"),
-    "prospect":  ("#EDE9FE", "#6D28D9"),
-    "committed": ("#DBEAFE", "#1E40AF"),
-}
+_GREEN = "#1B5C3F"
+_GOLD  = "#C9974A"
+_RED   = "#DC2626"
 
 _STAGE_COLOR = {
     "Awareness":             "#6B7280",
@@ -43,7 +34,7 @@ _STAGE_COLOR = {
 }
 
 
-# ── Logo & News helpers (cached) ──────────────────────────────────────────────
+# ── Logo & data helpers (cached) ──────────────────────────────────────────────
 
 def _guess_domain(company: str) -> str:
     name = company.lower()
@@ -56,6 +47,105 @@ def _guess_domain(company: str) -> str:
 
 def _logo_url(company: str) -> str:
     return f"https://logo.clearbit.com/{_guess_domain(company)}"
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _fetch_company_data(company: str) -> dict:
+    """
+    Enrich a company with data from Wikipedia + Wikidata.
+    Returns dict: {employees_global, hq_country, industry}
+    All values may be None if not found or on network error.
+    """
+    result = {"employees_global": None, "hq_country": None, "industry": None}
+    try:
+        q = urllib.parse.quote(company + " company")
+        search_url = (
+            f"https://en.wikipedia.org/w/api.php?action=query&list=search"
+            f"&srsearch={q}&format=json&srlimit=1"
+        )
+        req = urllib.request.Request(search_url, headers={"User-Agent": "MinsterCRM/1.0"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            search_data = json.loads(resp.read())
+
+        hits = search_data.get("query", {}).get("search", [])
+        if not hits:
+            return result
+
+        page_title = urllib.parse.quote(hits[0]["title"])
+        sum_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{page_title}"
+        req2 = urllib.request.Request(sum_url, headers={"User-Agent": "MinsterCRM/1.0"})
+        with urllib.request.urlopen(req2, timeout=6) as resp:
+            summary = json.loads(resp.read())
+
+        wd_id = summary.get("wikibase_item")
+        if not wd_id:
+            return result
+
+        # Fetch Wikidata claims: P1128=employees, P17=country, P452=industry, P159=HQ location
+        wd_url = (
+            f"https://www.wikidata.org/w/api.php?action=wbgetclaims"
+            f"&entity={wd_id}&property=P1128|P17|P452|P159&format=json"
+        )
+        req3 = urllib.request.Request(wd_url, headers={"User-Agent": "MinsterCRM/1.0"})
+        with urllib.request.urlopen(req3, timeout=8) as resp:
+            claims_data = json.loads(resp.read())
+
+        claims = claims_data.get("claims", {})
+        ids_to_resolve: list[str] = []
+        country_id = None
+        industry_id = None
+
+        # P1128 — number of employees (numeric, no label needed)
+        for claim in claims.get("P1128", []):
+            dv = claim.get("mainsnak", {}).get("datavalue", {})
+            if dv.get("type") == "quantity":
+                amt = float(dv["value"]["amount"].lstrip("+"))
+                if amt >= 1_000_000:
+                    result["employees_global"] = f"{amt/1_000_000:.1f}M"
+                elif amt >= 1_000:
+                    result["employees_global"] = f"{int(amt/1_000)}K"
+                else:
+                    result["employees_global"] = str(int(amt))
+                break
+
+        # P17 — country of origin
+        for claim in claims.get("P17", []):
+            dv = claim.get("mainsnak", {}).get("datavalue", {})
+            if dv.get("type") == "wikibase-entityid":
+                country_id = dv["value"]["id"]
+                ids_to_resolve.append(country_id)
+                break
+
+        # P452 — industry
+        for claim in claims.get("P452", []):
+            dv = claim.get("mainsnak", {}).get("datavalue", {})
+            if dv.get("type") == "wikibase-entityid":
+                industry_id = dv["value"]["id"]
+                ids_to_resolve.append(industry_id)
+                break
+
+        # Batch-resolve entity labels in one request
+        if ids_to_resolve:
+            ids_str = "|".join(ids_to_resolve)
+            label_url = (
+                f"https://www.wikidata.org/w/api.php?action=wbgetlabels"
+                f"&ids={ids_str}&languages=en&format=json"
+            )
+            req4 = urllib.request.Request(label_url, headers={"User-Agent": "MinsterCRM/1.0"})
+            with urllib.request.urlopen(req4, timeout=6) as resp:
+                label_data = json.loads(resp.read())
+            entities = label_data.get("entities", {})
+            if country_id and country_id in entities:
+                result["hq_country"] = (
+                    entities[country_id].get("labels", {}).get("en", {}).get("value")
+                )
+            if industry_id and industry_id in entities:
+                result["industry"] = (
+                    entities[industry_id].get("labels", {}).get("en", {}).get("value")
+                )
+    except Exception:
+        pass
+    return result
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -73,7 +163,6 @@ def _fetch_news(company: str) -> list[dict]:
             title = item.findtext("title", "").strip()
             link  = item.findtext("link",  "").strip()
             pub   = item.findtext("pubDate", "").strip()
-            # Strip source suffix  "Title — Source"
             if " - " in title:
                 title = title.rsplit(" - ", 1)[0].strip()
             elif " — " in title:
@@ -111,6 +200,10 @@ def _fmt_sar(val) -> str:
     return ""
 
 
+def _blank(val) -> bool:
+    return not val or str(val).strip() in ("", "—", "nan", "None", "NaT")
+
+
 # ── Main render ───────────────────────────────────────────────────────────────
 
 def render(dfs: dict, lang: str):
@@ -119,11 +212,10 @@ def render(dfs: dict, lang: str):
     st.markdown(
         f"<h2 style='color:{_GREEN};margin-bottom:2px;'>Investor Portfolio</h2>"
         f"<p style='color:#6b7280;font-size:13px;margin-top:0;'>"
-        f"Live view of all tracked investors with news &amp; engagement status</p>",
+        f"Live view of all tracked investors — logos, enriched data and today's news</p>",
         unsafe_allow_html=True,
     )
 
-    # ── Add investor ──────────────────────────────────────────────────────────
     with st.expander("+ Add New Investor", expanded=False):
         _add_investor_form(dfs, lang)
 
@@ -131,27 +223,30 @@ def render(dfs: dict, lang: str):
         st.info("No investor data loaded.")
         return
 
-    # ── Search + filters ──────────────────────────────────────────────────────
+    # ── Filters ───────────────────────────────────────────────────────────────
     fc1, fc2, fc3, fc4 = st.columns([2.5, 1.5, 1.5, 1.5])
     with fc1:
         q = st.text_input("Search", placeholder="Search investor…",
                           key="inv_search", label_visibility="collapsed")
     with fc2:
-        sectors  = ["All sectors"]  + sorted(s for s in investors.get("Sector",  pd.Series()).dropna().unique() if s)
-        sel_sec  = st.selectbox("Sector",  sectors,  key="inv_sec",  label_visibility="collapsed")
+        sectors   = ["All sectors"]  + sorted(s for s in investors.get("Sector",  pd.Series()).dropna().unique() if s)
+        sel_sec   = st.selectbox("Sector",  sectors,  key="inv_sec",  label_visibility="collapsed")
     with fc3:
         countries = ["All countries"] + sorted(c for c in investors.get("Country", pd.Series()).dropna().unique() if c)
         sel_cty   = st.selectbox("Country", countries, key="inv_cty", label_visibility="collapsed")
     with fc4:
-        statuses  = ["All statuses"] + sorted(s for s in investors.get("Relationship Status", pd.Series()).dropna().unique() if s)
-        sel_stat  = st.selectbox("Status",  statuses,  key="inv_stat", label_visibility="collapsed")
+        stages   = ["All stages"] + JOURNEY_STAGES
+        sel_stg  = st.selectbox("Stage", stages, key="inv_stg", label_visibility="collapsed")
 
     view = investors.copy()
     if q:
         view = view[view["Company Name"].fillna("").str.contains(q, case=False, na=False)]
-    if sel_sec  != "All sectors":   view = view[view.get("Sector",              pd.Series()) == sel_sec]
-    if sel_cty  != "All countries": view = view[view.get("Country",             pd.Series()) == sel_cty]
-    if sel_stat != "All statuses":  view = view[view.get("Relationship Status", pd.Series()) == sel_stat]
+    if sel_sec != "All sectors":
+        view = view[view.get("Sector",        pd.Series()) == sel_sec]
+    if sel_cty != "All countries":
+        view = view[view.get("Country",       pd.Series()) == sel_cty]
+    if sel_stg != "All stages":
+        view = view[view.get("Journey Stage", pd.Series()) == sel_stg]
     view = view.reset_index(drop=True)
 
     st.caption(f"{len(view)} investor{'s' if len(view)!=1 else ''}")
@@ -186,9 +281,8 @@ def render(dfs: dict, lang: str):
 
 def _render_investor_card(row):
     company  = str(row.get("Company Name", "?"))
-    sector   = str(row.get("Sector",   "—") or "—")
-    country  = str(row.get("Country",  "—") or "—")
-    status   = str(row.get("Relationship Status", "Active") or "Active")
+    sector   = str(row.get("Sector",   "") or "")
+    country  = str(row.get("Country",  "") or "")
     stage    = str(row.get("Journey Stage", "—") or "—")
     rm       = str(row.get("Relationship Manager", "") or "")
     am       = str(row.get("Account Manager", "") or "")
@@ -197,12 +291,23 @@ def _render_investor_card(row):
     next_mtg = row.get("Next Meeting Date")
     contact_name  = str(row.get("Key Contact Name",  "") or "")
     contact_title = str(row.get("Key Contact Title", "") or "")
+    size_global   = str(row.get("Company Size (Global)", "") or "")
+    size_ksa      = str(row.get("Company Size (KSA)",    "") or "")
 
-    color     = _avatar_color(company)
-    initials  = _initials(company)
-    logo      = _logo_url(company)
-    st_bg, st_fg = _STATUS_STYLE.get(status.lower(), ("#F3F4F6", "#374151"))
-    sc_color  = _STAGE_COLOR.get(stage, "#6B7280")
+    color    = _avatar_color(company)
+    initials = _initials(company)
+    logo     = _logo_url(company)
+    sc_color = _STAGE_COLOR.get(stage, "#6B7280")
+
+    # Enrich missing sector/country/size from Wikidata
+    enriched = _fetch_company_data(company)
+    display_sector  = sector  if not _blank(sector)  else (enriched.get("industry")   or "—")
+    display_country = country if not _blank(country) else (enriched.get("hq_country") or "—")
+    if _blank(size_global) and enriched.get("employees_global"):
+        size_global = enriched["employees_global"] + " employees"
+
+    sector_note  = " *" if _blank(sector)  and not _blank(display_sector)  else ""
+    country_note = " *" if _blank(country) and not _blank(display_country) else ""
 
     priority_star = ""
     try:
@@ -239,12 +344,28 @@ def _render_investor_card(row):
             f'</div></div>'
         )
 
-    rm_am = ""
-    parts = [p for p in [rm, am] if p and p not in ("—", "TBD", "nan")]
-    if parts:
-        rm_am = f'<div style="font-size:10px;color:#9CA3AF;margin-top:4px;">{" / ".join(parts)}</div>'
+    size_html = ""
+    if size_global or size_ksa:
+        parts = []
+        if size_global:
+            parts.append(f'🌐 {size_global}')
+        if size_ksa:
+            parts.append(f'🇸🇦 {size_ksa}')
+        size_html = (
+            f'<div style="margin-top:5px;display:flex;gap:8px;flex-wrap:wrap;">'
+            + "".join(
+                f'<span style="font-size:9px;color:#374151;background:#f3f4f6;'
+                f'padding:2px 7px;border-radius:5px;">{p}</span>'
+                for p in parts
+            )
+            + '</div>'
+        )
 
-    # Fetch news
+    rm_am = ""
+    parts_rm = [p for p in [rm, am] if p and p not in ("—", "TBD", "nan")]
+    if parts_rm:
+        rm_am = f'<div style="font-size:10px;color:#9CA3AF;margin-top:4px;">{" / ".join(parts_rm)}</div>'
+
     news_items = _fetch_news(company)
     news_html  = ""
     if news_items:
@@ -272,7 +393,7 @@ def _render_investor_card(row):
         f'<div style="border:1px solid #E5E7EB;border-radius:12px;padding:14px;'
         f'background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:4px;">'
 
-        # ── Logo + name row
+        # Logo + name row
         f'<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;">'
         f'<div style="flex-shrink:0;width:44px;height:44px;position:relative;">'
         f'<img src="{logo}" width="44" height="44" '
@@ -286,32 +407,37 @@ def _render_investor_card(row):
         f'<div style="font-size:14px;font-weight:700;color:{_GREEN};line-height:1.2;">'
         f'{company}{priority_star}</div>'
         f'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">'
-        f'<span style="background:#f0fdf4;color:{_GREEN};padding:1px 7px;border-radius:6px;font-size:10px;">{sector}</span>'
-        f'<span style="background:#f8fafc;color:#475569;padding:1px 7px;border-radius:6px;font-size:10px;">🌍 {country}</span>'
+        f'<span style="background:#f0fdf4;color:{_GREEN};padding:1px 7px;border-radius:6px;'
+        f'font-size:10px;" title="{"Enriched from web" if sector_note else ""}">'
+        f'{display_sector}{sector_note}</span>'
+        f'<span style="background:#f8fafc;color:#475569;padding:1px 7px;border-radius:6px;'
+        f'font-size:10px;" title="{"Enriched from web" if country_note else ""}">'
+        f'🌍 {display_country}{country_note}</span>'
         f'</div></div>'
-        f'<span style="background:{st_bg};color:{st_fg};padding:2px 8px;border-radius:10px;'
-        f'font-size:10px;font-weight:600;flex-shrink:0;">{status}</span>'
         f'</div>'
 
-        # ── Stage bar
-        f'<div style="background:#f3f4f6;border-radius:4px;height:4px;margin-bottom:6px;overflow:hidden;">'
+        # Stage bar
+        f'<div style="background:#f3f4f6;border-radius:4px;height:4px;margin-bottom:4px;overflow:hidden;">'
         f'<div style="background:{sc_color};height:100%;width:100%;border-radius:4px;opacity:.7;"></div>'
         f'</div>'
-        f'<div style="font-size:10px;color:{sc_color};font-weight:600;margin-bottom:6px;">{stage}</div>'
+        f'<div style="font-size:10px;color:{sc_color};font-weight:600;margin-bottom:4px;">{stage}</div>'
 
-        # ── Contact
+        # Company size
+        f'{size_html}'
+
+        # Contact
         f'{contact_html}'
 
-        # ── Value + next meeting
+        # Value + next meeting
         f'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">'
         f'{"<span style=font-size:12px;font-weight:700;color:" + _GOLD + ";>" + est_val + "</span>" if est_val else "<span></span>"}'
         f'{next_str}'
         f'</div>'
 
-        # ── AM/RM
+        # AM/RM
         f'{rm_am}'
 
-        # ── News
+        # News
         f'{news_html}'
         f'</div>'
     )
@@ -327,22 +453,28 @@ def _add_investor_form(dfs: dict, lang: str):
         c1, c2 = st.columns(2)
         company = c1.text_input("Company Name")
         country = c2.selectbox("Country", COUNTRIES)
+
         c3, c4 = st.columns(2)
         sector  = c3.selectbox("Sector", SECTORS)
-        tier    = c4.selectbox("Investor Tier", INVESTOR_TIERS)
+        stage   = c4.selectbox("Journey Stage", JOURNEY_STAGES)
+
         c5, c6 = st.columns(2)
-        rm      = c5.text_input("Relationship Manager")
-        am      = c6.text_input("Account Manager")
+        rm = c5.text_input("Relationship Manager")
+        am = c6.text_input("Account Manager")
+
         c7, c8 = st.columns(2)
-        stage   = c7.selectbox("Journey Stage", JOURNEY_STAGES)
-        status  = c8.selectbox("Relationship Status", INVESTOR_STATUSES)
+        contact_name  = c7.text_input("Key Contact Name")
+        contact_title = c8.text_input("Key Contact Title / Position")
+
         c9, c10 = st.columns(2)
-        contact_name  = c9.text_input("Key Contact Name")
-        contact_title = c10.text_input("Key Contact Title / Position")
+        size_global = c9.text_input("Company Size (Global)", placeholder="e.g. 50,000 employees")
+        size_ksa    = c10.text_input("Company Size (KSA)",    placeholder="e.g. 2,000 employees")
+
         c11, c12 = st.columns(2)
         est_val  = c11.number_input("Est. Investment Value (SAR)", min_value=0.0, step=1_000_000.0)
         next_mtg = c12.date_input("Next Meeting Date", value=None)
-        notes    = st.text_area("Notes")
+
+        notes = st.text_area("Notes")
 
         if st.form_submit_button("Add Investor", use_container_width=True):
             if not company:
@@ -351,22 +483,22 @@ def _add_investor_form(dfs: dict, lang: str):
             investors = dfs.get("Investor Master", pd.DataFrame())
             new_id    = _next_id(investors, "Investor ID", "INV")
             new_row   = {
-                "Investor ID":              new_id,
-                "Company Name":             company,
-                "Country":                  country,
-                "Sector":                   sector,
-                "Investor Tier":            tier,
-                "Relationship Manager":     rm,
-                "Account Manager":          am or "TBD",
-                "Journey Stage":            stage,
-                "Relationship Status":      status,
-                "Key Contact Name":         contact_name,
-                "Key Contact Title":        contact_title,
+                "Investor ID":                new_id,
+                "Company Name":               company,
+                "Country":                    country,
+                "Sector":                     sector,
+                "Relationship Manager":       rm,
+                "Account Manager":            am or "TBD",
+                "Journey Stage":              stage,
+                "Key Contact Name":           contact_name,
+                "Key Contact Title":          contact_title,
+                "Company Size (Global)":      size_global,
+                "Company Size (KSA)":         size_ksa,
                 "Est. Investment Value (SAR)": est_val if est_val > 0 else None,
-                "Next Meeting Date":         next_mtg,
-                "Last Updated":             date.today(),
-                "Escalation Flag":          "None",
-                "Notes":                    notes,
+                "Next Meeting Date":           next_mtg,
+                "Last Updated":               date.today(),
+                "Escalation Flag":            "None",
+                "Notes":                      notes,
             }
             dfs["Investor Master"] = pd.concat(
                 [investors, pd.DataFrame([new_row])], ignore_index=True
@@ -388,7 +520,6 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
 
     row = investors[investors["Company Name"] == company].iloc[0]
 
-    status   = str(row.get("Relationship Status", "Active"))
     stage    = str(row.get("Journey Stage", "—"))
     country  = str(row.get("Country", "—"))
     sector   = str(row.get("Sector",  "—"))
@@ -396,12 +527,22 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
     am       = str(row.get("Account Manager", "TBD"))
     contact  = str(row.get("Key Contact Name",  "") or "")
     ctitle   = str(row.get("Key Contact Title", "") or "")
+    size_global = str(row.get("Company Size (Global)", "") or "")
+    size_ksa    = str(row.get("Company Size (KSA)",    "") or "")
+
+    # Wikidata enrichment for profile header
+    enriched = _fetch_company_data(company)
+    if _blank(sector):
+        sector = enriched.get("industry") or "—"
+    if _blank(country):
+        country = enriched.get("hq_country") or "—"
+    if _blank(size_global) and enriched.get("employees_global"):
+        size_global = enriched["employees_global"] + " employees"
 
     logo         = _logo_url(company)
     color        = _avatar_color(company)
     initials     = _initials(company)
     sc_color     = _STAGE_COLOR.get(stage, _GREEN)
-    st_bg, st_fg = _STATUS_STYLE.get(status.lower(), ("#F3F4F6", "#374151"))
     est_val      = _fmt_sar(row.get("Est. Investment Value (SAR)"))
     commitment   = _fmt_sar(row.get("Actual Commitment (SAR)"))
 
@@ -411,6 +552,20 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
             f'<div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,0.8);">'
             f'Contact: <strong style="color:#fff;">{contact}</strong>'
             f'{" · " + ctitle if ctitle else ""}</div>'
+        )
+
+    size_block = ""
+    size_parts = []
+    if size_global: size_parts.append(f"🌐 {size_global}")
+    if size_ksa:    size_parts.append(f"🇸🇦 {size_ksa} (KSA)")
+    if size_parts:
+        size_block = (
+            f'<div style="margin-top:6px;display:flex;gap:10px;flex-wrap:wrap;">'
+            + "".join(
+                f'<span style="font-size:11px;color:rgba(255,255,255,0.75);">{p}</span>'
+                for p in size_parts
+            )
+            + '</div>'
         )
 
     st.markdown(
@@ -427,11 +582,10 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
         f'{sector} &nbsp;·&nbsp; {country} &nbsp;·&nbsp; RM: {rm} &nbsp;·&nbsp; AM: {am}'
         f'</div>'
         f'{contact_block}'
+        f'{size_block}'
         f'</div>'
         f'<div style="text-align:right;">'
-        f'<span style="background:{st_bg};color:{st_fg};padding:3px 12px;border-radius:12px;'
-        f'font-size:12px;font-weight:700;">{status}</span>'
-        f'<div style="color:{sc_color};font-size:11px;font-weight:600;margin-top:6px;'
+        f'<div style="color:{sc_color};font-size:11px;font-weight:600;'
         f'background:rgba(255,255,255,0.15);padding:2px 10px;border-radius:8px;">{stage}</div>'
         f'{"<div style=color:" + _GOLD + ";font-size:13px;font-weight:700;margin-top:6px;>" + est_val + "</div>" if est_val else ""}'
         f'{"<div style=color:rgba(255,255,255,0.6);font-size:11px;>Committed: " + commitment + "</div>" if commitment else ""}'
@@ -439,7 +593,7 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
         unsafe_allow_html=True,
     )
 
-    # Key metrics
+    # Key metrics row
     est   = row.get("Est. Investment Value (SAR)")
     cmmt  = row.get("Actual Commitment (SAR)")
     jobs  = row.get("Est. Jobs Created")
@@ -453,7 +607,6 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
     m4.metric("Priority Score",  str(prio) if str(prio) not in ("—", "nan", "") else "—")
     m5.metric("Minister Action", str(min_a) if str(min_a) not in ("None Required", "nan", "") else "None")
 
-    # Linked data
     def _link(df, col, val):
         return df[df[col] == val] if not df.empty and col in df.columns else pd.DataFrame()
 
@@ -494,8 +647,8 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
         else:
             cols = [c for c in ["Action Description", "Type of Engagement", "Status", "Priority",
                                  "Progress", "Due Date", "Assigned To", "Remarks"] if c in linked_actions_only.columns]
-            df_sorted = linked_actions_only[cols].sort_values("Due Date") if "Due Date" in linked_actions_only.columns else linked_actions_only[cols]
-            st.dataframe(df_sorted, use_container_width=True, hide_index=True)
+            df_s = linked_actions_only[cols].sort_values("Due Date") if "Due Date" in linked_actions_only.columns else linked_actions_only[cols]
+            st.dataframe(df_s, use_container_width=True, hide_index=True)
 
     with tabs[2]:
         if linked_challenges.empty:
@@ -512,8 +665,8 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
             cols = [c for c in ["Meeting Date", "Meeting Type", "Meeting Status", "Meeting Objective",
                                  "Key Discussion Points", "Decisions Made", "Next Steps",
                                  "Follow-Up Owner", "Follow-Up Due Date"] if c in linked_meetings.columns]
-            df_sorted = linked_meetings[cols].sort_values("Meeting Date", ascending=False) if "Meeting Date" in linked_meetings.columns else linked_meetings[cols]
-            st.dataframe(df_sorted, use_container_width=True, hide_index=True)
+            df_s = linked_meetings[cols].sort_values("Meeting Date", ascending=False) if "Meeting Date" in linked_meetings.columns else linked_meetings[cols]
+            st.dataframe(df_s, use_container_width=True, hide_index=True)
 
     with tabs[4]:
         if linked_tasks.empty:
