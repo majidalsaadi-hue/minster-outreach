@@ -50,6 +50,48 @@ def _logo_url(company: str) -> str:
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
+def _logo_html(company: str, size: int = 44) -> str:
+    """
+    Return an <img> tag with base64-embedded logo, or a coloured initials
+    circle if the logo can't be fetched. No JavaScript needed.
+    """
+    import base64
+    color    = _avatar_color(company)
+    initials = _initials(company)
+    radius   = "8px" if size <= 44 else "10px"
+
+    # Try to fetch via Google favicon service (more reliable than Clearbit)
+    domain = _guess_domain(company)
+    for url in [
+        f"https://www.google.com/s2/favicons?domain={domain}&sz=64",
+        f"https://logo.clearbit.com/{domain}",
+    ]:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = resp.read()
+            if len(data) < 200:   # tiny placeholder / error image
+                continue
+            ext = "png"
+            b64 = base64.b64encode(data).decode()
+            return (
+                f'<img src="data:image/{ext};base64,{b64}" '
+                f'style="width:{size}px;height:{size}px;object-fit:contain;'
+                f'border-radius:{radius};border:1px solid #f0f0f0;background:#fff;" />'
+            )
+        except Exception:
+            continue
+
+    # Fallback: coloured initials circle
+    font = max(10, size // 3)
+    return (
+        f'<div style="width:{size}px;height:{size}px;border-radius:{radius};'
+        f'background:{color};display:flex;align-items:center;justify-content:center;'
+        f'font-size:{font}px;font-weight:700;color:#fff;flex-shrink:0;">{initials}</div>'
+    )
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
 def _fetch_company_data(company: str) -> dict:
     """
     Enrich a company with data from Wikipedia + Wikidata.
@@ -395,13 +437,8 @@ def _render_investor_card(row):
 
         # Logo + name row
         f'<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;">'
-        f'<div style="flex-shrink:0;width:44px;height:44px;position:relative;">'
-        f'<img src="{logo}" width="44" height="44" '
-        f'style="width:44px;height:44px;object-fit:contain;border-radius:8px;border:1px solid #f0f0f0;" '
-        f'onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\';">'
-        f'<div style="display:none;width:44px;height:44px;border-radius:8px;background:{color};'
-        f'align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;'
-        f'position:absolute;top:0;left:0;">{initials}</div>'
+        f'<div style="flex-shrink:0;">'
+        f'{_logo_html(company, 44)}'
         f'</div>'
         f'<div style="flex:1;min-width:0;">'
         f'<div style="font-size:14px;font-weight:700;color:{_GREEN};line-height:1.2;">'
@@ -572,10 +609,7 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
         f'<div style="background:linear-gradient(135deg,#0f2d1e,{_GREEN});'
         f'border-radius:12px;padding:20px 24px;margin:12px 0;">'
         f'<div style="display:flex;align-items:center;gap:14px;">'
-        f'<img src="{logo}" width="56" height="56" '
-        f'style="width:56px;height:56px;object-fit:contain;border-radius:10px;'
-        f'border:2px solid rgba(255,255,255,0.2);background:#fff;padding:2px;" '
-        f'onerror="this.style.display=\'none\';">'
+        f'{_logo_html(company, 56)}'
         f'<div style="flex:1;">'
         f'<div style="color:#fff;font-size:22px;font-weight:700;">{company}</div>'
         f'<div style="color:rgba(255,255,255,0.7);font-size:13px;margin-top:3px;">'
