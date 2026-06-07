@@ -479,14 +479,19 @@ def _slide_investor(prs, inv_row, actions, opportunities, deals, lang):
                   Inches(3.9), Inches(0.5), font_size=11, color=GOLD, align=PP_ALIGN.RIGHT)
 
     # Metadata row
-    meta = [("Country", inv_row.get("Country","—")), ("Sector", inv_row.get("Sector","—")),
-            ("Stage", inv_row.get("Journey Stage","—")), ("Status", inv_row.get("Relationship Status","—")),
-            ("RM", inv_row.get("Relationship Manager","—")), ("AM", inv_row.get("Account Manager","TBD"))]
+    meta = [
+        ("Country", _mv(inv_row, "Country")),
+        ("Sector",  _mv(inv_row, "Sector")),
+        ("Stage",   _mv(inv_row, "Journey Stage")),
+        ("Status",  _mv(inv_row, "Relationship Status")),
+        ("RM",      _mv(inv_row, "Relationship Manager")),
+        ("AM",      _mv(inv_row, "Account Manager", "TBD")),
+    ]
     for i, (lbl, val) in enumerate(meta):
         x = Inches(0.3) + i * Inches(2.15)
         _add_text_box(slide, lbl, x, Inches(0.95), Inches(2.1), Inches(0.22),
                       font_size=8, color=MGRAY)
-        _add_text_box(slide, str(val)[:22], x, Inches(1.16), Inches(2.1), Inches(0.28),
+        _add_text_box(slide, val[:22], x, Inches(1.16), Inches(2.1), Inches(0.28),
                       font_size=10, bold=True, color=DARK)
 
     # Investment + minister strip
@@ -603,12 +608,12 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
               fill_color=WHITE, line_color=WHITE)
     if not inv_row.empty:
         for i, (lbl, val) in enumerate([
-            ("Country",       str(inv_row.get("Country",  "—") or "—")),
-            ("Sector",        str(inv_row.get("Sector",   "—") or "—")),
-            ("Journey Stage", str(inv_row.get("Journey Stage", "—") or "—")),
-            ("Status",        str(inv_row.get("Relationship Status", "—") or "—")),
-            ("RM",            str(inv_row.get("Relationship Manager", "—") or "—")),
-            ("AM",            str(inv_row.get("Account Manager", "TBD") or "TBD")),
+            ("Country",       _mv(inv_row, "Country")),
+            ("Sector",        _mv(inv_row, "Sector")),
+            ("Journey Stage", _mv(inv_row, "Journey Stage")),
+            ("Status",        _mv(inv_row, "Relationship Status")),
+            ("RM",            _mv(inv_row, "Relationship Manager")),
+            ("AM",            _mv(inv_row, "Account Manager", "TBD")),
         ]):
             x = Inches(0.4) + i * Inches(2.1)
             _add_text_box(slide, lbl, x, Inches(0.87), Inches(2.0), Inches(0.18),
@@ -1326,6 +1331,17 @@ def _add_mini_table(slide, df, headers, cols, left, top, width):
             _add_text_box(slide, str(val)[:28], x + Inches(0.04), y + Inches(0.04),
                           col_w - Inches(0.08), row_h - Inches(0.05),
                           font_size=7, color=DARK)
+
+
+def _mv(row, key: str, default: str = "—") -> str:
+    """Safely extract a metadata value from an investor row, suppressing NaN."""
+    val = row.get(key, default)
+    if val is None:
+        return default
+    if isinstance(val, float) and pd.isna(val):
+        return default
+    s = str(val).strip()
+    return s if s and s.lower() not in ("nan", "none", "") else default
 
 
 def _fmt_sar(val) -> str:

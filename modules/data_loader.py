@@ -169,9 +169,9 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
         df_raw = raw.parse(sheet_name, header=None)
         company = _extract_company_from_sheet_name(sheet_name)
 
-        # AM = Excel row 14 = pandas iloc[13,11]; RM = Excel row 15 = pandas iloc[14,11]
-        am_name  = _safe_cell(df_raw, 13, 11)
-        rm_name  = _safe_cell(df_raw, 14, 11)
+        # Col L (index 11) holds the label "AM"/"RM"; actual name is in col M (index 12)
+        am_name  = _safe_cell(df_raw, 13, 12)
+        rm_name  = _safe_cell(df_raw, 14, 12)
         last_upd = _safe_cell(df_raw, 12, 16)
         next_mtg = _safe_cell(df_raw, 15, 16)
 
