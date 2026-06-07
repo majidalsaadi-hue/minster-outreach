@@ -1134,7 +1134,7 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
                 pill_x += pw + Inches(0.06)
 
             # Row 3: Narrative description of the opportunity
-            desc_str, impact_str = _build_opportunity_narrative(opp)
+            desc_str, impact_str = _build_opportunity_narrative(opp, acts)
             _add_text_box(slide, desc_str,
                           IX, cy + Inches(0.62), IW, Inches(0.30),
                           font_size=8.5, color=DARK)
@@ -1359,8 +1359,10 @@ def _fetch_logo_bytes(company: str, website: str = ""):
     return None
 
 
-def _build_opportunity_narrative(opp) -> tuple:
-    """Return (description, impact) narrative strings for an opportunity card."""
+def _build_opportunity_narrative(opp, acts=None) -> tuple:
+    """Return (description, impact) narrative strings for an opportunity card.
+    Draws from related action item descriptions and remarks for real context."""
+    opp_name   = str(opp.get("Opportunity Name",   "") or "").strip()
     stage      = str(opp.get("Opportunity Stage",  "") or "").strip()
     opp_type   = str(opp.get("Opportunity Type",   "") or "").strip()
     sector     = str(opp.get("Sector",             "") or "").strip()
@@ -1369,34 +1371,83 @@ def _build_opportunity_narrative(opp) -> tuple:
     est_val    = opp.get("Est. Value (SAR)")
     blockers   = str(opp.get("Blockers", "") or "").strip()
 
-    type_part  = f"{opp_type} opportunity" if opp_type and opp_type not in ("—", "") else "Investment opportunity"
-    sect_part  = f" in {sector}" if sector and sector not in ("—", "") else ""
-    stage_map  = {
-        "Committed":           "secured and committed",
-        "Negotiation":         "in active negotiation",
-        "Exploration":         "in early-stage exploration",
-        "Active":              "actively progressing",
-        "Opportunity Matching":"being matched to MISA priorities",
-        "Suspended":           "temporarily suspended",
-        "Blocked":             "blocked — requires escalation",
-        "On Track":            "on track for closure",
-    }
-    stage_desc = stage_map.get(stage, f"at {stage} stage" if stage else "under development")
-    desc = f"{type_part}{sect_part}, {stage_desc}."
-    if notes and notes not in ("nan",) and len(notes) > 5:
-        desc += f" {notes[:70]}"
+    # ── Find related action items ──────────────────────────────────────────────
+    # Try matching by keywords from opportunity name/sector in action descriptions
+    rel_acts = pd.DataFrame()
+    if acts is not None and not acts.empty and "Action Description" in acts.columns:
+        keywords = [w for w in (opp_name + " " + sector).lower().split() if len(w) > 3]
+        if keywords:
+            pattern = "|".join(keywords[:4])
+            try:
+                mask = acts["Action Description"].fillna("").str.lower().str.contains(pattern, regex=True)
+                rel_acts = acts[mask]
+            except Exception:
+                pass
+        if rel_acts.empty:
+            rel_acts = acts  # fall back to all company actions
 
-    has_val   = est_val is not None and not (isinstance(est_val, float) and pd.isna(est_val))
-    conf_map  = {"High": "strong probability of closure", "Medium": "moderate confidence", "Low": "early-stage probability"}
-    conf_str  = conf_map.get(confidence, "")
+    # Collect the best content from action items
+    act_descs   = []
+    act_remarks = []
+    for _, r in rel_acts.head(3).iterrows():
+        d   = str(r.get("Action Description", "") or "").strip()
+        rem = str(r.get("Remarks",            "") or "").strip()
+        if d   and d   not in ("nan", ""):
+            act_descs.append(d)
+        if rem and rem not in ("nan", ""):
+            act_remarks.append(rem)
+
+    # ── Description: what is this engagement about ────────────────────────────
+    if act_descs:
+        # Use the most descriptive action item as the lead sentence
+        desc = act_descs[0][:95]
+        if not desc.endswith("."):
+            desc += "."
+    else:
+        # Build from opportunity fields — avoid repeating "Opportunity opportunity"
+        skip_types = {"opportunity", "investment", "deal", "initiative", "—", ""}
+        type_word  = opp_type if opp_type.lower() not in skip_types else ""
+        sect_part  = f" in {sector}" if sector and sector not in ("—", "") else ""
+        stage_map  = {
+            "Committed":           "secured and committed",
+            "Negotiation":         "in active negotiation",
+            "Exploration":         "in early-stage exploration",
+            "Active":              "actively progressing",
+            "Opportunity Matching":"being matched to MISA priorities",
+            "Suspended":           "temporarily suspended",
+            "Blocked":             "blocked — escalation required",
+            "On Track":            "on track for closure",
+        }
+        stage_desc = stage_map.get(stage, f"at {stage} stage" if stage else "under development")
+        if type_word:
+            desc = f"{type_word} engagement{sect_part}, {stage_desc}."
+        elif sect_part:
+            desc = f"Engagement{sect_part}, {stage_desc}."
+        else:
+            desc = f"Engagement {stage_desc}."
+        if notes and notes not in ("nan",) and len(notes) > 5:
+            desc += f" {notes[:60]}"
+
+    # ── Impact: current status, next steps, financial context ─────────────────
     impact_parts = []
+    if act_remarks:
+        impact_parts.append(act_remarks[0][:80])
+    has_val = est_val is not None and not (isinstance(est_val, float) and pd.isna(est_val))
     if has_val:
-        impact_parts.append(f"Estimated value {_fmt_sar(est_val)}")
-    if conf_str:
-        impact_parts.append(conf_str)
-    if blockers and blockers not in ("nan", "—", ""):
-        impact_parts.append(f"Blocker: {blockers[:35]}")
-    impact = "; ".join(impact_parts) + "." if impact_parts else "Aligned with Vision 2030 investment targets."
+        impact_parts.append(f"Est. value: {_fmt_sar(est_val)}")
+    if not impact_parts:
+        conf_map = {"High": "High closure confidence", "Medium": "Medium confidence", "Low": "Early probability"}
+        conf_str = conf_map.get(confidence, "")
+        if conf_str:
+            impact_parts.append(conf_str)
+        if blockers and blockers not in ("nan", "—", ""):
+            impact_parts.append(f"Blocker: {blockers[:40]}")
+        if not impact_parts:
+            impact_parts.append("Engagement ongoing — outcome pending")
+
+    impact = "; ".join(impact_parts)
+    if not impact.endswith("."):
+        impact += "."
 
     return desc[:105], impact[:90]
 
