@@ -802,7 +802,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     TBL_L = Inches(0.3)
     HDR_Y = Inches(3.52)
     HDR_H = Inches(0.30)
-    ROW_H = Inches(0.38)
+    ROW_H = Inches(0.32)
     CW    = [Inches(w) for w in [0.40, 4.85, 1.65, 1.20, 0.80, 0.70]]
     CX    = [TBL_L + sum(CW[:j]) for j in range(len(CW))]
     HDRS  = ["#", "Action Item", "Assigned To", "Status", "Due", "Progress"]
@@ -820,9 +820,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         if "Due Date" in pend_df.columns:
             pend_df["_due"] = pd.to_datetime(pend_df["Due Date"], errors="coerce")
             pend_df = pend_df.sort_values("_due")
-        display_acts = pd.concat([pend_df, done_df], ignore_index=True).head(8)
+        display_acts = pd.concat([pend_df, done_df], ignore_index=True).head(10)
     else:
-        display_acts = acts.head(8) if not acts.empty else pd.DataFrame()
+        display_acts = acts.head(10) if not acts.empty else pd.DataFrame()
 
     _SBG = {
         "Completed":   "#E8F5E9", "In Progress": "#FFF8E1", "Inprogress": "#FFF8E1",
@@ -870,14 +870,14 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             fc = sfg if j == 3 else (RED if (j == 4 and is_ov) else DARK)
             al = PP_ALIGN.CENTER if j in (0, 3, 4) else PP_ALIGN.LEFT
             if j == 1:
-                _add_text_box(slide, desc[:52], cx + Inches(0.04), ry + Inches(0.03),
-                              cw - Inches(0.08), Inches(0.20), font_size=7.5, color=DARK)
+                _add_text_box(slide, desc[:58], cx + Inches(0.04), ry + Inches(0.02),
+                              cw - Inches(0.08), Inches(0.15), font_size=7.5, color=DARK)
                 if remark:
-                    _add_text_box(slide, f"↳ {remark}", cx + Inches(0.05), ry + Inches(0.22),
-                                  cw - Inches(0.10), Inches(0.13), font_size=6, color=MGRAY)
+                    _add_text_box(slide, f"↳ {remark}", cx + Inches(0.05), ry + Inches(0.17),
+                                  cw - Inches(0.10), Inches(0.12), font_size=6, color=MGRAY)
             else:
-                _add_text_box(slide, val, cx + Inches(0.03), ry + Inches(0.07),
-                              cw - Inches(0.06), Inches(0.22),
+                _add_text_box(slide, val, cx + Inches(0.03), ry + Inches(0.05),
+                              cw - Inches(0.06), Inches(0.20),
                               font_size=8 if j == 0 else 7.5, color=fc,
                               bold=(j == 3), align=al)
 
@@ -885,16 +885,16 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         px, pcw = CX[5], CW[5]
         _add_rect(slide, px, ry, pcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
         bx = px + Inches(0.07)
-        by = ry + Inches(0.09)
+        by = ry + Inches(0.07)
         bw = pcw - Inches(0.14)
-        bh = Inches(0.11)
+        bh = Inches(0.09)
         _add_rect(slide, bx, by, bw, bh, fill_color=_rgb("#E0E0E0"), line_color=_rgb("#E0E0E0"))
         if prog_val > 0:
             fc2 = _rgb(MISA_GREEN) if prog_val >= 1.0 else (_rgb(MISA_GOLD) if prog_val >= 0.5 else _rgb("#888888"))
             _add_rect(slide, bx, by, max(bw * prog_val, Inches(0.02)), bh,
                       fill_color=fc2, line_color=fc2)
-        _add_text_box(slide, f"{int(prog_val * 100)}%", px, ry + Inches(0.21),
-                      pcw, Inches(0.14), font_size=7, color=DARK, align=PP_ALIGN.CENTER)
+        _add_text_box(slide, f"{int(prog_val * 100)}%", px, ry + Inches(0.18),
+                      pcw, Inches(0.12), font_size=6.5, color=DARK, align=PP_ALIGN.CENTER)
 
     # ══════════════════════════════════════════════════════════════════════════
     # RIGHT: Status summary + Deals + Opportunities + KPI cards
