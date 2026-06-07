@@ -169,27 +169,42 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
         df_raw = raw.parse(sheet_name, header=None)
         company = _extract_company_from_sheet_name(sheet_name)
 
-        # MISA team — col K=label, col L=value; consistent across all sheet widths
-        manager  = _safe_cell(df_raw, 13, 11)   # R14L = Outreach Manager
-        am_name  = _safe_cell(df_raw, 14, 11)   # R15L = Account Manager
-        rm_name  = _safe_cell(df_raw, 15, 11)   # R16L = Relationship Manager
-        # Investor-side fields: col P or Q depending on sheet width — scan by label
-        rep_name = _find_header_value(df_raw, 11, 18, ["rep"])
-        rep_pos  = _find_header_value(df_raw, 11, 18, ["postion", "position"])
-        website  = _find_header_value(df_raw, 11, 18, ["website"])
-        last_upd = _find_header_value(df_raw, 11, 18, ["last updated"])
-        next_mtg = _find_header_value(df_raw, 11, 18, ["next meeting"])
+        # Skip portfolio-level "deal" sheets — they have no per-investor header
+        type_cell = _sstr(_find_header_value(df_raw, 10, 14, ["type"]))
+        if type_cell.lower() == "deal":
+            continue
+
+        # MISA team — exact-label scan handles column shifts between file versions
+        manager  = _find_header_value(df_raw, 11, 18, ["outreach"], exact=True)
+        am_name  = _find_header_value(df_raw, 11, 18, ["am"],       exact=True)
+        rm_name  = _find_header_value(df_raw, 11, 18, ["rm"],       exact=True)
+
+        # Investor-side fields — keyword scan (column position varies by sheet width)
+        company_name_xl = _find_header_value(df_raw, 11, 18, ["company name"])
+        rep_name  = _find_header_value(df_raw, 11, 18, ["rep"])
+        rep_pos   = _find_header_value(df_raw, 11, 18, ["postion", "position"])
+        rep_email = _find_header_value(df_raw, 11, 18, ["email"])
+        rep_phone = _find_header_value(df_raw, 11, 18, ["phone"])
+        website   = _find_header_value(df_raw, 11, 18, ["website"])
+        country   = _find_header_value(df_raw, 11, 18, ["country"])
+        sector    = _find_header_value(df_raw, 11, 18, ["sector"])
+        last_upd  = _find_header_value(df_raw, 11, 18, ["last updated"])
+        next_mtg  = _find_header_value(df_raw, 11, 18, ["next meeting"])
+
+        # Override sheet-name-derived company with the name in the Excel header
+        if company_name_xl:
+            company = _sstr(company_name_xl)
 
         inv_id = f"INV-{investor_counter:03d}"
         investor_rows.append({
             "Investor ID":                inv_id,
             "Company Name":               company,
-            "Country":                    "",
-            "Sector":                     "",
+            "Country":                    _sstr(country),
+            "Sector":                     _sstr(sector),
             "Investor Tier":              "Tier 2 — High Potential",
-            "Relationship Manager":       rm_name or "",
-            "Account Manager":            am_name or "TBD",
-            "Outreach Manager":           manager or "",
+            "Relationship Manager":       _sstr(rm_name),
+            "Account Manager":            _sstr(am_name) or "TBD",
+            "Outreach Manager":           _sstr(manager),
             "Journey Stage":              "Opportunity Matching",
             "Relationship Status":        "Active",
             "Est. Investment Value (SAR)":None,
@@ -202,6 +217,8 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
             "Website":                    _sstr(website),
             "Company Rep":                _sstr(rep_name),
             "Rep Position":               _sstr(rep_pos),
+            "Rep Email":                  _clean_email(rep_email),
+            "Rep Phone":                  _sstr(rep_phone),
         })
 
         # ── Extract opportunities from header block (rows 14-19, col H) ──────
@@ -223,7 +240,7 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
                 "Investor ID":        inv_id,
                 "Company Name":       company,
                 "Opportunity Name":   sval,
-                "Sector":             "",
+                "Sector":             _sstr(sector),
                 "Opportunity Stage":  "Exploration",
                 "Opportunity Status": "Active",
                 "Opportunity Type":   "Opportunity",
@@ -438,8 +455,9 @@ def _empty_tasks_df() -> pd.DataFrame:
     return pd.DataFrame(columns=cols)
 
 
-def _find_header_value(df: pd.DataFrame, start_row: int, end_row: int, keywords: list):
-    """Scan rows start_row..end_row for a cell matching any keyword; return the adjacent right cell."""
+def _find_header_value(df: pd.DataFrame, start_row: int, end_row: int, keywords: list, exact: bool = False):
+    """Scan rows start_row..end_row for a cell matching any keyword; return the adjacent right cell.
+    exact=True requires the full cell text to equal one of the keywords."""
     kw_lower = [k.lower() for k in keywords]
     for row_i in range(start_row, min(end_row, len(df))):
         for col_i in range(df.shape[1] - 1):
@@ -447,7 +465,8 @@ def _find_header_value(df: pd.DataFrame, start_row: int, end_row: int, keywords:
             if val is None or (isinstance(val, float) and pd.isna(val)):
                 continue
             cell_str = str(val).replace("\xa0", " ").lower().strip().lstrip("¦¹ ")
-            if any(kw in cell_str for kw in kw_lower):
+            matched = (cell_str in kw_lower) if exact else any(kw in cell_str for kw in kw_lower)
+            if matched:
                 right = df.iloc[row_i, col_i + 1]
                 if right is not None and not (isinstance(right, float) and pd.isna(right)):
                     return right
@@ -459,3 +478,11 @@ def _sstr(val) -> str:
     if val is None or (isinstance(val, float) and pd.isna(val)):
         return ""
     return str(val).replace("\xa0", " ").strip()
+
+
+def _clean_email(val) -> str:
+    """Strip 'Email: ' or 'Email:\t' prefix that appears in raw tracker cells."""
+    import re
+    s = _sstr(val)
+    s = re.sub(r'^email\s*:\s*', '', s, flags=re.IGNORECASE).strip()
+    return s

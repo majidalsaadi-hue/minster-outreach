@@ -356,6 +356,8 @@ def _render_investor_card(row):
     website   = str(row.get("Website",      "") or "").strip()
     rep_name  = str(row.get("Company Rep",  "") or "").strip()
     rep_pos   = str(row.get("Rep Position", "") or "").strip()
+    rep_email = str(row.get("Rep Email",    "") or "").strip()
+    rep_phone = str(row.get("Rep Phone",    "") or "").strip()
 
     color    = _avatar_color(company)
     initials = _initials(company)
@@ -432,15 +434,26 @@ def _render_investor_card(row):
     # Company Rep block
     rep_html = ""
     if rep_name and rep_name not in ("—", "nan"):
+        _rep_detail = ""
+        if rep_pos:
+            _rep_detail += f'<div style="font-size:9px;color:#6B7280;">{rep_pos}</div>'
+        if rep_email and rep_email not in ("—", "nan"):
+            _rep_detail += (
+                f'<div style="font-size:9px;color:#6B7280;">'
+                f'<a href="mailto:{rep_email}" style="color:#1D4ED8;text-decoration:none;">'
+                f'{rep_email}</a></div>'
+            )
+        if rep_phone and rep_phone not in ("—", "nan"):
+            _rep_detail += f'<div style="font-size:9px;color:#6B7280;">&#x1F4DE; {rep_phone}</div>'
         rep_html = (
-            f'<div style="display:flex;align-items:center;gap:6px;margin:6px 0 2px 0;'
+            f'<div style="display:flex;align-items:flex-start;gap:6px;margin:6px 0 2px 0;'
             f'padding:5px 8px;background:#f8fafc;border-radius:6px;border:1px solid #f1f5f9;">'
             f'<div style="width:22px;height:22px;border-radius:50%;background:#e8f5ee;'
             f'display:flex;align-items:center;justify-content:center;'
-            f'font-size:8px;font-weight:700;color:{_GREEN};flex-shrink:0;">'
+            f'font-size:8px;font-weight:700;color:{_GREEN};flex-shrink:0;margin-top:1px;">'
             f'{_initials(rep_name)}</div>'
             f'<div><div style="font-size:10px;font-weight:600;color:#1F2937;">{rep_name}</div>'
-            f'{"<div style=font-size:9px;color:#6B7280;>" + rep_pos + "</div>" if rep_pos else ""}'
+            f'{_rep_detail}'
             f'</div></div>'
         )
 
@@ -619,9 +632,11 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
     ctitle   = str(row.get("Key Contact Title", "") or "")
     size_global = str(row.get("Company Size (Global)", "") or "")
     size_ksa    = str(row.get("Company Size (KSA)",    "") or "")
-    website  = str(row.get("Website",      "") or "").strip()
-    rep_name = str(row.get("Company Rep",  "") or "").strip()
-    rep_pos  = str(row.get("Rep Position", "") or "").strip()
+    website   = str(row.get("Website",      "") or "").strip()
+    rep_name  = str(row.get("Company Rep",  "") or "").strip()
+    rep_pos   = str(row.get("Rep Position", "") or "").strip()
+    rep_email = str(row.get("Rep Email",    "") or "").strip()
+    rep_phone = str(row.get("Rep Phone",    "") or "").strip()
 
     # Wikidata enrichment for profile header
     enriched = _fetch_company_data(company)
@@ -674,10 +689,23 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
         )
     prof_rep_html = ""
     if rep_name and rep_name not in ("—", "nan"):
+        _rep_parts = [f'&#x1F91D; {rep_name}']
+        if rep_pos:
+            _rep_parts.append(rep_pos)
+        _rep_line2 = ""
+        if rep_email and rep_email not in ("—", "nan"):
+            _rep_line2 += (
+                f'<a href="mailto:{rep_email}" '
+                f'style="color:{_GOLD};text-decoration:none;font-size:10px;">'
+                f'{rep_email}</a>'
+            )
+        if rep_phone and rep_phone not in ("—", "nan"):
+            sep = " &nbsp;·&nbsp; " if _rep_line2 else ""
+            _rep_line2 += f'{sep}<span style="font-size:10px;">&#x1F4DE; {rep_phone}</span>'
         prof_rep_html = (
             f'<div style="margin-top:6px;font-size:11px;color:rgba(255,255,255,0.75);">'
-            f'&#x1F91D; {rep_name}'
-            f'{" · " + rep_pos if rep_pos else ""}'
+            f'{" · ".join(_rep_parts)}'
+            f'{"<br>" + _rep_line2 if _rep_line2 else ""}'
             f'</div>'
         )
 
