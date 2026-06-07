@@ -33,10 +33,9 @@ from modules.data_loader   import load_excel, validate_schema, get_summary
 from modules.persistence   import save_session, load_session
 from modules.dashboard     import (
     render_action_advisor,
-    render_kpi_cards, render_pipeline_overview,
-    render_investment_flow, render_opportunity_pipeline,
-    render_sector_geography, render_alerts,
-    render_minister_decision_panel, render_vision2030_panel, render_economic_impact,
+    render_kpi_cards,
+    render_investment_flow,
+    render_alerts,
     render_active_opportunities_panel,
 )
 from modules.investors     import render as render_investors
