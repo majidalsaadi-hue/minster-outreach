@@ -44,7 +44,6 @@ from modules.meetings      import render as render_meetings
 from modules.opportunities import render as render_opportunities
 from modules.actions       import render as render_actions
 from modules.tasks         import render as render_tasks
-from modules.deals         import render as render_deals
 from modules.report_builder      import render as render_report_builder
 from modules.company_directory   import render as render_company_directory
 
@@ -137,7 +136,6 @@ def render_sidebar():
             T("nav_dashboard"):         "dashboard",
             T("nav_investors"):         "investors",
             T("nav_opportunities"):     "opportunities",
-            T("nav_deals"):             "deals",
             T("nav_report_builder"):    "report_builder",
             T("nav_company_directory"): "company_directory",
             T("nav_actions"):           "actions",
@@ -515,12 +513,6 @@ def main():
             _require_data()
         else:
             render_opportunities(dfs, lang())
-
-    elif page == "deals":
-        if dfs is None:
-            _require_data()
-        else:
-            render_deals(dfs, lang())
 
     elif page == "report_builder":
         if dfs is None:

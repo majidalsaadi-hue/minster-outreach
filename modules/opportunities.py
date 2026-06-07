@@ -11,6 +11,8 @@ from datetime import date
 from config.settings import (
     SECTORS, OPPORTUNITY_TYPES, OPPORTUNITY_SOURCES, OPPORTUNITY_STAGES,
     CONFIDENCE_LEVELS, MISA_GREEN, MISA_GOLD,
+    DEAL_STAGES, DEAL_STATUSES, CHALLENGE_CLASSIFICATIONS,
+    CHALLENGE_SEVERITIES, ESCALATION_LEVELS,
 )
 from config.translations import t
 from modules.persistence import save_session
@@ -98,61 +100,62 @@ def render(dfs: dict, lang: str):
 
     if opps.empty:
         _render_empty_state(actions)
-        return
+    else:
+        # ── Minister board — active opportunities ──────────────────────────────
+        _render_minister_board(opps)
 
-    # ── Minister board — active opportunities ──────────────────────────────────
-    _render_minister_board(opps)
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+        # ── Filters ───────────────────────────────────────────────────────────
+        fc1, fc2, fc3, fc4 = st.columns([2.5, 1.5, 1.5, 1.5])
+        with fc1:
+            q = st.text_input("Search", placeholder="Search company or opportunity…",
+                              key="opp_search", label_visibility="collapsed")
+        with fc2:
+            sel_stage = st.selectbox("Stage", ["All stages"] + _STAGES,
+                                     key="opp_stage", label_visibility="collapsed")
+        with fc3:
+            conf_opts = ["All confidence"] + CONFIDENCE_LEVELS
+            sel_conf  = st.selectbox("Confidence", conf_opts,
+                                     key="opp_conf", label_visibility="collapsed")
+        with fc4:
+            sel_status = st.selectbox("Status", ["All statuses"] + OPP_STATUSES,
+                                      key="opp_status", label_visibility="collapsed")
 
-    # ── Filters ───────────────────────────────────────────────────────────────
-    fc1, fc2, fc3, fc4 = st.columns([2.5, 1.5, 1.5, 1.5])
-    with fc1:
-        q = st.text_input("Search", placeholder="Search company or opportunity…",
-                          key="opp_search", label_visibility="collapsed")
-    with fc2:
-        sel_stage = st.selectbox("Stage", ["All stages"] + _STAGES,
-                                 key="opp_stage", label_visibility="collapsed")
-    with fc3:
-        conf_opts = ["All confidence"] + CONFIDENCE_LEVELS
-        sel_conf  = st.selectbox("Confidence", conf_opts,
-                                 key="opp_conf", label_visibility="collapsed")
-    with fc4:
-        sel_status = st.selectbox("Status", ["All statuses"] + OPP_STATUSES,
-                                  key="opp_status", label_visibility="collapsed")
+        view = opps.copy()
+        if q:
+            mask = (
+                view.get("Company Name",     pd.Series(dtype=str)).fillna("").str.contains(q, case=False, na=False)
+                | view.get("Opportunity Name", pd.Series(dtype=str)).fillna("").str.contains(q, case=False, na=False)
+            )
+            view = view[mask]
+        if sel_stage  != "All stages":     view = view[view.get("Opportunity Stage",  pd.Series()) == sel_stage]
+        if sel_conf   != "All confidence": view = view[view.get("Confidence Level",   pd.Series()) == sel_conf]
+        if sel_status != "All statuses":   view = view[view.get("Opportunity Status", pd.Series()) == sel_status]
 
-    view = opps.copy()
-    if q:
-        mask = (
-            view.get("Company Name",     pd.Series(dtype=str)).fillna("").str.contains(q, case=False, na=False)
-            | view.get("Opportunity Name", pd.Series(dtype=str)).fillna("").str.contains(q, case=False, na=False)
-        )
-        view = view[mask]
-    if sel_stage  != "All stages":     view = view[view.get("Opportunity Stage",  pd.Series()) == sel_stage]
-    if sel_conf   != "All confidence": view = view[view.get("Confidence Level",   pd.Series()) == sel_conf]
-    if sel_status != "All statuses":   view = view[view.get("Opportunity Status", pd.Series()) == sel_status]
+        if not view.empty:
+            # ── KPI strip ─────────────────────────────────────────────────────
+            total_val  = _sum_col(view, "Est. Value (SAR)")
+            committed  = int((view.get("Opportunity Stage",  pd.Series()) == "Committed").sum()) if "Opportunity Stage" in view.columns else 0
+            high_conf  = int((view.get("Confidence Level",   pd.Series()) == "High").sum())      if "Confidence Level"  in view.columns else 0
 
-    if view.empty:
-        st.warning("No opportunities match the current filters.")
-        return
+            k1, k2, k3, k4 = st.columns(4)
+            _kpi(k1, str(len(view)),       "Total Opportunities", _GREEN)
+            _kpi(k2, _fmt_sar(total_val),  "Pipeline Value",      _GOLD)
+            _kpi(k3, str(committed),       "Committed",           "#059669")
+            _kpi(k4, str(high_conf),       "High Confidence",     _BLUE)
 
-    # ── KPI strip ─────────────────────────────────────────────────────────────
-    total_val  = _sum_col(view, "Est. Value (SAR)")
-    active_cnt = int((view.get("Opportunity Status", pd.Series()) == "Active").sum()) if "Opportunity Status" in view.columns else len(view)
-    committed  = int((view.get("Opportunity Stage",  pd.Series()) == "Committed").sum()) if "Opportunity Stage" in view.columns else 0
-    high_conf  = int((view.get("Confidence Level",   pd.Series()) == "High").sum())      if "Confidence Level"  in view.columns else 0
+            st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    k1, k2, k3, k4 = st.columns(4)
-    _kpi(k1, str(len(view)),        "Total Opportunities", _GREEN)
-    _kpi(k2, _fmt_sar(total_val),   "Pipeline Value",      _GOLD)
-    _kpi(k3, str(committed),        "Committed",           "#059669")
-    _kpi(k4, str(high_conf),        "High Confidence",     _BLUE)
+            _render_stage_bar(view)
+            st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+            _render_board(view)
+        else:
+            st.warning("No opportunities match the current filters.")
 
-    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-
-    _render_stage_bar(view)
-    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
-    _render_board(view)
+    # ── Deal Progress (merged section) ─────────────────────────────────────────
+    st.markdown("---")
+    _render_deal_section(dfs)
 
 
 # ── Minister board ────────────────────────────────────────────────────────────
@@ -855,6 +858,222 @@ def _add_form(dfs: dict, investors: pd.DataFrame, lang: str):
             )
             save_session(dfs)
             st.success(f"Opportunity {new_id} added for {company}")
+            st.rerun()
+
+
+# ── Deal Progress section ─────────────────────────────────────────────────────
+
+_SEV_COLORS = {
+    "Critical": (_RED,      "#fff"),
+    "High":     (_AMBER,    "#fff"),
+    "Medium":   ("#6B7280", "#fff"),
+    "Low":      (_GREEN,    "#fff"),
+}
+_DEAL_STAT_COLOR = {
+    "Active":        _GREEN,
+    "On Hold":       _AMBER,
+    "Blocked":       _RED,
+    "Closed — Won":  "#059669",
+    "Closed — Lost": "#6B7280",
+}
+
+
+def _render_deal_section(dfs: dict):
+    deals     = dfs.get("Deal Progress",   pd.DataFrame())
+    investors = dfs.get("Investor Master", pd.DataFrame())
+
+    n_deals    = len(deals)
+    n_blocked  = int((deals["Deal Status"]        == "Blocked").sum())  if not deals.empty and "Deal Status"        in deals.columns else 0
+    n_critical = int((deals["Challenge Severity"] == "Critical").sum()) if not deals.empty and "Challenge Severity" in deals.columns else 0
+    n_active   = int(deals["Deal Status"].isin(["Active", "On Hold"]).sum()) if not deals.empty and "Deal Status" in deals.columns else 0
+    total_val  = _sum_col(deals, "Est. Value (SAR)")
+
+    header_bg = "linear-gradient(135deg,#1a0505 0%,#7f1d1d 100%)" if n_blocked else f"linear-gradient(135deg,#071a0f 0%,{_GREEN} 80%)"
+    st.markdown(
+        f'<div style="background:{header_bg};border-radius:14px;padding:20px 28px;margin-bottom:14px;">'
+        f'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">'
+        f'<div>'
+        f'<div style="color:{_GOLD};font-size:10px;font-weight:700;letter-spacing:1px;'
+        f'text-transform:uppercase;margin-bottom:6px;">Deal Progress Tracker</div>'
+        f'<div style="color:#fff;font-size:26px;font-weight:700;line-height:1.1;">'
+        f'{n_deals} Deal{"s" if n_deals != 1 else ""}</div>'
+        f'<div style="color:rgba(255,255,255,0.65);font-size:13px;margin-top:5px;">'
+        f'{n_blocked} blocked &nbsp;·&nbsp; {n_critical} critical &nbsp;·&nbsp; {n_active} active'
+        f'</div>'
+        f'</div>'
+        f'<div style="text-align:right;">'
+        f'<div style="color:rgba(255,255,255,0.55);font-size:11px;margin-bottom:4px;">Total Deal Value</div>'
+        f'<div style="color:{_GOLD};font-size:30px;font-weight:700;line-height:1.1;">'
+        f'{_fmt_sar(total_val) if total_val else "—"}'
+        f'</div></div></div></div>',
+        unsafe_allow_html=True,
+    )
+
+    k1, k2, k3, k4 = st.columns(4)
+    _kpi(k1, str(n_deals),    "Total Deals",      "#1F2937")
+    _kpi(k2, str(n_active),   "Active",            _GREEN)
+    _kpi(k3, str(n_blocked),  "Blocked",           _RED    if n_blocked  else "#6B7280")
+    _kpi(k4, str(n_critical), "Critical Severity", _RED    if n_critical else "#6B7280")
+
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    if not deals.empty:
+        companies = deals["Company Name"].dropna().unique().tolist() if "Company Name" in deals.columns else []
+        if companies:
+            cols = st.columns(2)
+            for i, co in enumerate(companies):
+                co_deals = deals[deals["Company Name"] == co]
+                with cols[i % 2]:
+                    _render_deal_company_card(co, co_deals)
+        else:
+            _render_deal_list(deals)
+    else:
+        st.markdown(
+            f'<div style="background:#fafafa;border:2px dashed #e5e7eb;border-radius:10px;'
+            f'padding:30px;text-align:center;margin-bottom:12px;">'
+            f'<div style="font-size:32px;margin-bottom:8px;">📋</div>'
+            f'<div style="color:#6B7280;font-size:13px;">'
+            f'No deals tracked yet. Use the form below to add one.</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    with st.expander("+ Add Deal", expanded=False):
+        _add_deal_form(dfs, investors)
+
+
+def _render_deal_company_card(company: str, co_deals: pd.DataFrame):
+    n          = len(co_deals)
+    n_blocked  = int((co_deals.get("Deal Status", pd.Series()) == "Blocked").sum()) if "Deal Status" in co_deals.columns else 0
+    total_val  = _sum_col(co_deals, "Est. Value (SAR)")
+
+    rows_html = ""
+    for _, row in co_deals.iterrows():
+        dname  = str(row.get("Deal Name",          "—"))
+        dstg   = str(row.get("Deal Stage",         "—"))
+        dstat  = str(row.get("Deal Status",        "—"))
+        dsev   = str(row.get("Challenge Severity", ""))
+        sev_bg, sev_fg = _SEV_COLORS.get(dsev, ("#F3F4F6", "#6B7280"))
+        stat_c = _DEAL_STAT_COLOR.get(dstat, "#6B7280")
+        val    = row.get("Est. Value (SAR)")
+        val_str = _fmt_sar(float(val)) if val and str(val) not in ("nan", "None", "") else ""
+
+        rows_html += (
+            f'<div style="display:flex;align-items:center;gap:8px;'
+            f'padding:6px 8px;border-radius:6px;margin-bottom:4px;'
+            f'background:#f9fafb;border-left:3px solid {stat_c};">'
+            f'<div style="flex:1;min-width:0;">'
+            f'<div style="font-size:11px;font-weight:600;color:#111827;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{dname}</div>'
+            f'<div style="font-size:9px;color:{stat_c};font-weight:600;">{dstg} · {dstat}</div>'
+            f'</div>'
+            f'<div style="display:flex;gap:4px;align-items:center;flex-shrink:0;">'
+            f'{"<span style=font-size:10px;font-weight:700;color:" + _GOLD + ";>" + val_str + "</span>" if val_str else ""}'
+            f'{"<span style=background:" + sev_bg + ";color:" + sev_fg + ";padding:1px 5px;border-radius:3px;font-size:8px;font-weight:600;>" + dsev + "</span>" if dsev and dsev not in ("nan","—","") else ""}'
+            f'</div></div>'
+        )
+
+    border_col = _RED if n_blocked else "#E5E7EB"
+    st.markdown(
+        f'<div style="border:1px solid {border_col};border-radius:10px;padding:14px;'
+        f'margin-bottom:10px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05);">'
+        f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">'
+        f'<div>'
+        f'<div style="font-size:14px;font-weight:700;color:{_GREEN};">{company}</div>'
+        f'<div style="font-size:10px;color:#9CA3AF;margin-top:2px;">'
+        f'{n} deal{"s" if n!=1 else ""}'
+        f'{" · " + str(n_blocked) + " blocked" if n_blocked else ""}'
+        f'</div></div>'
+        f'{"<div style=font-size:13px;font-weight:700;color:" + _GOLD + ";>" + _fmt_sar(total_val) + "</div>" if total_val else ""}'
+        f'</div>'
+        f'{rows_html}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_deal_list(deals: pd.DataFrame):
+    for _, row in deals.iterrows():
+        dname  = str(row.get("Deal Name",          "—"))
+        dstg   = str(row.get("Deal Stage",         "—"))
+        dstat  = str(row.get("Deal Status",        "Active"))
+        dsev   = str(row.get("Challenge Severity", ""))
+        co     = str(row.get("Company Name",       ""))
+        val    = row.get("Est. Value (SAR)")
+        sev_bg, sev_fg = _SEV_COLORS.get(dsev, ("#F3F4F6", "#6B7280"))
+        stat_c = _DEAL_STAT_COLOR.get(dstat, "#6B7280")
+        val_str = _fmt_sar(float(val)) if val and str(val) not in ("nan", "None", "") else ""
+
+        st.markdown(
+            f'<div style="border:1px solid #e5e7eb;border-left:3px solid {stat_c};'
+            f'border-radius:8px;padding:10px;margin-bottom:6px;background:#fff;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+            f'<div>'
+            f'<div style="font-size:12px;font-weight:700;color:#111827;">{dname}</div>'
+            f'<div style="font-size:10px;color:{stat_c};margin-top:2px;">'
+            f'{co}  ·  {dstg}  ·  {dstat}</div>'
+            f'</div>'
+            f'<div style="display:flex;gap:6px;align-items:center;">'
+            f'{"<span style=font-size:11px;font-weight:700;color:" + _GOLD + ";>" + val_str + "</span>" if val_str else ""}'
+            f'{"<span style=background:" + sev_bg + ";color:" + sev_fg + ";padding:2px 7px;border-radius:4px;font-size:9px;font-weight:600;>" + dsev + "</span>" if dsev and dsev not in ("nan","—","") else ""}'
+            f'</div></div></div>',
+            unsafe_allow_html=True,
+        )
+
+
+def _add_deal_form(dfs: dict, investors: pd.DataFrame):
+    company_options = [""] + (
+        sorted(investors["Company Name"].dropna().unique().tolist())
+        if not investors.empty and "Company Name" in investors.columns else []
+    )
+    with st.form("add_deal_form", clear_on_submit=True):
+        c1, c2 = st.columns(2)
+        company   = c1.selectbox("Company",    company_options, key="deal_co")
+        deal_name = c2.text_input("Deal Name")
+        c3, c4 = st.columns(2)
+        stage  = c3.selectbox("Deal Stage",          DEAL_STAGES)
+        status = c4.selectbox("Deal Status",         DEAL_STATUSES)
+        c5, c6 = st.columns(2)
+        severity  = c5.selectbox("Challenge Severity", CHALLENGE_SEVERITIES)
+        esc_req   = c6.selectbox("Escalation Required", ["No", "Yes"])
+        c7, c8 = st.columns(2)
+        est_val   = c7.number_input("Est. Value (SAR)", min_value=0.0, step=1_000_000.0)
+        target_d  = c8.date_input("Target Resolution Date", value=None)
+        c9, c10 = st.columns(2)
+        challenge_class = c9.selectbox("Challenge Classification", [""] + CHALLENGE_CLASSIFICATIONS)
+        esc_level       = c10.selectbox("Escalation Level",         ESCALATION_LEVELS)
+        challenge_desc = st.text_area("Challenge Description")
+        solution       = st.text_area("Proposed Solution")
+
+        if st.form_submit_button("Add Deal", use_container_width=True):
+            if not company or not deal_name:
+                st.warning("Company and deal name are required.")
+                return
+            deals  = dfs.get("Deal Progress", pd.DataFrame())
+            inv_id = _get_investor_id(investors, company)
+            new_id = _next_id(deals, "Deal ID", "DL")
+            new_row = {
+                "Deal ID":                   new_id,
+                "Investor ID":               inv_id,
+                "Company Name":              company,
+                "Deal Name":                 deal_name,
+                "Deal Stage":                stage,
+                "Deal Status":               status,
+                "Challenge Severity":        severity,
+                "Challenge Classification":  challenge_class,
+                "Challenge Description":     challenge_desc,
+                "Proposed Solution":         solution,
+                "Escalation Required":       esc_req,
+                "Escalation Level":          esc_level,
+                "Est. Value (SAR)":          est_val if est_val > 0 else None,
+                "Target Resolution Date":    target_d,
+                "Last Updated":              date.today(),
+            }
+            dfs["Deal Progress"] = pd.concat(
+                [deals, pd.DataFrame([new_row])], ignore_index=True
+            )
+            save_session(dfs)
+            st.success(f"Deal {new_id} added for {company}")
             st.rerun()
 
 
