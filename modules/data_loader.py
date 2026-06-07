@@ -169,31 +169,39 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
         df_raw = raw.parse(sheet_name, header=None)
         company = _extract_company_from_sheet_name(sheet_name)
 
-        # Col L (index 11) holds the label "AM"/"RM"; actual name is in col M (index 12)
-        am_name  = _safe_cell(df_raw, 13, 12)
-        rm_name  = _safe_cell(df_raw, 14, 12)
-        last_upd = _safe_cell(df_raw, 12, 16)
-        next_mtg = _safe_cell(df_raw, 15, 16)
+        # MISA team — col K=label, col L=value; consistent across all sheet widths
+        manager  = _safe_cell(df_raw, 13, 11)   # R14L = Outreach Manager
+        am_name  = _safe_cell(df_raw, 14, 11)   # R15L = Account Manager
+        rm_name  = _safe_cell(df_raw, 15, 11)   # R16L = Relationship Manager
+        # Investor-side fields: col P or Q depending on sheet width — scan by label
+        rep_name = _find_header_value(df_raw, 11, 18, ["rep"])
+        rep_pos  = _find_header_value(df_raw, 11, 18, ["postion", "position"])
+        website  = _find_header_value(df_raw, 11, 18, ["website"])
+        last_upd = _find_header_value(df_raw, 11, 18, ["last updated"])
+        next_mtg = _find_header_value(df_raw, 11, 18, ["next meeting"])
 
         inv_id = f"INV-{investor_counter:03d}"
         investor_rows.append({
-            "Investor ID":              inv_id,
-            "Company Name":             company,
-            "Country":                  "",
-            "Sector":                   "",
-            "Investor Tier":            "Tier 2 — High Potential",
-            "Relationship Manager":     rm_name or "",
-            "Account Manager":          am_name or "TBD",
-            "Outreach Manager":         "",
-            "Journey Stage":            "Opportunity Matching",
-            "Relationship Status":      "Active",
-            "Est. Investment Value (SAR)": None,
-            "Actual Commitment (SAR)":   None,
-            "Last Meeting Date":        None,
-            "Next Meeting Date":        _to_date(next_mtg),
-            "Last Updated":             _to_date(last_upd),
-            "Escalation Flag":          "None",
-            "Notes":                    "",
+            "Investor ID":                inv_id,
+            "Company Name":               company,
+            "Country":                    "",
+            "Sector":                     "",
+            "Investor Tier":              "Tier 2 — High Potential",
+            "Relationship Manager":       rm_name or "",
+            "Account Manager":            am_name or "TBD",
+            "Outreach Manager":           manager or "",
+            "Journey Stage":              "Opportunity Matching",
+            "Relationship Status":        "Active",
+            "Est. Investment Value (SAR)":None,
+            "Actual Commitment (SAR)":    None,
+            "Last Meeting Date":          None,
+            "Next Meeting Date":          _to_date(next_mtg),
+            "Last Updated":               _to_date(last_upd),
+            "Escalation Flag":            "None",
+            "Notes":                      "",
+            "Website":                    _sstr(website),
+            "Company Rep":                _sstr(rep_name),
+            "Rep Position":               _sstr(rep_pos),
         })
 
         # ── Extract opportunities from header block (rows 14-19, col H) ──────
@@ -428,3 +436,26 @@ def _empty_tasks_df() -> pd.DataFrame:
     cols = [c for spec in [SCHEMA["RM Tasks"]]
             for c in spec["required"] + spec["optional"]]
     return pd.DataFrame(columns=cols)
+
+
+def _find_header_value(df: pd.DataFrame, start_row: int, end_row: int, keywords: list):
+    """Scan rows start_row..end_row for a cell matching any keyword; return the adjacent right cell."""
+    kw_lower = [k.lower() for k in keywords]
+    for row_i in range(start_row, min(end_row, len(df))):
+        for col_i in range(df.shape[1] - 1):
+            val = df.iloc[row_i, col_i]
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                continue
+            cell_str = str(val).replace("\xa0", " ").lower().strip().lstrip("¦¹ ")
+            if any(kw in cell_str for kw in kw_lower):
+                right = df.iloc[row_i, col_i + 1]
+                if right is not None and not (isinstance(right, float) and pd.isna(right)):
+                    return right
+    return None
+
+
+def _sstr(val) -> str:
+    """Convert any cell value to clean string; empty string for None/NaN."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return ""
+    return str(val).replace("\xa0", " ").strip()

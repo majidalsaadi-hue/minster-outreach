@@ -45,23 +45,41 @@ def _guess_domain(company: str) -> str:
     return name.strip().replace(" ", "").replace(".", "").replace("-", "") + ".com"
 
 
+def _domain_from_website(website: str) -> str:
+    """Extract bare domain from a website URL entered in the Excel tracker."""
+    url = website.strip().lower()
+    if not url or "." not in url:
+        return ""
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    try:
+        parsed = urllib.parse.urlparse(url)
+        domain = (parsed.netloc or url).replace("www.", "")
+        return domain.split("/")[0]
+    except Exception:
+        return url.replace("www.", "").split("/")[0]
+
+
 def _logo_url(company: str) -> str:
     return f"https://logo.clearbit.com/{_guess_domain(company)}"
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def _logo_html(company: str, size: int = 44) -> str:
+def _logo_html(company: str, size: int = 44, website: str = "") -> str:
     """
     Return an <img> tag with base64-embedded logo, or a coloured initials
-    circle if the logo can't be fetched. No JavaScript needed.
+    circle if the logo can't be fetched. Uses the website URL when provided
+    for a more accurate domain lookup.
     """
     import base64
     color    = _avatar_color(company)
     initials = _initials(company)
     radius   = "8px" if size <= 44 else "10px"
 
-    # Try to fetch via Google favicon service (more reliable than Clearbit)
-    domain = _guess_domain(company)
+    # Prefer domain from the actual website URL; fall back to guessing
+    domain = _domain_from_website(website) if website else ""
+    if not domain:
+        domain = _guess_domain(company)
     for url in [
         f"https://www.google.com/s2/favicons?domain={domain}&sz=64",
         f"https://logo.clearbit.com/{domain}",
@@ -335,6 +353,9 @@ def _render_investor_card(row):
     contact_title = str(row.get("Key Contact Title", "") or "")
     size_global   = str(row.get("Company Size (Global)", "") or "")
     size_ksa      = str(row.get("Company Size (KSA)",    "") or "")
+    website   = str(row.get("Website",      "") or "").strip()
+    rep_name  = str(row.get("Company Rep",  "") or "").strip()
+    rep_pos   = str(row.get("Rep Position", "") or "").strip()
 
     color    = _avatar_color(company)
     initials = _initials(company)
@@ -408,6 +429,34 @@ def _render_investor_card(row):
     if parts_rm:
         rm_am = f'<div style="font-size:10px;color:#9CA3AF;margin-top:4px;">{" / ".join(parts_rm)}</div>'
 
+    # Company Rep block
+    rep_html = ""
+    if rep_name and rep_name not in ("—", "nan"):
+        rep_html = (
+            f'<div style="display:flex;align-items:center;gap:6px;margin:6px 0 2px 0;'
+            f'padding:5px 8px;background:#f8fafc;border-radius:6px;border:1px solid #f1f5f9;">'
+            f'<div style="width:22px;height:22px;border-radius:50%;background:#e8f5ee;'
+            f'display:flex;align-items:center;justify-content:center;'
+            f'font-size:8px;font-weight:700;color:{_GREEN};flex-shrink:0;">'
+            f'{_initials(rep_name)}</div>'
+            f'<div><div style="font-size:10px;font-weight:600;color:#1F2937;">{rep_name}</div>'
+            f'{"<div style=font-size:9px;color:#6B7280;>" + rep_pos + "</div>" if rep_pos else ""}'
+            f'</div></div>'
+        )
+
+    # Website link
+    website_html = ""
+    _ws = website.lower()
+    if website and "." in website and _ws not in ("vvvvv", "n/a", "—", "nan"):
+        href = website if website.startswith("http") else f"https://{website}"
+        disp = website.replace("https://", "").replace("http://", "").rstrip("/")[:38]
+        website_html = (
+            f'<div style="margin-top:3px;">'
+            f'<a href="{href}" target="_blank" '
+            f'style="color:#1D4ED8;font-size:9px;text-decoration:none;">'
+            f'&#x1F517; {disp}</a></div>'
+        )
+
     news_items = _fetch_news(company)
     news_html  = ""
     if news_items:
@@ -438,7 +487,7 @@ def _render_investor_card(row):
         # Logo + name row
         f'<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;">'
         f'<div style="flex-shrink:0;">'
-        f'{_logo_html(company, 44)}'
+        f'{_logo_html(company, 44, website)}'
         f'</div>'
         f'<div style="flex:1;min-width:0;">'
         f'<div style="font-size:14px;font-weight:700;color:{_GREEN};line-height:1.2;">'
@@ -473,6 +522,10 @@ def _render_investor_card(row):
 
         # AM/RM
         f'{rm_am}'
+
+        # Company Rep + website
+        f'{rep_html}'
+        f'{website_html}'
 
         # News
         f'{news_html}'
@@ -566,6 +619,9 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
     ctitle   = str(row.get("Key Contact Title", "") or "")
     size_global = str(row.get("Company Size (Global)", "") or "")
     size_ksa    = str(row.get("Company Size (KSA)",    "") or "")
+    website  = str(row.get("Website",      "") or "").strip()
+    rep_name = str(row.get("Company Rep",  "") or "").strip()
+    rep_pos  = str(row.get("Rep Position", "") or "").strip()
 
     # Wikidata enrichment for profile header
     enriched = _fetch_company_data(company)
@@ -605,17 +661,39 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
             + '</div>'
         )
 
+    # Rep block for profile header
+    _ws_prof = website.lower()
+    prof_website_html = ""
+    if website and "." in website and _ws_prof not in ("vvvvv", "n/a", "—", "nan"):
+        href = website if website.startswith("http") else f"https://{website}"
+        disp = website.replace("https://", "").replace("http://", "").rstrip("/")[:40]
+        prof_website_html = (
+            f'<span style="color:rgba(255,255,255,0.6);font-size:11px;margin-left:8px;">'
+            f'<a href="{href}" target="_blank" style="color:{_GOLD};text-decoration:none;">'
+            f'&#x1F517; {disp}</a></span>'
+        )
+    prof_rep_html = ""
+    if rep_name and rep_name not in ("—", "nan"):
+        prof_rep_html = (
+            f'<div style="margin-top:6px;font-size:11px;color:rgba(255,255,255,0.75);">'
+            f'&#x1F91D; {rep_name}'
+            f'{" · " + rep_pos if rep_pos else ""}'
+            f'</div>'
+        )
+
     st.markdown(
         f'<div style="background:linear-gradient(135deg,#0f2d1e,{_GREEN});'
         f'border-radius:12px;padding:20px 24px;margin:12px 0;">'
         f'<div style="display:flex;align-items:center;gap:14px;">'
-        f'{_logo_html(company, 56)}'
+        f'{_logo_html(company, 56, website)}'
         f'<div style="flex:1;">'
-        f'<div style="color:#fff;font-size:22px;font-weight:700;">{company}</div>'
+        f'<div style="color:#fff;font-size:22px;font-weight:700;">{company}'
+        f'{prof_website_html}</div>'
         f'<div style="color:rgba(255,255,255,0.7);font-size:13px;margin-top:3px;">'
         f'{sector} &nbsp;·&nbsp; {country} &nbsp;·&nbsp; RM: {rm} &nbsp;·&nbsp; AM: {am}'
         f'</div>'
         f'{contact_block}'
+        f'{prof_rep_html}'
         f'{size_block}'
         f'</div>'
         f'<div style="text-align:right;">'

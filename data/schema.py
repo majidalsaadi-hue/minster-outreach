@@ -10,6 +10,7 @@ SCHEMA = {
         ],
         "optional": [
             "Account Manager", "Outreach Manager",
+            "Website", "Company Rep", "Rep Position",
             "Key Contact Name", "Key Contact Title",
             "Company Size (Global)", "Company Size (KSA)",
             "Investor Tier", "Relationship Status",

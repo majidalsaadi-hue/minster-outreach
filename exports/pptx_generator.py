@@ -655,18 +655,34 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         if not done.empty:
             major_outcome = "✓ " + str(done.iloc[-1].get("Action Description", "") or "")[:120]
 
-    _add_rect(slide, Inches(6.58), BRIEF_Y + Inches(0.08), Inches(0.02),
+    # Dividers — split brief strip into 3 panels
+    _add_rect(slide, Inches(6.40), BRIEF_Y + Inches(0.08), Inches(0.02),
+              BRIEF_H - Inches(0.16), fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
+    _add_rect(slide, Inches(10.10), BRIEF_Y + Inches(0.08), Inches(0.02),
               BRIEF_H - Inches(0.16), fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
 
+    # Panel 1: Brief
     _add_text_box(slide, "Brief", Inches(0.3), BRIEF_Y + Inches(0.06),
                   Inches(0.62), Inches(0.2), font_size=7, bold=True, color=_rgb(MISA_GREEN))
     _add_text_box(slide, brief_text, Inches(0.95), BRIEF_Y + Inches(0.05),
-                  Inches(5.52), Inches(0.52), font_size=7.5, color=DARK)
+                  Inches(5.35), Inches(0.52), font_size=7.5, color=DARK)
 
-    _add_text_box(slide, "Major Outcome", Inches(6.68), BRIEF_Y + Inches(0.06),
-                  Inches(1.35), Inches(0.2), font_size=7, bold=True, color=_rgb(MISA_GOLD))
-    _add_text_box(slide, major_outcome, Inches(8.1), BRIEF_Y + Inches(0.05),
-                  Inches(5.05), Inches(0.52), font_size=7.5, color=DARK)
+    # Panel 2: Major Outcome
+    _add_text_box(slide, "Major Outcome", Inches(6.50), BRIEF_Y + Inches(0.06),
+                  Inches(1.50), Inches(0.2), font_size=7, bold=True, color=_rgb(MISA_GOLD))
+    _add_text_box(slide, major_outcome, Inches(8.08), BRIEF_Y + Inches(0.05),
+                  Inches(1.90), Inches(0.52), font_size=7.5, color=DARK)
+
+    # Panel 3: Company Rep
+    rep_name_ppt = _mv(inv_row, "Company Rep") if not inv_row.empty else "—"
+    rep_pos_ppt  = _mv(inv_row, "Rep Position") if not inv_row.empty else ""
+    _add_text_box(slide, "Company Rep", Inches(10.20), BRIEF_Y + Inches(0.06),
+                  Inches(1.30), Inches(0.2), font_size=7, bold=True, color=_rgb("#1D4ED8"))
+    _add_text_box(slide, rep_name_ppt, Inches(11.58), BRIEF_Y + Inches(0.05),
+                  Inches(1.60), Inches(0.28), font_size=8, bold=True, color=DARK)
+    if rep_pos_ppt and rep_pos_ppt != "—":
+        _add_text_box(slide, rep_pos_ppt[:28], Inches(11.58), BRIEF_Y + Inches(0.35),
+                      Inches(1.60), Inches(0.20), font_size=7, color=MGRAY)
 
     # ── Vertical divider ────────────────────────────────────────────────────────
     DIVX = Inches(9.3)
