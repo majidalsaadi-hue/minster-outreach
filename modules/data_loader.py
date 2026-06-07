@@ -275,23 +275,6 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
                 "Updated By":         "",
             })
 
-            # Action items with Opportunity engagement type → also add to pipeline
-            if str(eng_type).strip().lower() == "opportunity" and str(desc).strip():
-                existing_names = {o["Opportunity Name"] for o in opp_rows}
-                if desc not in existing_names:
-                    opp_rows.append({
-                        "Opportunity ID":     f"OPP-{opp_id_counter:03d}",
-                        "Investor ID":        inv_id,
-                        "Company Name":       company,
-                        "Opportunity Name":   str(desc).strip(),
-                        "Sector":             sector,
-                        "Opportunity Stage":  "Exploration",
-                        "Opportunity Status": "Active",
-                        "Opportunity Type":   "Opportunity",
-                        "Opportunity Source": "Action Item Import",
-                        "Last Updated":       date.today(),
-                    })
-                    opp_id_counter += 1
 
         investor_counter += 1
 

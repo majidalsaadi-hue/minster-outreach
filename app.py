@@ -162,6 +162,20 @@ def render_sidebar():
         if uploaded is not None:
             _handle_upload(uploaded)
 
+        # Clear saved data button
+        if st.session_state["dfs"] is not None:
+            if st.button("🗑 Clear & Re-upload", use_container_width=True, key="clear_btn",
+                         help="Delete saved session and reset — then upload your Excel again"):
+                from modules.persistence import SAVE_PATH
+                try:
+                    if SAVE_PATH.exists():
+                        SAVE_PATH.unlink()
+                except Exception:
+                    pass
+                st.session_state["dfs"]     = None
+                st.session_state["summary"] = None
+                st.rerun()
+
         # Data status
         if st.session_state["dfs"] is not None:
             summary = st.session_state["summary"] or {}
