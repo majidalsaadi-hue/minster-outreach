@@ -1024,19 +1024,42 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
                   Inches(10.5), Inches(0.25), Inches(2.5), Inches(0.5),
                   font_size=11, color=GOLD, align=PP_ALIGN.RIGHT)
 
-    # ── KPI strip (4 cards across full width)
-    total_val   = _sum_col(opps, "Est. Value (SAR)")
-    n_opps      = len(opps)
-    n_active    = int((opps["Opportunity Status"] == "Active").sum())    if not opps.empty and "Opportunity Status" in opps.columns else 0
-    n_committed = int((opps["Opportunity Stage"]  == "Committed").sum()) if not opps.empty and "Opportunity Stage"  in opps.columns else 0
+    # ── Resolve what to show as cards ─────────────────────────────────────────
+    # If no formal opportunities exist, use Type="Opportunity" action items
+    use_act_cards = opps.empty and not acts.empty
+    if use_act_cards:
+        opp_acts = pd.DataFrame()
+        if "Type of Engagement" in acts.columns:
+            opp_acts = acts[acts["Type of Engagement"].fillna("").str.lower().str.contains("opport", regex=False)]
+        card_source = opp_acts if not opp_acts.empty else acts
+        n_cards  = len(card_source)
+        n_active = int(card_source["Status"].isin(["Inprogress","In Progress","Not Started"]).sum()) if "Status" in card_source.columns else 0
+        n_done   = int(card_source["Status"].str.lower().str.contains("complet", na=False).sum())   if "Status" in card_source.columns else 0
+        total_val = 0.0
+    else:
+        card_source = opps
+        n_cards     = len(opps)
+        n_active    = int((opps["Opportunity Status"] == "Active").sum())    if not opps.empty and "Opportunity Status" in opps.columns else 0
+        n_done      = int((opps["Opportunity Stage"]  == "Committed").sum()) if not opps.empty and "Opportunity Stage"  in opps.columns else 0
+        total_val   = _sum_col(opps, "Est. Value (SAR)")
 
+    # ── KPI strip (4 cards across full width)
     kw = Inches(3.13)
-    for i, (val, lbl, col) in enumerate([
-        (str(n_opps),         "Total Opportunities", MISA_GREEN),
-        (str(n_active),       "Active",              MISA_GREEN),
-        (str(n_committed),    "Committed",           MISA_GOLD),
-        (_fmt_sar(total_val), "Pipeline Value",      MISA_GREEN),
-    ]):
+    if use_act_cards:
+        kpi_data = [
+            (str(n_cards),  "Engagement Actions", MISA_GREEN),
+            (str(n_active), "Active / Pending",   MISA_GREEN),
+            (str(n_done),   "Completed",           MISA_GOLD),
+            ("—",           "Pipeline Value",      MISA_GREEN),
+        ]
+    else:
+        kpi_data = [
+            (str(n_cards),         "Total Opportunities", MISA_GREEN),
+            (str(n_active),        "Active",              MISA_GREEN),
+            (str(n_done),          "Committed",           MISA_GOLD),
+            (_fmt_sar(total_val),  "Pipeline Value",      MISA_GREEN),
+        ]
+    for i, (val, lbl, col) in enumerate(kpi_data):
         kx = Inches(0.3) + i * (kw + Inches(0.08))
         _add_rect(slide, kx, Inches(0.97), kw, Inches(0.56),
                   fill_color=_rgb(col), line_color=_rgb(col))
@@ -1045,7 +1068,7 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
         _add_text_box(slide, lbl, kx, Inches(1.29), kw, Inches(0.18),
                       font_size=7.5, color=WHITE, align=PP_ALIGN.CENTER)
 
-    # ── Minister-grade opportunity cards
+    # ── Card constants ─────────────────────────────────────────────────────────
     _STAGE_COL = {
         "Committed":   "#065F46", "Negotiation":         "#92400E",
         "Exploration": "#1D4ED8", "Active":              "#1B5C3F",
@@ -1058,25 +1081,117 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
         "Suspended":   "#F3F4F6", "Blocked":             "#FEE2E2",
         "On Track":    "#D1FAE5", "Opportunity Matching":"#DBEAFE",
     }
-    _STATUS_BG = {"Active":"#D1FAE5","Inactive":"#F3F4F6","On Hold":"#FEF3C7","Completed":"#D1FAE5"}
-    _STATUS_FG = {"Active":"#065F46","Inactive":"#374151","On Hold":"#92400E","Completed":"#065F46"}
-    _CONF_BG   = {"High":"#D1FAE5","Medium":"#FEF3C7","Low":"#FEE2E2"}
-    _CONF_FG   = {"High":"#065F46","Medium":"#92400E","Low":"#991B1B"}
+    _STATUS_BG = {"Active":"#D1FAE5","Inactive":"#F3F4F6","On Hold":"#FEF3C7","Completed":"#D1FAE5",
+                  "Inprogress":"#FEF3C7","In Progress":"#FEF3C7","Not Started":"#F3F4F6",
+                  "Blocked":"#FEE2E2","Cancelled":"#EEEEEE"}
+    _STATUS_FG = {"Active":"#065F46","Inactive":"#374151","On Hold":"#92400E","Completed":"#065F46",
+                  "Inprogress":"#92400E","In Progress":"#92400E","Not Started":"#374151",
+                  "Blocked":"#991B1B","Cancelled":"#6B7280"}
+    _PRI_COL   = {"High":"#991B1B","Very High":"#7F1D1D","Medium":"#1B5C3F","Low":"#6B7280"}
+    _PRI_LIGHT = {"High":"#FEE2E2","Very High":"#FEE2E2","Medium":"#D1FAE5","Low":"#F3F4F6"}
 
-    if opps.empty:
+    CARD_W  = Inches(6.28)
+    CARD_H  = Inches(1.65)
+    GAP_X   = Inches(0.13)
+    GAP_Y   = Inches(0.12)
+    COL_X   = [Inches(0.24), Inches(0.24) + CARD_W + GAP_X]
+    START_Y = Inches(1.73)
+
+    if card_source.empty:
         _add_text_box(slide,
-                      "No opportunities have been recorded for this investor.",
-                      Inches(0.3), Inches(2.3), Inches(12.73), Inches(0.5),
+                      "No opportunities or action items have been recorded for this investor.",
+                      Inches(0.3), Inches(2.5), Inches(12.73), Inches(0.5),
                       font_size=13, color=MGRAY, align=PP_ALIGN.CENTER)
-    else:
-        CARD_W  = Inches(6.28)
-        CARD_H  = Inches(1.65)
-        GAP_X   = Inches(0.13)
-        GAP_Y   = Inches(0.12)
-        COL_X   = [Inches(0.24), Inches(0.24) + CARD_W + GAP_X]
-        START_Y = Inches(1.73)
 
-        for idx, (_, opp) in enumerate(opps.head(6).iterrows()):
+    elif use_act_cards:
+        # ── Action items rendered as engagement cards ──────────────────────────
+        _ACT_DOT = {
+            "Completed":   MISA_GREEN, "Inprogress":  MISA_GOLD,
+            "In Progress": MISA_GOLD,  "Not Started": "#AAAAAA",
+            "Blocked":     "#C0392B",  "Cancelled":   "#CCCCCC",
+        }
+        for idx, (_, act) in enumerate(card_source.head(6).iterrows()):
+            row_i = idx // 2
+            col_i = idx % 2
+            cx = COL_X[col_i]
+            cy = START_Y + row_i * (CARD_H + GAP_Y)
+
+            act_desc = str(act.get("Action Description", "") or "").strip() or "Action Item"
+            act_rem  = str(act.get("Remarks",            "") or "").strip()
+            act_stat = str(act.get("Status",             "") or "").strip()
+            act_pri  = str(act.get("Priority",           "") or "").strip()
+            act_due  = act.get("Due Date", None)
+            act_own  = str(act.get("Assigned To",        "") or "").strip()
+
+            accent_hex = _PRI_COL.get(act_pri,   "#1B5C3F")
+            light_hex  = _PRI_LIGHT.get(act_pri, "#D1FAE5")
+
+            _add_rect(slide, cx, cy, CARD_W, CARD_H,
+                      fill_color=WHITE, line_color=_rgb("#D1D5DB"))
+            _add_rect(slide, cx, cy, Inches(0.09), CARD_H,
+                      fill_color=_rgb(accent_hex), line_color=_rgb(accent_hex))
+            _add_rect(slide, cx + Inches(0.09), cy, CARD_W - Inches(0.09), Inches(0.04),
+                      fill_color=_rgb(light_hex), line_color=_rgb(light_hex))
+
+            IX = cx + Inches(0.16)
+            IW = CARD_W - Inches(0.24)
+
+            # Title: action description
+            _add_text_box(slide, act_desc[:68],
+                          IX, cy + Inches(0.08), IW, Inches(0.26),
+                          font_size=10, bold=True, color=GREEN)
+
+            # Pills: status + priority
+            pill_y = cy + Inches(0.37)
+            pill_x = IX
+            for pill_txt, pbg, pfg in [
+                (act_stat, _STATUS_BG.get(act_stat, "#F3F4F6"), _STATUS_FG.get(act_stat, "#374151")),
+                (act_pri,  _PRI_LIGHT.get(act_pri,  "#F3F4F6"), _PRI_COL.get(act_pri,   "#374151")),
+            ]:
+                if pill_txt and pill_txt not in ("—", ""):
+                    pw = Inches(min(1.72, max(0.70, len(pill_txt) * 0.072)))
+                    _add_rect(slide, pill_x, pill_y, pw, Inches(0.21),
+                              fill_color=_rgb(pbg), line_color=_rgb(pbg))
+                    _add_text_box(slide, pill_txt, pill_x + Inches(0.04), pill_y + Inches(0.02),
+                                  pw - Inches(0.08), Inches(0.17),
+                                  font_size=7.5, bold=True, color=_rgb(pfg))
+                    pill_x += pw + Inches(0.06)
+
+            # Remark / update text (main body)
+            if act_rem and act_rem not in ("nan", "Key notes", ""):
+                _add_text_box(slide, act_rem[:120],
+                              IX, cy + Inches(0.62), IW, Inches(0.50),
+                              font_size=8, color=DARK)
+            else:
+                _add_text_box(slide, "No update recorded.",
+                              IX, cy + Inches(0.62), IW, Inches(0.22),
+                              font_size=8, color=MGRAY)
+
+            # Footer: owner + due date
+            foot_parts = []
+            if act_own and act_own not in ("nan",):
+                foot_parts.append(f"Owner: {act_own[:30]}")
+            if act_due is not None and not (isinstance(act_due, float) and pd.isna(act_due)):
+                try:
+                    foot_parts.append(f"Due: {pd.to_datetime(act_due).strftime('%d %b %Y')}")
+                except Exception:
+                    pass
+            if foot_parts:
+                _add_text_box(slide, "  |  ".join(foot_parts),
+                              IX, cy + CARD_H - Inches(0.20), IW, Inches(0.18),
+                              font_size=6.5, color=MGRAY)
+
+        if len(card_source) > 6:
+            _add_text_box(slide,
+                          f"Showing 6 of {len(card_source)} action items — remaining visible on slide 1",
+                          Inches(0.24), Inches(7.0), Inches(12.73), Inches(0.18),
+                          font_size=7, color=MGRAY, align=PP_ALIGN.CENTER)
+
+    else:
+        # ── Formal opportunity cards ───────────────────────────────────────────
+        _CONF_BG = {"High":"#D1FAE5","Medium":"#FEF3C7","Low":"#FEE2E2"}
+        _CONF_FG = {"High":"#065F46","Medium":"#92400E","Low":"#991B1B"}
+        for idx, (_, opp) in enumerate(card_source.head(6).iterrows()):
             row_i = idx // 2
             col_i = idx % 2
             cx    = COL_X[col_i]
