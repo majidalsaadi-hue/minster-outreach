@@ -88,26 +88,32 @@ def _translate_list(texts: list) -> list:
 
 def _init():
     defaults = {
-        "rb_parsed":           None,
-        "rb_actions":          _EMPTY_ACTIONS.copy(),
-        "rb_company":          "",
-        "rb_recipient":        "",
-        "rb_arm":              "",
-        "rb_exec_rm":          "",
-        "rb_date":             date.today().strftime("%d %B %Y"),
-        "rb_subject_ar":       "",
-        "rb_subject_en":       "",
-        "rb_location":         "المقر الرئيسي – وزارة الاستثمار",
-        "rb_chair":            "معالي الوزير",
+        "rb_parsed":            None,
+        "rb_actions":           _EMPTY_ACTIONS.copy(),
+        "rb_company":           "",
+        "rb_recipient":         "",
+        "rb_arm":               "",
+        "rb_exec_rm":           "",
+        "rb_date":              date.today().strftime("%d %B %Y"),
+        "rb_subject_ar":        "",
+        "rb_subject_en":        "",
+        "rb_location":          "المقر الرئيسي – وزارة الاستثمار",
+        "rb_chair":             "معالي الوزير",
         "rb_next_meeting_text": "",
-        "rb_attendees":        "",
-        "rb_disc_ar":          "",
-        "rb_output_lang":      "English",
-        "rb_excel_bytes":      None,
-        "rb_result":           None,
+        "rb_attendees":         "",
+        "rb_disc_ar":           "",
+        "rb_output_lang":       "English",
+        "rb_excel_bytes":       None,
+        "rb_result":            None,
         "rb_manual_opps":       "",
         "rb_detected_opps":     [],
         "rb_last_opp_company":  "",
+        # Excel-derived per-company data
+        "rb_excel_companies":   [],
+        "rb_excel_header_data": {},
+        "rb_last_co_fill":      "",
+        "rb_rep_position":      "",
+        "rb_rep_email":         "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -213,16 +219,24 @@ def render(dfs: dict, lang: str):
 
     if excel_file is not None:
         st.session_state["rb_excel_bytes"] = excel_file.read()
-        sheets = _get_excel_sheets(st.session_state["rb_excel_bytes"])
-        st.info(f"Excel loaded — {len(sheets)} sheet(s): {', '.join(sheets[:5])}")
-        # Auto-fill AM / RM from header block
-        _am, _rm = _read_am_rm_from_excel(st.session_state["rb_excel_bytes"])
-        if _am:
-            st.session_state["rb_arm"]     = _am
-            st.session_state["rb_arm_inp"] = _am
-        if _rm:
-            st.session_state["rb_exec_rm"]  = _rm
-            st.session_state["rb_exec_inp"] = _rm
+        # Parse ALL per-company header data in one pass
+        hdr_data = _read_all_header_data(st.session_state["rb_excel_bytes"])
+        st.session_state["rb_excel_header_data"] = hdr_data
+        xl_companies = list(hdr_data.keys())
+        st.session_state["rb_excel_companies"] = xl_companies
+        st.info(
+            f"Excel loaded — {len(xl_companies)} company sheet(s): "
+            f"{', '.join(xl_companies[:6])}"
+        )
+        # Auto-select + auto-fill first company if none yet selected
+        if xl_companies:
+            first_co = xl_companies[0]
+            if not st.session_state.get("rb_company"):
+                st.session_state["rb_company"] = first_co
+            cur_co = st.session_state["rb_company"]
+            # Fill fields for the currently-selected (or first) company
+            _fill_company_fields(hdr_data, cur_co)
+            st.session_state["rb_last_co_fill"] = cur_co
         # Detect potential opportunities from action items (keeps company per item)
         _det = _detect_opps_from_actions(st.session_state["rb_excel_bytes"])
         st.session_state["rb_detected_opps"] = _det
@@ -232,8 +246,12 @@ def render(dfs: dict, lang: str):
     with st.container(border=True):
         st.markdown('<p class="rb-section">Step 2 — Configure output</p>', unsafe_allow_html=True)
         investors    = dfs.get("Investor Master", pd.DataFrame())
-        company_list = sorted(investors["Company Name"].dropna().unique().tolist()) \
+        crm_companies = sorted(investors["Company Name"].dropna().unique().tolist()) \
             if not investors.empty and "Company Name" in investors.columns else []
+
+        # Excel companies take precedence; CRM companies fill the rest
+        xl_companies   = st.session_state.get("rb_excel_companies", [])
+        company_list   = xl_companies + [c for c in crm_companies if c not in xl_companies]
 
         r1c1, r1c2 = st.columns(2)
         with r1c1:
@@ -246,11 +264,22 @@ def render(dfs: dict, lang: str):
                                         placeholder="e.g. Barclays", key="rb_co_txt")
             st.session_state["rb_company"] = company
 
+            # Auto-fill AM / RM / Rep when company changes
+            hdr_data = st.session_state.get("rb_excel_header_data", {})
+            if company and company != st.session_state.get("rb_last_co_fill", "") and company in hdr_data:
+                _fill_company_fields(hdr_data, company)
+                st.session_state["rb_last_co_fill"] = company
+                st.rerun()
+
         with r1c2:
+            rep_pos   = st.session_state.get("rb_rep_position", "")
+            rep_email = st.session_state.get("rb_rep_email", "")
             st.session_state["rb_recipient"] = st.text_input(
-                "Email recipient name",
+                "Representative name",
                 value=st.session_state["rb_recipient"],
                 placeholder="e.g. Khalid Al-Dabbagh", key="rb_recip")
+            if rep_pos or rep_email:
+                st.caption(f"{rep_pos}{'  ·  ' + rep_email if rep_email else ''}")
 
         r2c1, r2c2 = st.columns(2)
         with r2c1:
@@ -1213,27 +1242,93 @@ def _get_excel_sheets(raw: bytes) -> list:
         return []
 
 
-def _read_am_rm_from_excel(raw_bytes: bytes) -> tuple[str, str]:
-    """Read AM and RM by finding their label cells (column-position-independent)."""
+def _read_all_header_data(raw_bytes: bytes) -> dict:
+    """
+    Parse every 'Action Items [Company]' sheet and extract the header block fields.
+    Returns: {company: {"am", "rm", "rep", "position", "email", "last_updated", "next_meeting"}}
+    The header block uses adjacent label→value pairs anywhere in rows 12-18.
+    """
     _skip = {"", "nan", "none", "n/a"}
+    result: dict = {}
     try:
         wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
         for ws in wb.worksheets:
-            am, rm = "", ""
-            for r in range(13, 20):
+            co = ws.title.strip()
+            for prefix in ("Action Items", "Actions", "Action Item"):
+                if co.lower().startswith(prefix.lower()):
+                    co = co[len(prefix):].strip()
+                    break
+            if not co:
+                continue
+            info: dict = {
+                "am": "", "rm": "", "rep": "", "position": "",
+                "email": "", "last_updated": "", "next_meeting": "",
+            }
+            for r in range(12, 19):
                 for c in range(1, 20):
-                    lbl = str(ws.cell(row=r, column=c).value or "").strip().lstrip("4¦¹ ").strip()
-                    val = str(ws.cell(row=r, column=c + 1).value or "").strip()
-                    if val.lower() in _skip:
+                    raw_lbl = str(ws.cell(row=r, column=c).value or "").strip()
+                    lbl     = raw_lbl.lstrip("4¦¹1234567890 ").strip()
+                    val_cell = ws.cell(row=r, column=c + 1).value
+                    val      = str(val_cell or "").strip()
+                    if not lbl or val.lower() in _skip:
                         continue
-                    if re.search(r"A[-.]M$", lbl, re.IGNORECASE):
-                        am = val
-                    elif lbl.upper() == "RM":
-                        rm = val
-            if am or rm:
-                return am, rm
+                    lu = lbl.upper()
+                    if re.search(r"^A[-.]?M$", lbl, re.IGNORECASE):
+                        info["am"] = val
+                    elif lu == "RM":
+                        info["rm"] = val
+                    elif lu == "REP":
+                        info["rep"] = val
+                    elif "POSIT" in lu:
+                        info["position"] = val
+                    elif lu == "EMAIL":
+                        info["email"] = val
+                    elif "LAST" in lu and ("UPDATE" in lu or "UPDAT" in lu):
+                        try:
+                            info["last_updated"] = (
+                                val_cell.strftime("%d %B %Y")
+                                if hasattr(val_cell, "strftime") else val[:10]
+                            )
+                        except Exception:
+                            info["last_updated"] = val[:10]
+                    elif "NEXT" in lu and "MEET" in lu:
+                        try:
+                            info["next_meeting"] = (
+                                val_cell.strftime("%d %B %Y")
+                                if hasattr(val_cell, "strftime") else val[:10]
+                            )
+                        except Exception:
+                            info["next_meeting"] = val[:10]
+            result[co] = info
     except Exception:
         pass
+    return result
+
+
+def _fill_company_fields(hdr_data: dict, company: str):
+    """Push parsed header fields for `company` into Streamlit session state."""
+    info = hdr_data.get(company, {})
+    if info.get("am"):
+        st.session_state["rb_arm"]     = info["am"]
+        st.session_state["rb_arm_inp"] = info["am"]
+    if info.get("rm"):
+        st.session_state["rb_exec_rm"]  = info["rm"]
+        st.session_state["rb_exec_inp"] = info["rm"]
+    if info.get("rep"):
+        st.session_state["rb_recipient"] = info["rep"]
+        st.session_state["rb_recip"]     = info["rep"]
+    if info.get("next_meeting"):
+        st.session_state["rb_next_meeting_text"] = info["next_meeting"]
+    st.session_state["rb_rep_position"] = info.get("position", "")
+    st.session_state["rb_rep_email"]    = info.get("email", "")
+
+
+def _read_am_rm_from_excel(raw_bytes: bytes) -> tuple[str, str]:
+    """Legacy helper — kept for backward compatibility."""
+    data = _read_all_header_data(raw_bytes)
+    for info in data.values():
+        if info.get("am") or info.get("rm"):
+            return info.get("am", ""), info.get("rm", "")
     return "", ""
 
 
