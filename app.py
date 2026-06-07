@@ -42,7 +42,7 @@ from modules.dashboard     import (
 from modules.investors     import render as render_investors
 from modules.meetings      import render as render_meetings
 from modules.opportunities import render as render_opportunities
-from modules.actions       import render as render_actions
+from modules.actions       import render as render_actions, render_action_summary_widget
 from modules.tasks         import render as render_tasks
 from modules.report_builder      import render as render_report_builder
 from modules.company_directory   import render as render_company_directory
@@ -284,6 +284,11 @@ def render_dashboard():
     # ── Strategic Alerts ──────────────────────────────────────────────────
     st.markdown("#### Strategic Alerts")
     render_alerts(dfs, lang())
+
+    st.markdown("---")
+
+    # ── Action Items — attention panel ───────────────────────────────────
+    render_action_summary_widget(dfs, lang())
 
     st.markdown("---")
 
