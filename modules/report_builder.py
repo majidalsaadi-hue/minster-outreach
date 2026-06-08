@@ -583,26 +583,25 @@ def render(dfs: dict, lang: str):
                 label_visibility="collapsed",
                 help="Upload the English meeting notes/summary .docx file",
             )
-            st.caption("Or paste text below")
-            st.session_state["rb_ar_summary"] = st.text_area(
-                "Meeting summary text",
-                value=st.session_state["rb_ar_summary"],
-                height=160,
-                key="rb_ar_summary_ta",
-                label_visibility="collapsed",
-                placeholder="Paste English meeting notes here if you don't have a .docx file…",
-            )
+            # Parse file and pre-set widget key BEFORE text_area is instantiated
             if ar_doc is not None:
                 try:
                     import docx as _dx
                     _doc = _dx.Document(io.BytesIO(ar_doc.read()))
                     _txt = "\n".join(p.text for p in _doc.paragraphs if p.text.strip())
-                    if _txt != st.session_state.get("rb_ar_summary"):
-                        st.session_state["rb_ar_summary"] = _txt
-                        st.rerun()
-                    st.success(f"✅ Extracted {len(_txt.split())} words from document.")
+                    st.session_state["rb_ar_summary_ta"] = _txt
+                    st.session_state["rb_ar_summary"]    = _txt
+                    st.success(f"✅ Extracted {len(_txt.split())} words — text loaded below.")
                 except Exception as _e:
                     st.error(f"Could not read .docx: {_e}")
+            st.caption("Extracted text (edit if needed):")
+            st.session_state["rb_ar_summary"] = st.text_area(
+                "Meeting summary text",
+                height=180,
+                key="rb_ar_summary_ta",
+                label_visibility="collapsed",
+                placeholder="Upload a .docx above, or paste English meeting notes here…",
+            )
         with a2:
             st.markdown("**Anthropic API Key**")
             st.session_state["rb_ar_api_key"] = st.text_input(
