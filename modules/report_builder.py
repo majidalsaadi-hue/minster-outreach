@@ -870,7 +870,7 @@ def _parse_company_brief_pptx(file_bytes: bytes) -> dict:
     # ── Slide 1 — company name ─────────────────────────────────────────────────
     if prs.slides:
         _skip_kw = {"misa", "ministry", "kingdom", "vision 2030", "investor"}
-        for txt in _shape_texts(prs.slides[0]):
+        for txt in _shape_texts(list(prs.slides)[0]):
             if 2 < len(txt) < 80:
                 low = txt.lower()
                 if not any(k in low for k in _skip_kw):
@@ -880,7 +880,7 @@ def _parse_company_brief_pptx(file_bytes: bytes) -> dict:
     # ── Slide 2 — company fact sheet ──────────────────────────────────────────
     if len(prs.slides) > 1:
         info: dict = {}
-        for txt in _shape_texts(prs.slides[1]):
+        for txt in _shape_texts(list(prs.slides)[1]):
             for line in txt.splitlines():
                 line = line.strip()
                 if ":" not in line:
@@ -917,7 +917,7 @@ def _parse_company_brief_pptx(file_bytes: bytes) -> dict:
         result["company_info"] = info
 
     # ── Slides 3+ — sector action slides ──────────────────────────────────────
-    for slide in prs.slides[2:]:
+    for slide in list(prs.slides)[2:]:
         # Find action table
         action_tbl = None
         for shp in slide.shapes:
