@@ -921,76 +921,63 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _add_text_box(slide, "No action items.", RX, y_r, RW, Inches(0.22), font_size=8, color=MGRAY)
         y_r += Inches(0.28)
 
-    # Deal Progress
-    y_r += Inches(0.14)
-    _add_text_box(slide, f"Deal Progress ({len(deals)})",
-                  RX, y_r, RW, Inches(0.24), font_size=9, bold=True, color=DARK)
-    y_r += Inches(0.30)
-    _DS = {"Completed":MISA_GREEN, "In Progress":MISA_GOLD, "Active":MISA_GOLD,
-           "On Track":MISA_GREEN,  "Blocked":"#C0392B",     "Delayed":"#E67E22"}
-    if not deals.empty:
-        for _, dl in deals.head(4).iterrows():
-            dname  = str(dl.get("Deal Name",  "") or "")[:28]
-            dstage = str(dl.get("Deal Stage", "") or "")[:18]
-            dstat  = str(dl.get("Deal Status","") or "")
-            dc     = _rgb(_DS.get(dstat, "#888888"))
-            _add_rect(slide, RX, y_r + Inches(0.04), Inches(0.09), Inches(0.09),
-                      fill_color=dc, line_color=dc)
-            _add_text_box(slide, dname, RX + Inches(0.13), y_r,
-                          RW - Inches(0.13), Inches(0.18), font_size=7.5, color=DARK)
-            _add_text_box(slide, f"{dstage}  •  {dstat}", RX + Inches(0.13), y_r + Inches(0.18),
-                          RW - Inches(0.13), Inches(0.14), font_size=6.5, color=MGRAY)
-            y_r += Inches(0.36)
-    else:
-        _add_text_box(slide, "No deals in progress.", RX, y_r, RW, Inches(0.22), font_size=8, color=MGRAY)
-        y_r += Inches(0.28)
-
-    # Opportunities quick summary
-    y_r += Inches(0.12)
-    total_val = _sum_col(opps, "Est. Value (SAR)")
+    # Opportunities — per-item list: title, sector, classification
+    y_r += Inches(0.16)
     _add_text_box(slide, f"Opportunities ({len(opps)})",
                   RX, y_r, RW, Inches(0.24), font_size=9, bold=True, color=DARK)
-    y_r += Inches(0.28)
-    if not opps.empty and "Opportunity Status" in opps.columns:
-        for sname, cnt in opps["Opportunity Status"].value_counts().items():
-            _add_rect(slide, RX, y_r + Inches(0.04), Inches(0.10), Inches(0.10),
-                      fill_color=GREEN, line_color=GREEN)
-            _add_text_box(slide, f"{sname}: {cnt}",
-                          RX + Inches(0.16), y_r, RW - Inches(0.16), Inches(0.20),
-                          font_size=8, color=DARK)
-            y_r += Inches(0.24)
-        _add_text_box(slide, f"Pipeline: {_fmt_sar(total_val)}",
-                      RX, y_r + Inches(0.04), RW, Inches(0.20),
-                      font_size=8, bold=True, color=GOLD)
+    y_r += Inches(0.30)
+
+    _OPP_STAGE_LABEL = {
+        "Exploration":          "Exploration",
+        "Opportunity Matching": "Exploration",
+        "Active":               "Exploration",
+        "Negotiation":          "Deal Negotiation",
+        "Deal Negotiation":     "Deal Negotiation",
+        "Under Negotiation":    "Deal Negotiation",
+        "Committed":            "Committed",
+        "Closed":               "Closed",
+        "Won":                  "Closed",
+        "Suspended":            "Suspended",
+        "Blocked":              "Blocked",
+    }
+    _OPP_CLASS_COL = {
+        "Exploration":     "#1D4ED8",
+        "Deal Negotiation":"#B45309",
+        "Committed":       "#065F46",
+        "Closed":          "#065F46",
+        "Suspended":       "#6B7280",
+        "Blocked":         "#991B1B",
+    }
+
+    if not opps.empty:
+        for _, opp in opps.iterrows():
+            if y_r + Inches(0.22) > Inches(6.90):
+                break
+            opp_name  = str(opp.get("Opportunity Name",  "") or "").strip()
+            opp_sec   = str(opp.get("Sector",            "") or "").strip()
+            opp_stage = str(opp.get("Opportunity Stage", "") or "").strip()
+            opp_class = _OPP_STAGE_LABEL.get(opp_stage, opp_stage or "Exploration")
+            dot_hex   = _OPP_CLASS_COL.get(opp_class, "#1B5C3F")
+
+            _add_rect(slide, RX, y_r + Inches(0.04),
+                      Inches(0.09), Inches(0.09),
+                      fill_color=_rgb(dot_hex), line_color=_rgb(dot_hex))
+            name_w = RW - Inches(0.15)
+            _add_text_box(slide, opp_name[:42],
+                          RX + Inches(0.13), y_r,
+                          name_w, Inches(0.18),
+                          font_size=8, bold=True, color=DARK)
+            detail = " | ".join(filter(None, [opp_sec, opp_class]))
+            if detail:
+                _add_text_box(slide, detail,
+                              RX + Inches(0.13), y_r + Inches(0.18),
+                              name_w, Inches(0.14),
+                              font_size=6.5, color=_rgb(dot_hex))
+            y_r += Inches(0.36)
     else:
-        _add_text_box(slide, "No opportunities yet.", RX, y_r, RW, Inches(0.20), font_size=8, color=MGRAY)
-
-    # KPI cards at bottom
-    if not inv_row.empty:
-        est    = inv_row.get("Est. Investment Value (SAR)")
-        cmmt   = inv_row.get("Actual Commitment (SAR)")
-        next_m = str(inv_row.get("Next Meeting Date", "—") or "—")[:12]
-        kpi_y  = Inches(5.78)
-        kw     = (RW - Inches(0.06)) / 2
-
-        for i, (val, lbl, col) in enumerate([
-            (_fmt_sar(est)  if pd.notna(est)  and est  else "—", "Est. Investment", MISA_GREEN),
-            (_fmt_sar(cmmt) if pd.notna(cmmt) and cmmt else "—", "Committed",       MISA_GOLD),
-        ]):
-            kx = RX + i * (kw + Inches(0.06))
-            _add_rect(slide, kx, kpi_y, kw, Inches(0.68),
-                      fill_color=_rgb(col), line_color=_rgb(col))
-            _add_text_box(slide, val, kx, kpi_y + Inches(0.04), kw, Inches(0.32),
-                          font_size=11, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-            _add_text_box(slide, lbl, kx, kpi_y + Inches(0.38), kw, Inches(0.18),
-                          font_size=7, color=WHITE, align=PP_ALIGN.CENTER)
-
-        _add_rect(slide, RX, kpi_y + Inches(0.75), RW, Inches(0.50),
-                  fill_color=_rgb("#2D7A54"), line_color=_rgb("#2D7A54"))
-        _add_text_box(slide, next_m, RX, kpi_y + Inches(0.78), RW, Inches(0.28),
-                      font_size=12, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-        _add_text_box(slide, "Next Meeting", RX, kpi_y + Inches(1.04), RW, Inches(0.16),
-                      font_size=7, color=WHITE, align=PP_ALIGN.CENTER)
+        _add_text_box(slide, "No opportunities yet.",
+                      RX, y_r, RW, Inches(0.20),
+                      font_size=8, color=MGRAY)
 
     # ── Gold footer ───────────────────────────────────────────────────────────
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
