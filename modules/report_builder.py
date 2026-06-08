@@ -597,8 +597,9 @@ def render(dfs: dict, lang: str):
                     import docx as _dx
                     _doc = _dx.Document(io.BytesIO(ar_doc.read()))
                     _txt = "\n".join(p.text for p in _doc.paragraphs if p.text.strip())
-                    st.session_state["rb_ar_summary"] = _txt
-                    st.session_state["rb_ar_summary_ta"] = _txt
+                    if _txt != st.session_state.get("rb_ar_summary"):
+                        st.session_state["rb_ar_summary"] = _txt
+                        st.rerun()
                     st.success(f"✅ Extracted {len(_txt.split())} words from document.")
                 except Exception as _e:
                     st.error(f"Could not read .docx: {_e}")
