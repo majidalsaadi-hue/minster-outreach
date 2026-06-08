@@ -2062,7 +2062,7 @@ Meeting summary:
         client = anthropic.Anthropic(api_key=api_key)
         msg = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=2048,
+            max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = msg.content[0].text.strip()
@@ -2073,7 +2073,18 @@ Meeting summary:
                 raw = raw[4:]
             raw = raw.rstrip("`").strip()
         import json
-        return json.loads(raw)
+        # Attempt to repair truncated JSON by closing open structures
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            # Count open brackets/braces and close them
+            repaired = raw
+            open_braces  = repaired.count("{") - repaired.count("}")
+            open_brackets = repaired.count("[") - repaired.count("]")
+            # Remove trailing comma if present before closing
+            repaired = repaired.rstrip().rstrip(",")
+            repaired += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
+            return json.loads(repaired)
     except Exception as exc:
         return {"error": str(exc)}
 
