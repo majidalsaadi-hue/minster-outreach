@@ -657,7 +657,21 @@ def render(dfs: dict, lang: str):
     with st.container(border=True):
         st.markdown('<p class="rb-section">Step C — Generate Arabic minutes</p>',
                     unsafe_allow_html=True)
-        if st.button("▶  Extract, translate & generate Arabic .docx",
+
+        # Pre-flight: check anthropic is installed
+        try:
+            import anthropic as _ant_check  # noqa: F401
+            _ant_ok = True
+        except ImportError:
+            _ant_ok = False
+            st.warning(
+                "⚠️ The `anthropic` package is not installed. "
+                "Open a new PowerShell in the project folder and run:\n\n"
+                "```\nvenv\\Scripts\\pip install anthropic\n```\n\n"
+                "Then restart the CRM."
+            )
+
+        if _ant_ok and st.button("▶  Extract, translate & generate Arabic .docx",
                      type="primary", use_container_width=True, key="rb_ar_run"):
             _s    = st.session_state
             _text = _s["rb_ar_summary"].strip()
@@ -677,16 +691,19 @@ def render(dfs: dict, lang: str):
                     "arm":        _s["rb_ar_arm"],
                     "exec_rm":    _s["rb_ar_exec_rm"],
                 }
-                _prog   = st.progress(0)
                 _status = st.empty()
-                _status.markdown("→ Sending to Claude for extraction and translation…")
-                _prog.progress(30)
-                _content = _extract_via_claude(_text, _cfg, _key)
+                _prog   = st.progress(0)
+                _prog.progress(10)
+                with st.spinner("Calling Claude API — this takes 15–30 seconds…"):
+                    _status.markdown("→ Sending to Claude for extraction and translation…")
+                    _prog.progress(30)
+                    _content = _extract_via_claude(_text, _cfg, _key)
                 if "error" in _content:
+                    _prog.empty()
                     _status.error(f"Claude API error: {_content['error']}")
                 else:
                     _status.markdown("→ Generating Arabic Word document…")
-                    _prog.progress(75)
+                    _prog.progress(80)
                     _docx_bytes = _build_arabic_minutes_docx(_cfg, _content)
                     _prog.progress(100)
                     _status.success("✓ Arabic meeting minutes ready — download below.")
