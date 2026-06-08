@@ -2073,18 +2073,47 @@ Meeting summary:
                 raw = raw[4:]
             raw = raw.rstrip("`").strip()
         import json
-        # Attempt to repair truncated JSON by closing open structures
+
+        def _repair_json(s: str) -> str:
+            """Escape literal newlines inside JSON strings; close truncated structures."""
+            out = []
+            in_str = False
+            i = 0
+            while i < len(s):
+                c = s[i]
+                if c == "\\" and in_str:          # escaped char — copy both bytes
+                    out.append(c)
+                    i += 1
+                    if i < len(s):
+                        out.append(s[i])
+                    i += 1
+                    continue
+                if c == '"':
+                    in_str = not in_str
+                    out.append(c)
+                    i += 1
+                    continue
+                if in_str and c in "\n\r":         # bare newline inside a string value
+                    out.append("\\n")
+                    if c == "\r" and i + 1 < len(s) and s[i + 1] == "\n":
+                        i += 1                     # skip \r of \r\n pair
+                    i += 1
+                    continue
+                out.append(c)
+                i += 1
+
+            fixed = "".join(out)
+            if in_str:                             # string was never closed (truncated)
+                fixed += '"'
+            fixed = fixed.rstrip().rstrip(",")     # drop trailing comma
+            fixed += "]" * max(0, fixed.count("[") - fixed.count("]"))
+            fixed += "}" * max(0, fixed.count("{") - fixed.count("}"))
+            return fixed
+
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            # Count open brackets/braces and close them
-            repaired = raw
-            open_braces  = repaired.count("{") - repaired.count("}")
-            open_brackets = repaired.count("[") - repaired.count("]")
-            # Remove trailing comma if present before closing
-            repaired = repaired.rstrip().rstrip(",")
-            repaired += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
-            return json.loads(repaired)
+            return json.loads(_repair_json(raw))
     except Exception as exc:
         return {"error": str(exc)}
 
