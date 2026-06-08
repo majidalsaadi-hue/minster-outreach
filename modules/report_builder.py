@@ -114,6 +114,8 @@ def _init():
         "rb_last_co_fill":      "",
         "rb_rep_position":      "",
         "rb_rep_email":         "",
+        "rb_ppt_bytes":         None,
+        "rb_ppt_company_info":  {},
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -160,21 +162,29 @@ def render(dfs: dict, lang: str):
     # ── Step 1: Upload ────────────────────────────────────────────────────────
     with st.container(border=True):
         st.markdown('<p class="rb-section">Step 1 — Upload your files</p>', unsafe_allow_html=True)
-        u1, u2 = st.columns(2)
+        u1, u2, u3 = st.columns(3)
         with u1:
             st.markdown(
                 '<span class="rb-num">1</span>'
                 '<strong style="font-size:12px">Arabic meeting minutes (.docx)</strong>',
                 unsafe_allow_html=True)
-            st.caption("Standard Ministry of Investment meeting template")
+            st.caption("Standard Ministry meeting template — optional if using PPT brief")
             word_file = st.file_uploader("word", type=["docx","doc"],
                                          key="rb_word_up", label_visibility="collapsed")
         with u2:
             st.markdown(
                 '<span class="rb-num">2</span>'
+                '<strong style="font-size:12px">Company Brief (.pptx)</strong>',
+                unsafe_allow_html=True)
+            st.caption("Account manager brief — extracts all action items by sector")
+            ppt_file = st.file_uploader("ppt", type=["pptx", "ppt"],
+                                        key="rb_ppt_up", label_visibility="collapsed")
+        with u3:
+            st.markdown(
+                '<span class="rb-num">3</span>'
                 '<strong style="font-size:12px">Action Item Tracker (.xlsx)</strong>',
                 unsafe_allow_html=True)
-            st.caption("V5 tracker — only relevant sheet will be updated")
+            st.caption("V5 tracker — existing rows updated, new rows appended")
             excel_file = st.file_uploader("excel", type=["xlsx","xls"],
                                           key="rb_excel_up", label_visibility="collapsed")
 
@@ -216,6 +226,72 @@ def render(dfs: dict, lang: str):
                 s["rb_actions"] = pd.DataFrame(items)
             n = len(parsed.get("action_items", []))
             st.success(f"✅ Parsed — {n} action item(s) found and translated to English.")
+
+    # Auto-parse PPT company brief
+    if ppt_file is not None:
+        raw_ppt = ppt_file.read()
+        with st.spinner("Parsing company brief presentation…"):
+            pptx_data = _parse_company_brief_pptx(raw_ppt)
+        if pptx_data.get("error"):
+            st.error(f"PPT parse error: {pptx_data['error']}")
+        else:
+            st.session_state["rb_ppt_bytes"]        = raw_ppt
+            st.session_state["rb_ppt_company_info"] = pptx_data.get("company_info", {})
+            # Auto-set company name from PPT if not already set
+            if pptx_data.get("company") and not st.session_state.get("rb_company"):
+                st.session_state["rb_company"] = pptx_data["company"]
+            # Populate action items from PPT slides
+            if pptx_data.get("action_items"):
+                act_rows = []
+                for item in pptx_data["action_items"]:
+                    act_rows.append({
+                        "Action (AR)": "",
+                        "Action (EN)": item.get("Action (EN)", ""),
+                        "Sector":      item.get("Sector", ""),
+                        "Assigned To": item.get("Assigned To", ""),
+                        "Type":        item.get("Type", "Action"),
+                        "Priority":    item.get("Priority", "Medium"),
+                        "Start Date":  item.get("Start Date", ""),
+                        "Due Date":    item.get("Due Date", ""),
+                        "Progress":    item.get("Progress", 0),
+                        "Status":      item.get("Status", "Not Started"),
+                        "Remarks":     item.get("Remarks", ""),
+                        "Due Text":    "",
+                        "Due Text EN": "",
+                    })
+                st.session_state["rb_actions"] = pd.DataFrame(act_rows)
+            n_acts   = len(pptx_data.get("action_items", []))
+            sectors  = pptx_data.get("sectors", [])
+            sec_str  = ", ".join(sectors) if sectors else "—"
+            co_info  = pptx_data.get("company_info", {})
+            info_parts = []
+            if co_info.get("aum"):
+                info_parts.append(f"AUM {co_info['aum']}")
+            if co_info.get("sector"):
+                info_parts.append(f"Sector: {co_info['sector']}")
+            info_note = "  ·  " + "  ·  ".join(info_parts) if info_parts else ""
+            st.success(
+                f"✅ PPT parsed — **{n_acts}** action item(s) across "
+                f"**{len(sectors)}** sector(s): {sec_str}{info_note}"
+            )
+            # Show company info card if slide 2 data was found
+            if co_info:
+                with st.expander("📋 Company info extracted from PPT", expanded=False):
+                    ci_cols = st.columns(3)
+                    fields = [
+                        ("Sector",       co_info.get("sector",        "")),
+                        ("HQ",           co_info.get("hq",            "")),
+                        ("AUM",          co_info.get("aum",           "")),
+                        ("KSA Presence", co_info.get("ksa_presence",  "")),
+                        ("Employees",    co_info.get("employees",     "")),
+                        ("Website",      co_info.get("website",       "")),
+                        ("Rep",          co_info.get("rep_name",      "")),
+                        ("Email",        co_info.get("email",         "")),
+                        ("Phone",        co_info.get("phone",         "")),
+                    ]
+                    for k, (label, val) in enumerate(fields):
+                        if val:
+                            ci_cols[k % 3].markdown(f"**{label}:** {val}")
 
     if excel_file is not None:
         st.session_state["rb_excel_bytes"] = excel_file.read()
@@ -390,20 +466,31 @@ def render(dfs: dict, lang: str):
 
                 # 1 — Updated Excel tracker
                 updated_xl = None
+                _ppt_mode  = bool(s.get("rb_ppt_bytes"))
                 if s.get("rb_excel_bytes") and not actions.empty:
                     _log(f"Updating Excel tracker for {company}…", 30)
                     try:
                         mtg_d = datetime.strptime(mtg_date, "%d %B %Y").date()
                     except ValueError:
                         mtg_d = date.today()
-                    updated_xl = _build_excel(
-                        existing_bytes=s["rb_excel_bytes"],
-                        company=company,
-                        meeting_date=mtg_d,
-                        next_meeting=s.get("rb_next_meeting_text") or None,
-                        chair=cfg["chair"],
-                        actions_df=actions,
-                    )
+                    if _ppt_mode:
+                        updated_xl, _n_upd, _n_add = _merge_pptx_actions_to_excel(
+                            s["rb_excel_bytes"], company,
+                            actions.to_dict(orient="records"),
+                        )
+                        _log(
+                            f"Excel updated — {_n_upd} row(s) updated, "
+                            f"{_n_add} new row(s) added.", 50
+                        )
+                    else:
+                        updated_xl = _build_excel(
+                            existing_bytes=s["rb_excel_bytes"],
+                            company=company,
+                            meeting_date=mtg_d,
+                            next_meeting=s.get("rb_next_meeting_text") or None,
+                            chair=cfg["chair"],
+                            actions_df=actions,
+                        )
 
                 # 2 — Word letter
                 _log("Generating company letter (.docx)…", 55)
@@ -521,10 +608,12 @@ def _render_output(result: dict):
 
 
 def _render_action_table(df: pd.DataFrame):
-    rows_html = ""
+    has_sector = "Sector" in df.columns and df["Sector"].fillna("").str.strip().any()
+    rows_html  = ""
     for i, (_, row) in enumerate(df.iterrows()):
         en     = (row.get("Action (EN)") or row.get("Action (AR)", "")).strip()
         owner  = str(row.get("Assigned To", "") or "")
+        sector = str(row.get("Sector", "") or "") if has_sector else ""
         prio   = str(row.get("Priority", "Medium") or "Medium")
         due    = str(row.get("Due Text EN", "") or row.get("Due Text", "") or
                      row.get("Due Date", "") or "TBD")
@@ -533,11 +622,12 @@ def _render_action_table(df: pd.DataFrame):
 
         p_css  = _BADGE_CSS.get(prio,   "background:#f3f4f6;color:#6b7280")
         s_css  = _BADGE_CSS.get(status, "background:#f3f4f6;color:#6b7280")
+        sec_td = f"<td style='font-size:11px;color:#1B5C3F'>{sector}</td>" if has_sector else ""
 
         rows_html += (
             f"<tr>"
             f"<td style='font-weight:500;text-align:center;width:36px'>{i+1}</td>"
-            f"<td>{en}</td><td>{owner}</td>"
+            f"<td>{en}</td>{sec_td}<td>{owner}</td>"
             f"<td><span class='rb-pk' style='{p_css}'>{prio}</span></td>"
             f"<td>{due}</td>"
             f"<td><span class='rb-pk' style='{s_css}'>{status}</span></td>"
@@ -545,10 +635,11 @@ def _render_action_table(df: pd.DataFrame):
             f"</tr>"
         )
 
+    sector_hdr = "<th>Sector</th>" if has_sector else ""
     st.markdown(f"""
     <div style="overflow-x:auto">
     <table class="rb-action-table">
-      <thead><tr><th>#</th><th>Action Item</th><th>Owner</th>
+      <thead><tr><th>#</th><th>Action Item</th>{sector_hdr}<th>Owner</th>
       <th>Priority</th><th>Timeline</th><th>Status</th><th>Remarks</th></tr></thead>
       <tbody>{rows_html}</tbody>
     </table></div>
@@ -733,6 +824,203 @@ def _parse_word(file_bytes: bytes) -> dict:
             elif cells:
                 att_lines.append(cells[0])
         result["attendees"] = "\n".join(att_lines)
+
+    return result
+
+
+# ─── PPT company brief parser ────────────────────────────────────────────────
+
+def _parse_company_brief_pptx(file_bytes: bytes) -> dict:
+    """Parse GA Company Brief PPT format.
+
+    Slide 1 = cover (company name), Slide 2 = fact sheet,
+    Slides 3+ = per-sector action tables (each has Sector POV label + action table).
+    Returns {company, company_info, action_items, sectors} or {error: msg}.
+    """
+    try:
+        from pptx import Presentation  # type: ignore
+    except ImportError:
+        return {"error": "python-pptx not installed — run: pip install python-pptx"}
+    try:
+        prs = Presentation(io.BytesIO(file_bytes))
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    _STATUS_MAP = {
+        "completed":   "Completed",
+        "complete":    "Completed",
+        "in progress": "In Progress",
+        "inprogress":  "In Progress",
+        "not started": "Not Started",
+        "blocked":     "Blocked",
+        "cancelled":   "Cancelled",
+    }
+
+    result: dict = {"company": "", "company_info": {}, "action_items": [], "sectors": []}
+
+    def _shape_texts(slide):
+        for shp in slide.shapes:
+            if shp.has_table:
+                continue
+            if shp.has_text_frame:
+                txt = shp.text_frame.text.strip()
+                if txt:
+                    yield txt
+
+    # ── Slide 1 — company name ─────────────────────────────────────────────────
+    if prs.slides:
+        _skip_kw = {"misa", "ministry", "kingdom", "vision 2030", "investor"}
+        for txt in _shape_texts(prs.slides[0]):
+            if 2 < len(txt) < 80:
+                low = txt.lower()
+                if not any(k in low for k in _skip_kw):
+                    result["company"] = txt
+                    break
+
+    # ── Slide 2 — company fact sheet ──────────────────────────────────────────
+    if len(prs.slides) > 1:
+        info: dict = {}
+        for txt in _shape_texts(prs.slides[1]):
+            for line in txt.splitlines():
+                line = line.strip()
+                if ":" not in line:
+                    continue
+                lbl, _, val = line.partition(":")
+                lbl = lbl.strip().lower()
+                val = val.strip()
+                if not val:
+                    continue
+                if "background" in lbl:
+                    info["background"] = val
+                elif lbl == "sector" or ("sector" in lbl and "pov" not in lbl):
+                    info["sector"] = val
+                elif "hq" in lbl or "headquarter" in lbl:
+                    info["hq"] = val
+                elif "website" in lbl or lbl == "web":
+                    info["website"] = val
+                elif "aum" in lbl:
+                    info["aum"] = val
+                elif "ksa" in lbl or "presence" in lbl:
+                    info["ksa_presence"] = val
+                elif "employee" in lbl:
+                    info["employees"] = val
+                elif "rep" in lbl:
+                    info["rep_name"] = val
+                elif "email" in lbl:
+                    info["email"] = val
+                elif "phone" in lbl or "mobile" in lbl or lbl == "tel":
+                    info["phone"] = val
+                elif "position" in lbl or "title" in lbl or "role" in lbl:
+                    info["position"] = val
+                elif "vision" in lbl:
+                    info["vision_alignment"] = val
+        result["company_info"] = info
+
+    # ── Slides 3+ — sector action slides ──────────────────────────────────────
+    for slide in prs.slides[2:]:
+        # Find action table
+        action_tbl = None
+        for shp in slide.shapes:
+            if not shp.has_table:
+                continue
+            tbl = shp.table
+            if tbl.rows.count < 2 or tbl.columns.count < 3:
+                continue
+            hdr_texts = [tbl.cell(0, c).text.strip().lower()
+                         for c in range(tbl.columns.count)]
+            if any("action" in h for h in hdr_texts):
+                action_tbl = tbl
+                break
+        if action_tbl is None:
+            continue
+
+        # Extract metadata from text shapes
+        sector_name   = ""
+        sector_pov    = ""
+        next_meeting  = ""
+        latest_update = ""
+        candidates: list[str] = []
+
+        for txt in _shape_texts(slide):
+            low = txt.lower()
+            if "sector pov" in low or low.startswith("pov"):
+                sector_pov = txt.split(":", 1)[-1].strip() if ":" in txt else sector_pov
+            elif "next meeting" in low:
+                next_meeting = txt.split(":", 1)[-1].strip() if ":" in txt else next_meeting
+            elif "latest update" in low or "last update" in low:
+                latest_update = txt.split(":", 1)[-1].strip() if ":" in txt else latest_update
+            elif ":" not in txt and 3 < len(txt) < 60:
+                candidates.append(txt)
+
+        # Best candidate for sector name
+        for cand in candidates:
+            low = cand.lower()
+            if low.endswith(" sector"):
+                sector_name = cand[:-7].strip()
+                break
+            if not re.match(r"^\d", cand) and low not in ("action items", "status", "remarks"):
+                sector_name = cand
+                break
+
+        # Column map
+        col_map: dict[str, int] = {}
+        for c in range(action_tbl.columns.count):
+            col_map[action_tbl.cell(0, c).text.strip().lower()] = c
+
+        def _find_col(*terms):
+            for term in terms:
+                for k, v in col_map.items():
+                    if term in k:
+                        return v
+            return None
+
+        action_col = _find_col("action item", "action")
+        type_col   = _find_col("type of engagement", "type")
+        start_col  = _find_col("start date")
+        due_col    = _find_col("due date", "due")
+        prio_col   = _find_col("priority")
+        prog_col   = _find_col("progress")
+        status_col = _find_col("status")
+        remark_col = _find_col("remark", "note")
+
+        if action_col is None:
+            continue
+
+        def _cell_txt(r, c):
+            if c is None:
+                return ""
+            try:
+                return action_tbl.cell(r, c).text.strip()
+            except Exception:
+                return ""
+
+        for r in range(1, action_tbl.rows.count):
+            action = _cell_txt(r, action_col)
+            if not action:
+                continue
+            st_raw  = _cell_txt(r, status_col)
+            st_norm = _STATUS_MAP.get(st_raw.lower(), st_raw or "Not Started")
+            try:
+                prog_val = int(_cell_txt(r, prog_col).replace("%", "").strip() or "0")
+            except Exception:
+                prog_val = 0
+            result["action_items"].append({
+                "Action (AR)":    "",
+                "Action (EN)":    action,
+                "Sector":         sector_name,
+                "Assigned To":    sector_pov,
+                "Type":           _cell_txt(r, type_col) or "Action",
+                "Priority":       _cell_txt(r, prio_col) or "Medium",
+                "Start Date":     _cell_txt(r, start_col),
+                "Due Date":       _cell_txt(r, due_col),
+                "Progress":       prog_val,
+                "Status":         st_norm,
+                "Remarks":        _cell_txt(r, remark_col),
+                "_latest_update": latest_update,
+            })
+
+        if sector_name and sector_name not in result["sectors"]:
+            result["sectors"].append(sector_name)
 
     return result
 
@@ -1094,6 +1382,131 @@ def _write_sheet_header(ws, company, meeting_date, next_meeting, chair):
     ws.freeze_panes = "G21"
 
 
+# ─── PPT→Excel merge ─────────────────────────────────────────────────────────
+
+def _merge_pptx_actions_to_excel(
+    existing_bytes: bytes, company: str, pptx_actions: list
+) -> tuple:
+    """
+    Upsert PPT action items into the company's Excel sheet.
+    Existing rows matched by Action Item text are updated (Status, Remarks,
+    Progress, Due Date). Unmatched rows are appended at the end.
+    Returns (updated_bytes, n_updated, n_added).
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(existing_bytes))
+
+    # Locate or create sheet
+    target = None
+    for sname in wb.sheetnames:
+        if company.lower() in sname.lower() or sname.lower() in company.lower():
+            target = sname
+            break
+    if not target:
+        ws = wb.create_sheet(f"Action Items {company}"[:31])
+        _write_sheet_header(ws, company, date.today(), None, "")
+        target = ws.title
+
+    ws = wb[target]
+
+    # Find header row — scan rows 15-25 for "Action Item" cell
+    hdr_row = 20
+    found   = False
+    for r in range(15, 26):
+        for c in range(1, 20):
+            if str(ws.cell(row=r, column=c).value or "").strip() == "Action Item":
+                hdr_row = r
+                found   = True
+                break
+        if found:
+            break
+
+    # Build column index from header row
+    col_map: dict[str, int] = {}
+    for c in range(1, 20):
+        v = str(ws.cell(row=hdr_row, column=c).value or "").strip()
+        if v:
+            col_map[v] = c
+
+    id_col     = col_map.get("ID", 7)
+    act_col    = col_map.get("Action Item", 8)
+    asgn_col   = next((v for k, v in col_map.items() if "Assigned" in k), 9)
+    type_col   = next((v for k, v in col_map.items() if "Type" in k and "Engagement" in k), 10)
+    start_col  = col_map.get("Start Date", 11)
+    due_col    = col_map.get("Due Date", 12)
+    prio_col   = col_map.get("Priority", 13)
+    prog_col   = col_map.get("Progress", 14)
+    status_col = col_map.get("Status", 15)
+    rmk_col    = col_map.get("Remarks", 16)
+
+    # Build lookup: normalised action text → row number
+    existing: dict[str, int] = {}
+    for r in range(hdr_row + 1, hdr_row + 500):
+        val = ws.cell(row=r, column=act_col).value
+        if val is None:
+            break
+        norm = str(val).strip().lower()
+        if norm:
+            existing[norm] = r
+
+    normal_font = Font(size=10)
+    center_al   = Alignment(horizontal="center", vertical="center")
+    right_al    = Alignment(horizontal="right",  vertical="center", wrap_text=True)
+    thin_border = Border(
+        left=Side(style="thin"),  right=Side(style="thin"),
+        top=Side(style="thin"),   bottom=Side(style="thin"),
+    )
+
+    n_updated = 0
+    n_added   = 0
+    next_row  = hdr_row + 1 + len(existing)
+
+    for act in pptx_actions:
+        text = str(act.get("Action (EN)") or act.get("Action (AR)") or "").strip()
+        if not text:
+            continue
+        norm = text.lower()
+
+        if norm in existing:
+            r = existing[norm]
+            new_status = str(act.get("Status") or "").strip()
+            if new_status:
+                ws.cell(r, status_col, new_status)
+            new_rem = str(act.get("Remarks") or "").strip()
+            if new_rem and new_rem != str(ws.cell(r, rmk_col).value or "").strip():
+                ws.cell(r, rmk_col, new_rem)
+            if act.get("Progress") is not None:
+                ws.cell(r, prog_col, int(act["Progress"]))
+            if act.get("Due Date"):
+                ws.cell(r, due_col, str(act["Due Date"]))
+            n_updated += 1
+        else:
+            r        = next_row
+            next_row += 1
+            seq      = len(existing) + n_added + 1
+            ws.cell(r, id_col,     seq)
+            ws.cell(r, act_col,    text)
+            ws.cell(r, asgn_col,   str(act.get("Assigned To") or ""))
+            ws.cell(r, type_col,   str(act.get("Type") or "Action"))
+            ws.cell(r, start_col,  str(act.get("Start Date") or ""))
+            ws.cell(r, due_col,    str(act.get("Due Date") or ""))
+            ws.cell(r, prio_col,   str(act.get("Priority") or "Medium"))
+            ws.cell(r, prog_col,   int(act.get("Progress") or 0))
+            ws.cell(r, status_col, str(act.get("Status") or "Not Started"))
+            ws.cell(r, rmk_col,    str(act.get("Remarks") or ""))
+            for col in range(7, 17):
+                cell           = ws.cell(r, col)
+                cell.font      = normal_font
+                cell.border    = thin_border
+                cell.alignment = right_al if col == act_col else center_al
+            ws.row_dimensions[r].height = 40
+            existing[norm] = r
+            n_added += 1
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue(), n_updated, n_added
+
+
 # ─── Opportunity extraction & sync ───────────────────────────────────────────
 
 def _parse_opps_from_excel(wb) -> list:
@@ -1205,7 +1618,7 @@ def _sync_actions_to_crm(dfs: dict, actions: pd.DataFrame, company: str):
             "Company Name":       company,
             "Action Description": desc,
             "Assigned To":        str(row.get("Assigned To", "") or ""),
-            "Sector":             "",
+            "Sector":             str(row.get("Sector", "") or ""),
             "Type of Engagement": str(row.get("Type", "Action") or "Action"),
             "Start Date":         date.today(),
             "Due Date":           row.get("Due Date") if row.get("Due Date") and pd.notna(row.get("Due Date")) else None,
