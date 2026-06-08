@@ -924,10 +924,10 @@ def _parse_company_brief_pptx(file_bytes: bytes) -> dict:
             if not shp.has_table:
                 continue
             tbl = shp.table
-            if tbl.rows.count < 2 or tbl.columns.count < 3:
+            if len(tbl.rows) < 2 or len(tbl.columns) < 3:
                 continue
             hdr_texts = [tbl.cell(0, c).text.strip().lower()
-                         for c in range(tbl.columns.count)]
+                         for c in range(len(tbl.columns))]
             if any("action" in h for h in hdr_texts):
                 action_tbl = tbl
                 break
@@ -964,7 +964,7 @@ def _parse_company_brief_pptx(file_bytes: bytes) -> dict:
 
         # Column map
         col_map: dict[str, int] = {}
-        for c in range(action_tbl.columns.count):
+        for c in range(len(action_tbl.columns)):
             col_map[action_tbl.cell(0, c).text.strip().lower()] = c
 
         def _find_col(*terms):
@@ -994,7 +994,7 @@ def _parse_company_brief_pptx(file_bytes: bytes) -> dict:
             except Exception:
                 return ""
 
-        for r in range(1, action_tbl.rows.count):
+        for r in range(1, len(action_tbl.rows)):
             action = _cell_txt(r, action_col)
             if not action:
                 continue
