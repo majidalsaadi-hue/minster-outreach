@@ -620,9 +620,22 @@ def render(dfs: dict, lang: str):
                     unsafe_allow_html=True)
         b1, b2, b3 = st.columns(3)
         with b1:
-            st.session_state["rb_ar_company"] = st.text_input(
-                "Company", value=st.session_state.get("rb_company") or st.session_state["rb_ar_company"],
-                key="rb_ar_co")
+            _ar_co_list = (
+                st.session_state.get("rb_excel_companies", [])
+                or [st.session_state.get("rb_company", "")]
+            )
+            _ar_co_list = [c for c in _ar_co_list if c]  # drop blanks
+            _ar_cur = (
+                st.session_state.get("rb_ar_company")
+                or st.session_state.get("rb_company", "")
+            )
+            if _ar_co_list:
+                _ar_idx = _ar_co_list.index(_ar_cur) if _ar_cur in _ar_co_list else 0
+                st.session_state["rb_ar_company"] = st.selectbox(
+                    "Company", _ar_co_list, index=_ar_idx, key="rb_ar_co")
+            else:
+                st.session_state["rb_ar_company"] = st.text_input(
+                    "Company", value=_ar_cur, key="rb_ar_co")
             st.session_state["rb_ar_date"] = st.text_input(
                 "Meeting date", value=st.session_state["rb_ar_date"], key="rb_ar_dt",
                 placeholder="DD/MM/YYYY")
