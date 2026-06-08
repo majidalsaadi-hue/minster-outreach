@@ -116,6 +116,19 @@ def _init():
         "rb_rep_email":         "",
         "rb_ppt_bytes":         None,
         "rb_ppt_company_info":  {},
+        # Arabic minutes generator
+        "rb_ar_summary":        "",
+        "rb_ar_company":        "",
+        "rb_ar_date":           date.today().strftime("%d/%m/%Y"),
+        "rb_ar_location":       "المقر الرئيسي – وزارة الاستثمار",
+        "rb_ar_chair":          "معالي الوزير",
+        "rb_ar_priority":       "مهم جدا",
+        "rb_ar_next_mtg":       "",
+        "rb_ar_arm":            "",
+        "rb_ar_exec_rm":        "",
+        "rb_ar_api_key":        "",
+        "rb_ar_content":        None,
+        "rb_ar_docx_bytes":     None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -549,6 +562,162 @@ def render(dfs: dict, lang: str):
     result = st.session_state.get("rb_result")
     if result:
         _render_output(result)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Arabic Meeting Minutes Generator
+    # ══════════════════════════════════════════════════════════════════════════
+    st.markdown('<hr style="margin:2rem 0 1rem;border:none;border-top:2px solid #e5e7eb">',
+                unsafe_allow_html=True)
+    st.markdown("**Arabic Meeting Minutes Generator — محضر الاجتماع**")
+    st.caption("Upload an English meeting summary → Claude translates and fills the Arabic Ministry template")
+
+    with st.container(border=True):
+        st.markdown('<p class="rb-section">Step A — English meeting summary</p>',
+                    unsafe_allow_html=True)
+        a1, a2 = st.columns([1, 1])
+        with a1:
+            ar_doc = st.file_uploader(
+                "English summary (.docx)",
+                type=["docx", "doc"],
+                key="rb_ar_doc_up",
+                label_visibility="collapsed",
+                help="Upload the English meeting notes/summary .docx file",
+            )
+            st.caption("Or paste text below")
+            st.session_state["rb_ar_summary"] = st.text_area(
+                "Meeting summary text",
+                value=st.session_state["rb_ar_summary"],
+                height=160,
+                key="rb_ar_summary_ta",
+                label_visibility="collapsed",
+                placeholder="Paste English meeting notes here if you don't have a .docx file…",
+            )
+            if ar_doc is not None:
+                try:
+                    import docx as _dx
+                    _doc = _dx.Document(io.BytesIO(ar_doc.read()))
+                    _txt = "\n".join(p.text for p in _doc.paragraphs if p.text.strip())
+                    st.session_state["rb_ar_summary"] = _txt
+                    st.session_state["rb_ar_summary_ta"] = _txt
+                    st.success(f"✅ Extracted {len(_txt.split())} words from document.")
+                except Exception as _e:
+                    st.error(f"Could not read .docx: {_e}")
+        with a2:
+            st.markdown("**Anthropic API Key**")
+            st.session_state["rb_ar_api_key"] = st.text_input(
+                "API key",
+                value=st.session_state["rb_ar_api_key"],
+                type="password",
+                key="rb_ar_key_inp",
+                label_visibility="collapsed",
+                placeholder="sk-ant-…  (or set ANTHROPIC_API_KEY env var)",
+                help="Get your key at console.anthropic.com",
+            )
+            st.caption("Your key is never stored — used only for this session.")
+
+    with st.container(border=True):
+        st.markdown('<p class="rb-section">Step B — Meeting metadata</p>',
+                    unsafe_allow_html=True)
+        b1, b2, b3 = st.columns(3)
+        with b1:
+            st.session_state["rb_ar_company"] = st.text_input(
+                "Company", value=st.session_state.get("rb_company") or st.session_state["rb_ar_company"],
+                key="rb_ar_co")
+            st.session_state["rb_ar_date"] = st.text_input(
+                "Meeting date", value=st.session_state["rb_ar_date"], key="rb_ar_dt",
+                placeholder="DD/MM/YYYY")
+        with b2:
+            st.session_state["rb_ar_location"] = st.text_input(
+                "Location (Arabic)", value=st.session_state["rb_ar_location"], key="rb_ar_loc")
+            st.session_state["rb_ar_chair"] = st.text_input(
+                "Chaired by (Arabic)", value=st.session_state["rb_ar_chair"], key="rb_ar_ch")
+        with b3:
+            st.session_state["rb_ar_priority"] = st.selectbox(
+                "Priority", ["مهم جدا", "مهم", "متوسط", "عادي"],
+                index=["مهم جدا", "مهم", "متوسط", "عادي"].index(
+                    st.session_state["rb_ar_priority"]
+                    if st.session_state["rb_ar_priority"] in ["مهم جدا","مهم","متوسط","عادي"] else "مهم جدا"
+                ),
+                key="rb_ar_pri")
+            st.session_state["rb_ar_next_mtg"] = st.text_input(
+                "Next meeting", value=st.session_state["rb_ar_next_mtg"], key="rb_ar_nx",
+                placeholder="e.g. Q3 2026 or leave blank")
+
+        b4, b5 = st.columns(2)
+        with b4:
+            st.session_state["rb_ar_arm"] = st.text_input(
+                "ARM name", value=st.session_state.get("rb_arm") or st.session_state["rb_ar_arm"],
+                key="rb_ar_arm_inp")
+        with b5:
+            st.session_state["rb_ar_exec_rm"] = st.text_input(
+                "Exec RM name", value=st.session_state.get("rb_exec_rm") or st.session_state["rb_ar_exec_rm"],
+                key="rb_ar_exec_inp")
+
+    with st.container(border=True):
+        st.markdown('<p class="rb-section">Step C — Generate Arabic minutes</p>',
+                    unsafe_allow_html=True)
+        if st.button("▶  Extract, translate & generate Arabic .docx",
+                     type="primary", use_container_width=True, key="rb_ar_run"):
+            _s    = st.session_state
+            _text = _s["rb_ar_summary"].strip()
+            _key  = _s["rb_ar_api_key"].strip() or __import__("os").environ.get("ANTHROPIC_API_KEY", "")
+            if not _text:
+                st.error("Please upload a document or paste meeting text in Step A.")
+            elif not _key:
+                st.error("Please enter your Anthropic API key in Step A.")
+            else:
+                _cfg = {
+                    "company":    _s["rb_ar_company"],
+                    "date":       _s["rb_ar_date"],
+                    "location":   _s["rb_ar_location"],
+                    "chair":      _s["rb_ar_chair"],
+                    "priority":   _s["rb_ar_priority"],
+                    "next_mtg":   _s["rb_ar_next_mtg"],
+                    "arm":        _s["rb_ar_arm"],
+                    "exec_rm":    _s["rb_ar_exec_rm"],
+                }
+                _prog   = st.progress(0)
+                _status = st.empty()
+                _status.markdown("→ Sending to Claude for extraction and translation…")
+                _prog.progress(30)
+                _content = _extract_via_claude(_text, _cfg, _key)
+                if "error" in _content:
+                    _status.error(f"Claude API error: {_content['error']}")
+                else:
+                    _status.markdown("→ Generating Arabic Word document…")
+                    _prog.progress(75)
+                    _docx_bytes = _build_arabic_minutes_docx(_cfg, _content)
+                    _prog.progress(100)
+                    _status.success("✓ Arabic meeting minutes ready — download below.")
+                    _s["rb_ar_content"]    = _content
+                    _s["rb_ar_docx_bytes"] = _docx_bytes
+
+    _ar_bytes = st.session_state.get("rb_ar_docx_bytes")
+    if _ar_bytes:
+        _ar_company  = st.session_state.get("rb_ar_company", "meeting").replace(" ", "_")
+        _ar_date_raw = st.session_state.get("rb_ar_date", "").replace("/", "-")
+        st.download_button(
+            "📄  Download Arabic meeting minutes (.docx)",
+            data=_ar_bytes,
+            file_name=f"محضر_{_ar_company}_{_ar_date_raw}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+            key="rb_ar_dl",
+        )
+        # Preview extracted content
+        _ar_content = st.session_state.get("rb_ar_content", {})
+        if _ar_content:
+            with st.expander("📋 Preview extracted content", expanded=False):
+                if _ar_content.get("subject_ar"):
+                    st.markdown(f"**Subject:** {_ar_content['subject_ar']}")
+                if _ar_content.get("discussion_points"):
+                    st.markdown("**Discussion points:**")
+                    for pt in _ar_content["discussion_points"]:
+                        st.markdown(f"- {pt}")
+                if _ar_content.get("action_items"):
+                    st.markdown(f"**Action items:** {len(_ar_content['action_items'])}")
+                if _ar_content.get("attendees"):
+                    st.markdown(f"**Attendees:** {len(_ar_content['attendees'])}")
 
 
 # ─── Output renderer ──────────────────────────────────────────────────────────
@@ -1817,3 +1986,256 @@ def _next_act_id(df: pd.DataFrame) -> str:
         except ValueError:
             pass
     return f"ACT-{(max(nums) + 1 if nums else 1):03d}"
+
+
+# ─── Arabic minutes — Claude extraction ──────────────────────────────────────
+
+def _extract_via_claude(summary_text: str, cfg: dict, api_key: str) -> dict:
+    """Call Claude to extract and translate meeting content into Arabic JSON."""
+    try:
+        import anthropic
+    except ImportError:
+        return {"error": "anthropic package not installed — run: pip install anthropic"}
+
+    company = cfg.get("company", "")
+    date_str = cfg.get("date", "")
+    arm      = cfg.get("arm", "")
+    exec_rm  = cfg.get("exec_rm", "")
+
+    prompt = f"""You are a bilingual English-Arabic assistant for the Ministry of Investment of Saudi Arabia (MISA).
+
+Analyse the English meeting summary below, then return a single JSON object with all values in Arabic.
+
+Required JSON structure:
+{{
+  "subject_ar": "short Arabic subject line, e.g. آخر المستجدات — {company}",
+  "discussion_points": ["Arabic bullet 1", "Arabic bullet 2", ...],
+  "action_items": [
+    {{
+      "task":     "Arabic description of the action",
+      "owner":    "person or department name in Arabic",
+      "priority": "مهم جدا | مهم | متوسط | عادي",
+      "due":      "expected completion date or Arabic timeframe"
+    }}
+  ],
+  "attendees": [
+    {{
+      "name":  "Full name",
+      "title": "Job title in Arabic"
+    }}
+  ]
+}}
+
+Rules:
+- discussion_points: 4–8 key points, each a full Arabic sentence
+- action_items: one entry per distinct task mentioned
+- attendees: include all named people from both sides (MISA and {company})
+- If ARM is "{arm}" or Exec RM is "{exec_rm}", include them in attendees as MISA staff
+- All text values MUST be in Arabic (names may stay in original script)
+- Respond ONLY with the JSON object — no markdown fences, no explanation
+
+Meeting metadata:
+  Company : {company}
+  Date    : {date_str}
+
+Meeting summary:
+{summary_text[:5000]}"""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = msg.content[0].text.strip()
+        # Strip accidental markdown fences
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.rstrip("`").strip()
+        import json
+        return json.loads(raw)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+# ─── Arabic minutes — Word document builder ──────────────────────────────────
+
+def _build_arabic_minutes_docx(cfg: dict, content: dict) -> bytes:
+    """
+    Generate the Ministry of Investment Arabic meeting minutes Word document.
+
+    4-table structure:
+      Table 0 — meeting metadata (subject, location, day/date, chair, priority, next meeting)
+      Table 1 — key discussion points (bullet list in one cell)
+      Table 2 — action items (م | التوجيه/المهمة | المسؤول | الأولوية | تاريخ الإنجاز)
+      Table 3 — attendees (# | الاسم | الوظيفة) with dotted borders
+    """
+    from docx import Document as _Doc
+    from docx.shared import Pt, RGBColor, Inches, Cm
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    AR_FONT   = "Sakkal Majalla"
+    GREEN_HEX = "1B5C3F"
+    GOLD_HEX  = "C9974A"
+
+    doc = _Doc()
+    sec = doc.sections[0]
+    sec.page_width    = Cm(29.7)
+    sec.page_height   = Cm(21.0)   # A4 landscape
+    sec.left_margin   = sec.right_margin  = Cm(1.8)
+    sec.top_margin    = sec.bottom_margin = Cm(1.5)
+
+    def _rgb_from_hex(h: str) -> RGBColor:
+        return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+    def _set_cell_bg(cell, hex_color: str):
+        tcPr = cell._tc.get_or_add_tcPr()
+        shd  = OxmlElement("w:shd")
+        shd.set(qn("w:val"),   "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"),  hex_color.upper())
+        tcPr.append(shd)
+
+    def _set_rtl_para(para):
+        pPr = para._p.get_or_add_pPr()
+        bidi = OxmlElement("w:bidi")
+        pPr.append(bidi)
+
+    def _fill_cell(cell, text: str, bold=False, size=12,
+                   bg_hex=None, color_hex="000000",
+                   align=WD_ALIGN_PARAGRAPH.RIGHT):
+        cell.text = ""
+        para = cell.paragraphs[0]
+        para.alignment = align
+        _set_rtl_para(para)
+        run = para.add_run(text)
+        run.bold           = bold
+        run.font.name      = AR_FONT
+        run.font.size      = Pt(size)
+        run.font.color.rgb = _rgb_from_hex(color_hex)
+        if bg_hex:
+            _set_cell_bg(cell, bg_hex)
+
+    def _ar_heading(text: str, size=13, bold=True):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        _set_rtl_para(p)
+        r = p.add_run(text)
+        r.bold       = bold
+        r.font.name  = AR_FONT
+        r.font.size  = Pt(size)
+        r.font.color.rgb = _rgb_from_hex(GREEN_HEX)
+        return p
+
+    # ── Page header ────────────────────────────────────────────────────────────
+    hdr_p = doc.add_paragraph()
+    hdr_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_rtl_para(hdr_p)
+    hdr_r = hdr_p.add_run("وزارة الاستثمار | Ministry of Investment")
+    hdr_r.bold       = True
+    hdr_r.font.name  = AR_FONT
+    hdr_r.font.size  = Pt(16)
+    hdr_r.font.color.rgb = _rgb_from_hex(GREEN_HEX)
+
+    title_p = doc.add_paragraph()
+    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_rtl_para(title_p)
+    title_r = title_p.add_run("محضر اجتماع")
+    title_r.bold       = True
+    title_r.font.name  = AR_FONT
+    title_r.font.size  = Pt(20)
+    title_r.font.color.rgb = _rgb_from_hex(GREEN_HEX)
+    doc.add_paragraph()
+
+    company  = cfg.get("company",  "")
+    date_str = cfg.get("date",     "")
+    location = cfg.get("location", "المقر الرئيسي – وزارة الاستثمار")
+    chair    = cfg.get("chair",    "معالي الوزير")
+    priority = cfg.get("priority", "مهم جدا")
+    next_mtg = cfg.get("next_mtg", "")
+    subject  = content.get("subject_ar", f"آخر المستجدات — {company}")
+
+    # ── Table 0: Meeting metadata ──────────────────────────────────────────────
+    _ar_heading("بيانات الاجتماع", size=12)
+    tbl0 = doc.add_table(rows=4, cols=4)
+    tbl0.style = "Table Grid"
+
+    meta_rows = [
+        [("الموضوع", True), (subject,   False), ("الموقع",         True), (location, False)],
+        [("اليوم",   True), (date_str,  False), ("التاريخ",        True), (date_str, False)],
+        [("الوقت",   True), ("",         False), ("برئاسة",         True), (chair,    False)],
+        [("الأولوية",True), (priority,  False), ("الاجتماع القادم",True), (next_mtg, False)],
+    ]
+    for ri, row_data in enumerate(meta_rows):
+        for ci, (text, is_label) in enumerate(row_data):
+            c  = tbl0.cell(ri, ci)
+            bg = GREEN_HEX if is_label else None
+            fg = "FFFFFF"  if is_label else "1A1A1A"
+            _fill_cell(c, text, bold=is_label, size=11, bg_hex=bg, color_hex=fg)
+    doc.add_paragraph()
+
+    # ── Table 1: Key discussion points ────────────────────────────────────────
+    _ar_heading("أبرز ما تم مناقشته")
+    tbl1 = doc.add_table(rows=1, cols=1)
+    tbl1.style = "Table Grid"
+    disc_lines = content.get("discussion_points", [])
+    disc_text  = "\n".join(f"• {pt}" for pt in disc_lines) if disc_lines else "—"
+    _fill_cell(tbl1.cell(0, 0), disc_text, size=12)
+    doc.add_paragraph()
+
+    # ── Table 2: Action items ─────────────────────────────────────────────────
+    _ar_heading("الإجراءات والمهام المتفق عليها")
+    action_items = content.get("action_items", [])
+    tbl2 = doc.add_table(rows=1 + max(len(action_items), 1), cols=5)
+    tbl2.style = "Table Grid"
+    hdrs2 = ["م", "التوجيه / المهمة", "المسؤول", "الأولوية", "تاريخ الإنجاز المتوقع"]
+    for ci, h in enumerate(hdrs2):
+        _fill_cell(tbl2.cell(0, ci), h, bold=True, size=11,
+                   bg_hex=GREEN_HEX, color_hex="FFFFFF")
+    if action_items:
+        for ri, act in enumerate(action_items):
+            vals = [str(ri + 1), act.get("task", ""), act.get("owner", ""),
+                    act.get("priority", ""), act.get("due", "")]
+            for ci, val in enumerate(vals):
+                _fill_cell(tbl2.cell(ri + 1, ci), val, size=11)
+    else:
+        for ci in range(5):
+            _fill_cell(tbl2.cell(1, ci), "", size=11)
+    doc.add_paragraph()
+
+    # ── Table 3: Attendees ────────────────────────────────────────────────────
+    _ar_heading("الحضور")
+    attendees = content.get("attendees", [])
+    tbl3 = doc.add_table(rows=1 + max(len(attendees), 1), cols=3)
+    tbl3.style = "Table Grid"
+    hdrs3 = ["#", "الاسم", "الوظيفة"]
+    for ci, h in enumerate(hdrs3):
+        _fill_cell(tbl3.cell(0, ci), h, bold=True, size=11,
+                   bg_hex=GREEN_HEX, color_hex="FFFFFF")
+    if attendees:
+        for ri, att in enumerate(attendees):
+            vals = [str(ri + 1), att.get("name", ""), att.get("title", "")]
+            for ci, val in enumerate(vals):
+                _fill_cell(tbl3.cell(ri + 1, ci), val, size=11)
+    else:
+        for ci in range(3):
+            _fill_cell(tbl3.cell(1, ci), "", size=11)
+
+    # ── Footer ────────────────────────────────────────────────────────────────
+    doc.add_paragraph()
+    ft = doc.add_paragraph()
+    ft.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_rtl_para(ft)
+    ft_r = ft.add_run("وزارة الاستثمار — المملكة العربية السعودية | www.misa.gov.sa")
+    ft_r.font.name  = AR_FONT
+    ft_r.font.size  = Pt(9)
+    ft_r.font.color.rgb = _rgb_from_hex("888888")
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
