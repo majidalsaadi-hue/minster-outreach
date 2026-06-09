@@ -342,33 +342,22 @@ def render(dfs: dict, lang: str):
         xl_companies   = st.session_state.get("rb_excel_companies", [])
         company_list   = xl_companies + [c for c in crm_companies if c not in xl_companies]
 
-        r1c1, r1c2 = st.columns(2)
-        with r1c1:
-            cur_co = st.session_state["rb_company"]
-            if company_list:
-                idx     = company_list.index(cur_co) if cur_co in company_list else 0
-                company = st.selectbox("Company", company_list, index=idx, key="rb_co_sel")
-            else:
-                company = st.text_input("Company", value=cur_co,
-                                        placeholder="e.g. Barclays", key="rb_co_txt")
-            st.session_state["rb_company"] = company
+        # Company selector — full width
+        cur_co = st.session_state["rb_company"]
+        if company_list:
+            idx     = company_list.index(cur_co) if cur_co in company_list else 0
+            company = st.selectbox("Company", company_list, index=idx, key="rb_co_sel")
+        else:
+            company = st.text_input("Company", value=cur_co,
+                                    placeholder="e.g. Barclays", key="rb_co_txt")
+        st.session_state["rb_company"] = company
 
-            # Auto-fill AM / RM / Rep when company changes
-            hdr_data = st.session_state.get("rb_excel_header_data", {})
-            if company and company != st.session_state.get("rb_last_co_fill", "") and company in hdr_data:
-                _fill_company_fields(hdr_data, company)
-                st.session_state["rb_last_co_fill"] = company
-                st.rerun()
-
-        with r1c2:
-            rep_pos   = st.session_state.get("rb_rep_position", "")
-            rep_email = st.session_state.get("rb_rep_email", "")
-            st.session_state["rb_recipient"] = st.text_input(
-                "Representative name",
-                value=st.session_state["rb_recipient"],
-                placeholder="e.g. Khalid Al-Dabbagh", key="rb_recip")
-            if rep_pos or rep_email:
-                st.caption(f"{rep_pos}{'  ·  ' + rep_email if rep_email else ''}")
+        # Auto-fill AM / RM / date when company changes
+        hdr_data = st.session_state.get("rb_excel_header_data", {})
+        if company and company != st.session_state.get("rb_last_co_fill", "") and company in hdr_data:
+            _fill_company_fields(hdr_data, company)
+            st.session_state["rb_last_co_fill"] = company
+            st.rerun()
 
         r2c1, r2c2 = st.columns(2)
         with r2c1:
@@ -1929,6 +1918,10 @@ def _fill_company_fields(hdr_data: dict, company: str):
     if info.get("rep"):
         st.session_state["rb_recipient"] = info["rep"]
         st.session_state["rb_recip"]     = info["rep"]
+    if info.get("last_updated"):
+        st.session_state["rb_date"]      = info["last_updated"]
+        st.session_state["rb_date_inp"]  = info["last_updated"]
+        st.session_state["rb_ar_date"]   = info["last_updated"]
     if info.get("next_meeting"):
         st.session_state["rb_next_meeting_text"] = info["next_meeting"]
     st.session_state["rb_rep_position"] = info.get("position", "")
