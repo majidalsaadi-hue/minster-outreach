@@ -129,6 +129,7 @@ def _init():
         "rb_ar_api_key":        "",
         "rb_ar_content":        None,
         "rb_ar_docx_bytes":     None,
+        "rb_ar_doc_key":        "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -614,15 +615,50 @@ def render(dfs: dict, lang: str):
             )
             # Parse file and pre-set widget key BEFORE text_area is instantiated
             if ar_doc is not None:
-                try:
-                    import docx as _dx
-                    _doc = _dx.Document(io.BytesIO(ar_doc.read()))
-                    _txt = "\n".join(p.text for p in _doc.paragraphs if p.text.strip())
-                    st.session_state["rb_ar_summary_ta"] = _txt
-                    st.session_state["rb_ar_summary"]    = _txt
-                    st.success(f"✅ Extracted {len(_txt.split())} words — text loaded below.")
-                except Exception as _e:
-                    st.error(f"Could not read .docx: {_e}")
+                _ar_doc_key = f"{ar_doc.name}_{ar_doc.size}"
+                if _ar_doc_key != st.session_state.get("rb_ar_doc_key", ""):
+                    st.session_state["rb_ar_doc_key"] = _ar_doc_key
+                    try:
+                        import docx as _dx
+                        _raw_ar = ar_doc.read()
+                        _doc    = _dx.Document(io.BytesIO(_raw_ar))
+                        # Extract paragraphs
+                        _txt = "\n".join(p.text for p in _doc.paragraphs if p.text.strip())
+                        # Also extract table text so Claude has full context (action items live in tables)
+                        for _tbl in _doc.tables:
+                            for _trow in _tbl.rows:
+                                _cells = " | ".join(c.text.strip() for c in _trow.cells if c.text.strip())
+                                if _cells:
+                                    _txt += "\n" + _cells
+                        st.session_state["rb_ar_summary_ta"] = _txt
+                        st.session_state["rb_ar_summary"]    = _txt
+                        # Also try to parse as Arabic minutes directly (action items are in tables)
+                        _pre = _parse_word(_raw_ar)
+                        if _pre.get("action_items"):
+                            _pre_items  = _pre["action_items"]
+                            _pre_ar     = [i.get("Action (AR)", "") for i in _pre_items]
+                            _pre_en     = _translate_list(_pre_ar)
+                            for _pi, _pen in enumerate(_pre_en):
+                                if not _pre_items[_pi].get("Action (EN)"):
+                                    _pre_items[_pi]["Action (EN)"] = _pen
+                            _due_ar = [i.get("Due Text", "") for i in _pre_items]
+                            _due_en = _translate_list([d for d in _due_ar if d])
+                            _due_idx = 0
+                            for _pi in _pre_items:
+                                if _pi.get("Due Text"):
+                                    _pi["Due Text EN"] = _due_en[_due_idx] if _due_idx < len(_due_en) else _pi["Due Text"]
+                                    _due_idx += 1
+                            st.session_state["rb_actions"] = pd.DataFrame(_pre_items)
+                            if not st.session_state.get("rb_company") and _pre.get("company"):
+                                st.session_state["rb_company"] = _pre["company"]
+                            st.success(
+                                f"✅ Extracted {len(_txt.split())} words — "
+                                f"**{len(_pre_items)} action item(s) pre-loaded** into the pipeline."
+                            )
+                        else:
+                            st.success(f"✅ Extracted {len(_txt.split())} words — text loaded below.")
+                    except Exception as _e:
+                        st.error(f"Could not read .docx: {_e}")
             st.caption("Extracted text (edit if needed):")
             st.session_state["rb_ar_summary"] = st.text_area(
                 "Meeting summary text",
@@ -968,43 +1004,61 @@ def _parse_word(file_bytes: bytes) -> dict:
         return None
 
     # ── Table 0: Meeting metadata ─────────────────────────────────────────────
-    # Row 0: headers (الموضوع, الموقع, اليوم, التاريخ)
-    # Row 1: values  (subject, location, day, date)
-    # Row 2: headers (وقت, برئاسة, الأولوية, الاجتماع القادم)
-    # Row 3: values  (time, chair, priority, next_meeting)
+    # Each row uses [label, value, label, value] pairs (not separate header/value rows)
     if tables:
         meta = tables[0]
-        if len(meta) >= 2:
-            row1 = _dedup(meta[1])
-            if row1:
-                result["subject_ar"] = row1[0]
-            if len(row1) >= 2:
-                result["location"] = row1[1]
-            # Date: last unique cell that looks like a date
-            for cell in reversed(row1):
-                d = _parse_date(cell)
+        prio_map = {"مهم جدا": "Very High", "مهم": "High", "متوسط": "Medium", "عادي": "Low"}
+
+        # Build label→value dict by reading alternating label/value cells per row
+        _meta_kv: dict = {}
+        for row in meta:
+            for idx in range(0, len(row) - 1, 2):
+                lbl = (row[idx] or "").strip()
+                val = (row[idx + 1] if idx + 1 < len(row) else "") or ""
+                val = val.strip()
+                if lbl:
+                    _meta_kv[lbl] = val
+
+        if "الموضوع" in _meta_kv:
+            result["subject_ar"] = _meta_kv["الموضوع"]
+        if "الموقع" in _meta_kv and _meta_kv["الموقع"]:
+            result["location"] = _meta_kv["الموقع"]
+        if "برئاسة" in _meta_kv and _meta_kv["برئاسة"]:
+            result["chair"] = _meta_kv["برئاسة"]
+        if "الأولوية" in _meta_kv:
+            result["priority"] = prio_map.get(_meta_kv["الأولوية"], "High")
+        if "الاجتماع القادم" in _meta_kv:
+            result["next_meeting_text"] = _meta_kv["الاجتماع القادم"]
+
+        # Date: prefer "التاريخ", fallback "اليوم"
+        for _dk in ["التاريخ", "اليوم"]:
+            if _meta_kv.get(_dk):
+                d = _parse_date(_meta_kv[_dk])
                 if d:
                     result["date"] = d
                     break
-            # Extract company from subject
-            known = ["Barclays", "BlackRock", "Brookfield", "Goldman", "HSBC",
-                     "JPMorgan", "Morgan Stanley", "UBS", "Citi", "Deutsche",
-                     "Allianz", "Lazard", "Blackstone", "Carlyle", "KKR"]
+
+        # Extract company name — first try splitting subject on em-dash "—"
+        _subject = result["subject_ar"]
+        for _sep in ("—", "–", "-"):
+            _idx = _subject.find(_sep)
+            if _idx != -1:
+                _co_candidate = _subject[_idx + len(_sep):].strip()
+                if _co_candidate and len(_co_candidate) >= 2:
+                    result["company"] = _co_candidate
+                    result["subject_en"] = f"Latest Updates — {_co_candidate}"
+                    break
+        # Fallback: scan for known company names anywhere in subject
+        if not result["company"]:
+            known = ["Rothschild", "Barclays", "BlackRock", "Brookfield", "Goldman",
+                     "HSBC", "JPMorgan", "Morgan Stanley", "UBS", "Citi", "Deutsche",
+                     "Allianz", "Lazard", "Blackstone", "Carlyle", "KKR",
+                     "Vanguard", "Fidelity", "Temasek", "Mubadala", "ADQ", "PIF"]
             for name in known:
-                if name.lower() in row1[0].lower():
+                if name.lower() in _subject.lower():
                     result["company"] = name
                     result["subject_en"] = f"Latest Updates — {name}"
                     break
-
-        if len(meta) >= 4:
-            row3 = _dedup(meta[3])
-            if len(row3) >= 2:
-                result["chair"] = row3[1]
-            if len(row3) >= 3:
-                prio_map = {"مهم جدا": "Very High", "مهم": "High", "متوسط": "Medium", "عادي": "Low"}
-                result["priority"] = prio_map.get(row3[2], "High")
-            if len(row3) >= 4:
-                result["next_meeting_text"] = row3[3]
 
     # ── Discussion table ──────────────────────────────────────────────────────
     _disc_rows = _classified.get("discussion")
