@@ -711,6 +711,29 @@ def render(dfs: dict, lang: str):
                     _s["rb_ar_content"]    = _content
                     _s["rb_ar_docx_bytes"] = _docx_bytes
 
+                    # Push extracted action items into rb_actions so the main
+                    # pipeline can write them to the Excel tracker
+                    _prio_map = {
+                        "مهم جدا": "Very High", "مهم": "High",
+                        "متوسط": "Medium",      "عادي": "Low",
+                    }
+                    _ar_rows = []
+                    for _ai in _content.get("action_items", []):
+                        _ar_rows.append({
+                            "Action (EN)": "",
+                            "Action (AR)": _ai.get("task", ""),
+                            "Assigned To": _ai.get("owner", ""),
+                            "Priority":    _prio_map.get(_ai.get("priority", ""), "Medium"),
+                            "Due Date":    None,
+                            "Due Text":    _ai.get("due", ""),
+                            "Remarks":     "",
+                        })
+                    if _ar_rows:
+                        _s["rb_actions"] = pd.DataFrame(_ar_rows)
+                        _s["rb_company"] = _s["rb_ar_company"]
+                        st.info(f"✅ {len(_ar_rows)} action item(s) loaded into the pipeline — "
+                                "scroll up to Step 3 and click Run to write them to Excel.")
+
     _ar_bytes = st.session_state.get("rb_ar_docx_bytes")
     if _ar_bytes:
         _ar_company  = st.session_state.get("rb_ar_company", "meeting").replace(" ", "_")
@@ -1476,10 +1499,13 @@ def _build_excel(existing_bytes, company, meeting_date, next_meeting, chair, act
 
     if sheet_name in wb.sheetnames:
         ws       = wb[sheet_name]
+        # Scan backwards from capped max_row to find last data row quickly
         last_row = 20
-        for row in ws.iter_rows(min_row=21, values_only=True):
-            if any(v is not None for v in row):
-                last_row += 1
+        scan_max = min(ws.max_row or 21, 5000)
+        for r in range(scan_max, 20, -1):
+            if any(ws.cell(r, c).value is not None for c in range(7, 17)):
+                last_row = r
+                break
         start_row = last_row + 1
     else:
         ws = wb.create_sheet(sheet_name)
