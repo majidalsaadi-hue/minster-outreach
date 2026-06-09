@@ -354,10 +354,13 @@ def render(dfs: dict, lang: str):
 
         # Auto-fill AM / RM / date when company changes
         hdr_data = st.session_state.get("rb_excel_header_data", {})
-        if company and company != st.session_state.get("rb_last_co_fill", "") and company in hdr_data:
-            _fill_company_fields(hdr_data, company)
-            st.session_state["rb_last_co_fill"] = company
-            st.rerun()
+        try:
+            if company and company != st.session_state.get("rb_last_co_fill", "") and company in hdr_data:
+                _fill_company_fields(hdr_data, company)
+                st.session_state["rb_last_co_fill"] = company
+                st.rerun()
+        except Exception as _fill_err:
+            st.warning(f"⚠️ Auto-fill error (non-fatal): {_fill_err}")
 
         r2c1, r2c2 = st.columns(2)
         with r2c1:
