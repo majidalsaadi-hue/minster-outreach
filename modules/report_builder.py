@@ -1864,6 +1864,7 @@ def _read_all_header_data(raw_bytes: bytes) -> dict:
             info: dict = {
                 "am": "", "rm": "", "rep": "", "position": "",
                 "email": "", "last_updated": "", "next_meeting": "",
+                "company_name": "",
             }
             for r in range(12, 19):
                 for c in range(1, 20):
@@ -1884,6 +1885,8 @@ def _read_all_header_data(raw_bytes: bytes) -> dict:
                         info["position"] = val
                     elif lu == "EMAIL":
                         info["email"] = val
+                    elif "COMPANY" in lu and "NAME" in lu:
+                        info["company_name"] = val
                     elif "LAST" in lu and ("UPDATE" in lu or "UPDAT" in lu):
                         try:
                             info["last_updated"] = (
@@ -1901,6 +1904,10 @@ def _read_all_header_data(raw_bytes: bytes) -> dict:
                         except Exception:
                             info["next_meeting"] = val[:10]
             result[co] = info
+            # Also index by the "company name" cell value so the dropdown
+            # (which may show the full name e.g. "Lulu Group") resolves correctly
+            if info["company_name"] and info["company_name"] != co:
+                result[info["company_name"]] = info
     except Exception:
         pass
     return result
