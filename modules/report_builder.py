@@ -201,7 +201,13 @@ def render(dfs: dict, lang: str):
             excel_file = st.file_uploader("excel", type=["xlsx","xls"],
                                           key="rb_excel_up", label_visibility="collapsed")
 
-    # Auto-parse Word
+    # Auto-parse Word (only when a new file is uploaded)
+    if word_file is not None:
+        _wd_key = f"{word_file.name}_{word_file.size}"
+        if _wd_key == st.session_state.get("rb_word_file_key", ""):
+            word_file = None  # already parsed — skip
+        else:
+            st.session_state["rb_word_file_key"] = _wd_key
     if word_file is not None:
         raw = word_file.read()
         with st.spinner("Parsing Arabic document and translating action items…"):
@@ -307,29 +313,36 @@ def render(dfs: dict, lang: str):
                             ci_cols[k % 3].markdown(f"**{label}:** {val}")
 
     if excel_file is not None:
-        st.session_state["rb_excel_bytes"] = excel_file.read()
-        # Parse ALL per-company header data in one pass
-        hdr_data = _read_all_header_data(st.session_state["rb_excel_bytes"])
-        st.session_state["rb_excel_header_data"] = hdr_data
-        xl_companies = list(hdr_data.keys())
-        st.session_state["rb_excel_companies"] = xl_companies
-        st.info(
-            f"Excel loaded — {len(xl_companies)} company sheet(s): "
-            f"{', '.join(xl_companies[:6])}"
-        )
-        # Auto-select + auto-fill first company if none yet selected
-        if xl_companies:
-            first_co = xl_companies[0]
-            if not st.session_state.get("rb_company"):
-                st.session_state["rb_company"] = first_co
-            cur_co = st.session_state["rb_company"]
-            # Fill fields for the currently-selected (or first) company
-            _fill_company_fields(hdr_data, cur_co)
-            st.session_state["rb_last_co_fill"] = cur_co
-        # Detect potential opportunities from action items (keeps company per item)
-        _det = _detect_opps_from_actions(st.session_state["rb_excel_bytes"])
-        st.session_state["rb_detected_opps"] = _det
-        # Don't pre-fill text area here — we filter by company in Step 2
+        _xl_key = f"{excel_file.name}_{excel_file.size}"
+        if _xl_key != st.session_state.get("rb_excel_file_key", ""):
+            # New file — parse and cache everything once
+            st.session_state["rb_excel_file_key"] = _xl_key
+            st.session_state["rb_excel_bytes"]    = excel_file.read()
+            hdr_data = _read_all_header_data(st.session_state["rb_excel_bytes"])
+            st.session_state["rb_excel_header_data"] = hdr_data
+            xl_companies = list(hdr_data.keys())
+            st.session_state["rb_excel_companies"] = xl_companies
+            st.info(
+                f"Excel loaded — {len(xl_companies)} company sheet(s): "
+                f"{', '.join(xl_companies[:6])}"
+            )
+            if xl_companies:
+                first_co = xl_companies[0]
+                if not st.session_state.get("rb_company"):
+                    st.session_state["rb_company"] = first_co
+                cur_co = st.session_state["rb_company"]
+                _fill_company_fields(hdr_data, cur_co)
+                st.session_state["rb_last_co_fill"] = cur_co
+            _det = _detect_opps_from_actions(st.session_state["rb_excel_bytes"])
+            st.session_state["rb_detected_opps"] = _det
+        else:
+            # Same file already processed — just show the cached info
+            xl_companies = st.session_state.get("rb_excel_companies", [])
+            if xl_companies:
+                st.info(
+                    f"Excel loaded — {len(xl_companies)} company sheet(s): "
+                    f"{', '.join(xl_companies[:6])}"
+                )
 
     # ── Step 2: Configure ─────────────────────────────────────────────────────
     with st.container(border=True):
