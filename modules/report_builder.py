@@ -743,7 +743,7 @@ def render(dfs: dict, lang: str):
                     _ar_rows = []
                     for _ai in _content.get("action_items", []):
                         _ar_rows.append({
-                            "Action (EN)": "",
+                            "Action (EN)": _ai.get("task_en", ""),
                             "Action (AR)": _ai.get("task", ""),
                             "Assigned To": _ai.get("owner", ""),
                             "Priority":    _prio_map.get(_ai.get("priority", ""), "Medium"),
@@ -1504,6 +1504,28 @@ def _build_letter_docx(cfg: dict, actions_df: pd.DataFrame) -> bytes:
 
 # ─── Excel builder ────────────────────────────────────────────────────────────
 
+def _find_company_sheet(wb, company: str) -> str | None:
+    """Return the sheet name that best matches `company`, or None."""
+    co = company.lower().strip()
+    for sname in wb.sheetnames:
+        sn = sname.lower()
+        if co in sn or sn in co:
+            return sname
+        # Strip "Action Items" prefix and try again
+        stripped = sn
+        for pfx in ("action items ", "actions ", "action item "):
+            if stripped.startswith(pfx):
+                stripped = stripped[len(pfx):].strip()
+                break
+        if stripped and (stripped in co or co in stripped):
+            return sname
+        # Word-by-word: any 4+ char token from stripped appears in company
+        for word in stripped.split():
+            if len(word) >= 4 and word in co:
+                return sname
+    return None
+
+
 def _build_excel(existing_bytes, company, meeting_date, next_meeting, chair, actions_df) -> bytes:
     if existing_bytes:
         wb = openpyxl.load_workbook(io.BytesIO(existing_bytes))
@@ -1512,13 +1534,7 @@ def _build_excel(existing_bytes, company, meeting_date, next_meeting, chair, act
         if "Sheet" in wb.sheetnames:
             del wb["Sheet"]
 
-    # Match existing sheet with fuzzy name (handles typos like "Barclyes")
-    target_sheet = None
-    for sname in wb.sheetnames:
-        if company.lower() in sname.lower() or sname.lower() in company.lower():
-            target_sheet = sname
-            break
-    sheet_name = target_sheet or f"Action Items {company}"[:31]
+    sheet_name = _find_company_sheet(wb, company) or f"Action Items {company}"[:31]
 
     if sheet_name in wb.sheetnames:
         ws       = wb[sheet_name]
@@ -1633,11 +1649,7 @@ def _merge_pptx_actions_to_excel(
     wb = openpyxl.load_workbook(io.BytesIO(existing_bytes))
 
     # Locate or create sheet
-    target = None
-    for sname in wb.sheetnames:
-        if company.lower() in sname.lower() or sname.lower() in company.lower():
-            target = sname
-            break
+    target = _find_company_sheet(wb, company)
     if not target:
         ws = wb.create_sheet(f"Action Items {company}"[:31])
         _write_sheet_header(ws, company, date.today(), None, "")
@@ -2092,6 +2104,7 @@ Required JSON structure:
   "action_items": [
     {{
       "task":     "Arabic description of the action",
+      "task_en":  "English description of the same action",
       "owner":    "person or department name in Arabic",
       "priority": "مهم جدا | مهم | متوسط | عادي",
       "due":      "expected completion date or Arabic timeframe"
@@ -2110,7 +2123,8 @@ Rules:
 - action_items: one entry per distinct task mentioned
 - attendees: include all named people from both sides (MISA and {company})
 - If ARM is "{arm}" or Exec RM is "{exec_rm}", include them in attendees as MISA staff
-- All text values MUST be in Arabic (names may stay in original script)
+- task_en: English translation of the action (used for the Excel tracker)
+- All other text values MUST be in Arabic (names may stay in original script)
 - Respond ONLY with the JSON object — no markdown fences, no explanation
 
 Meeting metadata:
