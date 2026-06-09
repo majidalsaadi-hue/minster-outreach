@@ -211,7 +211,18 @@ def render(dfs: dict, lang: str):
     if word_file is not None:
         raw = word_file.read()
         with st.spinner("Parsing Arabic document and translating action items…"):
-            parsed = _parse_word(raw)
+            try:
+                parsed = _parse_word(raw)
+            except Exception as _pe:
+                parsed = {}
+                st.error(f"Could not parse Word document: {_pe}")
+        if not parsed:
+            st.warning(
+                "⚠️ No recognisable meeting-minutes structure found in the uploaded document. "
+                "Expected the standard 4-table Arabic Ministry format. "
+                "You can still run the pipeline using action items loaded via the "
+                "**Arabic Minutes Generator** below."
+            )
         if parsed:
             s = st.session_state
             s["rb_parsed"]            = parsed
@@ -491,30 +502,36 @@ def render(dfs: dict, lang: str):
                 # 1 — Updated Excel tracker
                 updated_xl = None
                 _ppt_mode  = bool(s.get("rb_ppt_bytes"))
-                if s.get("rb_excel_bytes") and not actions.empty:
+                if s.get("rb_excel_bytes"):
                     _log(f"Updating Excel tracker for {company}…", 30)
                     try:
                         mtg_d = datetime.strptime(mtg_date, "%d %B %Y").date()
                     except ValueError:
                         mtg_d = date.today()
-                    if _ppt_mode:
-                        updated_xl, _n_upd, _n_add = _merge_pptx_actions_to_excel(
-                            s["rb_excel_bytes"], company,
-                            actions.to_dict(orient="records"),
-                        )
-                        _log(
-                            f"Excel updated — {_n_upd} row(s) updated, "
-                            f"{_n_add} new row(s) added.", 50
-                        )
+                    if not actions.empty:
+                        if _ppt_mode:
+                            updated_xl, _n_upd, _n_add = _merge_pptx_actions_to_excel(
+                                s["rb_excel_bytes"], company,
+                                actions.to_dict(orient="records"),
+                            )
+                            _log(
+                                f"Excel updated — {_n_upd} row(s) updated, "
+                                f"{_n_add} new row(s) added.", 50
+                            )
+                        else:
+                            updated_xl = _build_excel(
+                                existing_bytes=s["rb_excel_bytes"],
+                                company=company,
+                                meeting_date=mtg_d,
+                                next_meeting=s.get("rb_next_meeting_text") or None,
+                                chair=cfg["chair"],
+                                actions_df=actions,
+                            )
+                            _log("Excel tracker updated.", 50)
                     else:
-                        updated_xl = _build_excel(
-                            existing_bytes=s["rb_excel_bytes"],
-                            company=company,
-                            meeting_date=mtg_d,
-                            next_meeting=s.get("rb_next_meeting_text") or None,
-                            chair=cfg["chair"],
-                            actions_df=actions,
-                        )
+                        # No new action items — return the existing tracker unchanged
+                        updated_xl = s["rb_excel_bytes"]
+                        _log("No new action items — returning existing Excel tracker.", 50)
 
                 # 2 — Word letter
                 _log("Generating company letter (.docx)…", 55)
