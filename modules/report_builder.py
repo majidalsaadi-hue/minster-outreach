@@ -432,15 +432,21 @@ def render(dfs: dict, lang: str):
                      type="primary", use_container_width=True, key="rb_run"):
 
             s       = st.session_state
-            actions = _valid_actions(s["rb_actions"])
-            company = s["rb_company"] or "Company"
-            arm     = s["rb_arm"] or "Dana Aljarbu"
-            exec_rm = s["rb_exec_rm"] or "Sara Al-Sayed"
-            recipient = s["rb_recipient"] or f"{company} Team"
-            mtg_date  = s["rb_date"] or date.today().strftime("%d %B %Y")
+            try:
+                actions = _valid_actions(s.get("rb_actions", _EMPTY_ACTIONS.copy()))
+            except Exception as _ae:
+                st.error(f"Could not read action items: {_ae}")
+                actions = _EMPTY_ACTIONS.copy()
+            company = s.get("rb_company") or "Company"
+            arm     = s.get("rb_arm") or "Dana Aljarbu"
+            exec_rm = s.get("rb_exec_rm") or "Sara Al-Sayed"
+            recipient = s.get("rb_recipient") or f"{company} Team"
+            mtg_date  = s.get("rb_date") or date.today().strftime("%d %B %Y")
 
             prog   = st.progress(0)
             status = st.empty()
+            status.markdown(f"→ Starting pipeline for **{company}** — "
+                            f"{len(actions)} action item(s) loaded…")
 
             def _log(msg: str, pct: int = None):
                 status.markdown(f"→ {msg}")
@@ -543,9 +549,10 @@ def render(dfs: dict, lang: str):
                 }
 
             except Exception as e:
-                status.error(f"Error: {e}")
-                import traceback
-                st.code(traceback.format_exc())
+                prog.progress(0)
+                import traceback as _tb
+                status.error(f"Pipeline error at last step → {e}")
+                st.code(_tb.format_exc())
 
     # ── Output section ────────────────────────────────────────────────────────
     result = st.session_state.get("rb_result")
