@@ -275,8 +275,8 @@ def _add_run(para, text, bold=False, italic=False, size=11,
 
 def _section_head(doc, text: str):
     p = doc.add_paragraph()
-    p.paragraph_format.space_before = Pt(8)
-    p.paragraph_format.space_after  = Pt(4)
+    p.paragraph_format.space_before = Pt(10)
+    p.paragraph_format.space_after  = Pt(5)
     pPr = p._p.get_or_add_pPr()
     pBdr = OxmlElement("w:pBdr")
     bot  = OxmlElement("w:bottom")
@@ -289,7 +289,7 @@ def _section_head(doc, text: str):
     run = p.add_run(text.upper())
     run.bold      = True
     run.font.name = "Arial"
-    run.font.size = Pt(11)
+    run.font.size = Pt(16)
     r, g, b = _hex_to_rgb(_GREEN)
     run.font.color.rgb = RGBColor(r, g, b)
     return p
@@ -410,28 +410,46 @@ def _build_docx(d: dict) -> bytes:
     if d.get("aum"):
         profile_rows.append(("AUM", d["aum"]))
 
-    # Profile table (label | value), 2 cols
-    pt = doc.add_table(rows=len(profile_rows), cols=2)
+    # Profile table (label | value | name placeholder), 3 cols
+    n_rows = len(profile_rows)
+    pt = doc.add_table(rows=n_rows, cols=3)
     pt.style = "Table Grid"
     pt.autofit = False
     pt.columns[0].width = Cm(4.0)
-    pt.columns[1].width = Cm(13.5)
+    pt.columns[1].width = Cm(9.8)
+    pt.columns[2].width = Cm(3.7)
     for i, (lbl, val) in enumerate(profile_rows):
-        lc, vc = pt.rows[i].cells
+        lc, vc, nc = pt.rows[i].cells
         fill = _LGREEN if i % 2 == 0 else "FFFFFF"
-        _cell_shading(lc, fill)
-        _cell_shading(vc, fill)
-        _no_borders(lc); _no_borders(vc)
+        _cell_shading(lc, fill); _cell_shading(vc, fill)
+        _no_borders(lc); _no_borders(vc); _no_borders(nc)
         lc.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         vc.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         pl = lc.add_paragraph()
-        pl.paragraph_format.space_before = Pt(2)
-        pl.paragraph_format.space_after  = Pt(2)
-        _add_run(pl, lbl, bold=True, size=9, color=_GREEN)
+        pl.paragraph_format.space_before = Pt(3)
+        pl.paragraph_format.space_after  = Pt(3)
+        _add_run(pl, lbl, bold=True, size=10, color=_GREEN)
         pv = vc.add_paragraph()
-        pv.paragraph_format.space_before = Pt(2)
-        pv.paragraph_format.space_after  = Pt(2)
-        _add_run(pv, val or "—", size=9, color=_DARK)
+        pv.paragraph_format.space_before = Pt(3)
+        pv.paragraph_format.space_after  = Pt(3)
+        _add_run(pv, val or "—", size=10, color=_DARK)
+        # Right column: show name+title centered on first two rows, blank otherwise
+        if i == 0:
+            _cell_shading(nc, "F0F7F3")
+            nc.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            pn = nc.add_paragraph()
+            pn.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            pn.paragraph_format.space_before = Pt(4)
+            _add_run(pn, d.get("visitorName", ""), bold=True, size=9, color=_GREEN)
+        elif i == 1:
+            _cell_shading(nc, "F0F7F3")
+            nc.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            pt2 = nc.add_paragraph()
+            pt2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            title_short = (d.get("visitorTitle") or "").split(",")[0]
+            _add_run(pt2, title_short, size=8, color="666666")
+        else:
+            _cell_shading(nc, "F0F7F3")
 
     # ── Strategic Context ─────────────────────────────────────────────────────
     doc.add_paragraph()
@@ -439,7 +457,7 @@ def _build_docx(d: dict) -> bytes:
     ctx = doc.add_paragraph()
     ctx.paragraph_format.space_before = Pt(2)
     ctx.paragraph_format.space_after  = Pt(6)
-    _add_run(ctx, d.get("strategicContext", ""), size=10)
+    _add_run(ctx, d.get("strategicContext", ""), size=11)
 
     # ── Areas / Sectors (2-column) ────────────────────────────────────────────
     company_short = d.get("companyShort", d.get("company", ""))
@@ -465,12 +483,12 @@ def _build_docx(d: dict) -> bytes:
             pb.paragraph_format.space_before = Pt(3)
             pb.paragraph_format.space_after  = Pt(1)
             pb.paragraph_format.left_indent  = Cm(0.4)
-            _add_run(pb, f"• {sec.get('title','')}", bold=True, size=10)
+            _add_run(pb, f"• {sec.get('title','')}", bold=True, size=11)
             ps = cell.add_paragraph()
             ps.paragraph_format.space_before = Pt(0)
             ps.paragraph_format.space_after  = Pt(4)
             ps.paragraph_format.left_indent  = Cm(0.8)
-            _add_run(ps, f"– {sec.get('subbullet','')}", size=9, color=_MED)
+            _add_run(ps, f"– {sec.get('subbullet','')}", size=11, color=_MED)
 
     # ── Recommendation box ────────────────────────────────────────────────────
     doc.add_paragraph()
@@ -486,21 +504,21 @@ def _build_docx(d: dict) -> bytes:
     rh = rc.add_paragraph()
     rh.paragraph_format.space_before = Pt(4)
     rh.paragraph_format.space_after  = Pt(4)
-    _add_run(rh, "RECOMMENDATION", bold=True, size=11, color=_GREEN)
+    _add_run(rh, "RECOMMENDATION", bold=True, size=13, color=_GREEN)
 
     rec = d.get("recommendation", {})
     rd = rc.add_paragraph()
     rd.paragraph_format.space_after = Pt(4)
-    _add_run(rd, f"Delegate this meeting to ", size=10)
-    _add_run(rd, rec.get("delegateTo", ""), bold=True, size=10)
-    _add_run(rd, ", given:", size=10)
+    _add_run(rd, "Delegate this meeting to ", size=11)
+    _add_run(rd, rec.get("delegateTo", ""), bold=True, size=11)
+    _add_run(rd, ", given:", size=11)
 
     for r_item in rec.get("rationale", []):
         rp = rc.add_paragraph()
         rp.paragraph_format.space_before = Pt(2)
         rp.paragraph_format.space_after  = Pt(2)
         rp.paragraph_format.left_indent  = Cm(0.4)
-        _add_run(rp, f"• {r_item}", size=10)
+        _add_run(rp, f"• {r_item}", size=11)
 
     # ── Discussion Points (2-column) ──────────────────────────────────────────
     doc.add_paragraph()
@@ -526,7 +544,7 @@ def _build_docx(d: dict) -> bytes:
             pp.paragraph_format.space_before = Pt(3)
             pp.paragraph_format.space_after  = Pt(3)
             pp.paragraph_format.left_indent  = Cm(0.4)
-            _add_run(pp, f"• {dp}", size=10)
+            _add_run(pp, f"• {dp}", size=11)
 
     # ── Footer ────────────────────────────────────────────────────────────────
     doc.add_paragraph()
