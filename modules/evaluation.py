@@ -710,18 +710,21 @@ def render():
                 placeholder="e.g. Visitor arriving 20–22 June. Focus on logistics and data centres. Recommend delegating to HE Ibrahim…",
             )
         with col_b:
-            api_key_env = os.environ.get("ANTHROPIC_API_KEY", "")
+            # Resolve key: session state → Report Builder key → env var
+            _resolved_key = (
+                s.get("ev_api_key")
+                or s.get("rb_ar_api_key")
+                or os.environ.get("ANTHROPIC_API_KEY", "")
+            )
             s["ev_api_key"] = st.text_input(
                 "Anthropic API Key",
-                value=s["ev_api_key"] or api_key_env,
+                value=_resolved_key,
                 type="password",
                 key="ev_key",
                 placeholder="sk-ant-…  (or set ANTHROPIC_API_KEY env var)",
                 help="Get your key at console.anthropic.com",
             )
-            if api_key_env and not s["ev_api_key"]:
-                s["ev_api_key"] = api_key_env
-            if s["ev_api_key"] or api_key_env:
+            if s["ev_api_key"]:
                 st.caption("✅ API key ready")
             else:
                 st.caption("⚠️ Enter your Anthropic API key to generate briefings")
