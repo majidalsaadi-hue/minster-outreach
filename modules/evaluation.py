@@ -648,7 +648,65 @@ def _render_preview(d: dict):
       </div>
     </div>
     """
-    st.markdown(html, unsafe_allow_html=True)
+    full = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif}}
+body{{background:#fff;padding:0}}
+.wrap{{border:1.5px solid #C5DDD0;border-radius:10px;overflow:hidden}}
+.hdr{{background:#1B5C3F;color:white;padding:14px 20px;display:flex;align-items:center;justify-content:space-between}}
+.hdr h2{{font-size:15px;font-weight:700;margin:0}}
+.hdr p{{font-size:11px;color:#C8E6D4;margin:3px 0 0}}
+.conf{{color:#FFD700;font-weight:700;font-size:12px}}
+.body{{padding:18px 20px}}
+.shead{{font-size:11px;font-weight:700;letter-spacing:.08em;color:#1B5C3F;text-transform:uppercase;border-bottom:2px solid #1B5C3F;padding-bottom:4px;margin:18px 0 10px}}
+.subj{{font-size:13px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #E8F0EC}}
+.ptable{{width:100%;border-collapse:collapse;font-size:12px}}
+.ptable td{{padding:5px 8px}}
+.ptable tr:nth-child(odd) td{{background:#EAF4EE}}
+.lbl{{font-weight:700;color:#1B5C3F;width:28%}}
+.bodyp{{font-size:12px;line-height:1.6;color:#333;margin:0 0 8px}}
+.cols{{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}}
+.bul{{font-size:12px;margin:4px 0;padding-left:14px;position:relative;color:#1a1a1a}}
+.bul::before{{content:'•';position:absolute;left:0;color:#1B5C3F;font-weight:700}}
+.sub{{font-size:11px;margin:2px 0 2px 22px;color:#555;position:relative;padding-left:12px}}
+.sub::before{{content:'–';position:absolute;left:0}}
+.recbox{{background:#EAF4EE;border:1.5px solid #1B5C3F;border-radius:6px;padding:14px 16px;margin:14px 0}}
+.recbox h4{{font-size:12px;font-weight:700;color:#1B5C3F;margin:0 0 8px}}
+.recbox p{{font-size:12px;margin:0 0 8px;color:#1a1a1a}}
+.footer{{border-top:1px solid #C5DDD0;padding:10px 20px;display:flex;justify-content:space-between;font-size:10px;color:#999}}
+</style></head><body>
+<div class="wrap">
+  <div class="hdr">
+    <div><h2>MINISTERIAL BRIEFING NOTE</h2><p>Ministry of Investment of Saudi Arabia (MISA)</p></div>
+    <div style="text-align:right">
+      <div class="conf">CONFIDENTIAL</div>
+      <div style="color:#C8E6D4;font-size:11px;margin-top:4px">{today} &nbsp; {d.get("refNumber","")}</div>
+    </div>
+  </div>
+  <div class="body">
+    <div class="subj"><strong>Subject:</strong> {d.get("subject","")}&nbsp;&nbsp;|&nbsp;&nbsp;<strong>Visit:</strong> {d.get("visitDates","")}</div>
+    <div class="shead">Visitor Profile</div>
+    <table class="ptable">{profile_html}</table>
+    <div class="shead">Strategic Context</div>
+    <p class="bodyp">{d.get("strategicContext","")}</p>
+    <div class="shead">Areas Where {d.get("companyShort", d.get("company",""))} Can Benefit the Kingdom</div>
+    <div class="cols"><div>{sec_html(left_s)}</div><div>{sec_html(right_s)}</div></div>
+    <div class="recbox">
+      <h4>RECOMMENDATION</h4>
+      <p>Delegate this meeting to <strong>{rec.get("delegateTo","")}</strong>, given:</p>
+      {rat_html}
+    </div>
+    <div class="shead">Suggested Discussion Points</div>
+    <div class="cols"><div>{left_d}</div><div>{right_d}</div></div>
+  </div>
+  <div class="footer">
+    <span>Prepared by: Minister Outreach Office, MISA</span>
+    <span>For internal use only – Ministry of Investment of Saudi Arabia</span>
+  </div>
+</div>
+</body></html>"""
+    import streamlit.components.v1 as components
+    components.html(full, height=920, scrolling=True)
 
 
 # ─── Main render ───────────────────────────────────────────────────────────────
