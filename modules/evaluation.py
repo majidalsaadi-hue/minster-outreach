@@ -151,7 +151,7 @@ def _build_content_blocks(files: list, context: str) -> list:
             except Exception:
                 pass
 
-    today = date.today().strftime("%-d %B %Y")
+    today = date.today().strftime("%d %B %Y").lstrip("0")
     ctx_block = ("Additional context from the user:\n" + context + "\n") if context else ""
     prompt = f"""Today's date: {today}
 
@@ -323,7 +323,7 @@ def _build_docx(d: dict) -> bytes:
     section.left_margin   = Cm(1.6)
     section.right_margin  = Cm(1.6)
 
-    today = date.today().strftime("%-d %B %Y")
+    today = date.today().strftime("%d %B %Y").lstrip("0")
 
     # ── Remove default paragraph spacing ─────────────────────────────────────
     style = doc.styles["Normal"]
@@ -562,7 +562,7 @@ def _build_docx(d: dict) -> bytes:
 # ─── HTML preview ───────────────────────────────────────────────────────────────
 
 def _render_preview(d: dict):
-    today = date.today().strftime("%-d %B %Y")
+    today = date.today().strftime("%d %B %Y").lstrip("0")
 
     profile_rows = [
         ("Name",           d.get("visitorName",    "—")),
