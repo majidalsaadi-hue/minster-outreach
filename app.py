@@ -44,6 +44,7 @@ from modules.opportunities import render as render_opportunities
 from modules.actions       import render as render_actions, render_action_summary_widget
 from modules.tasks         import render as render_tasks
 from modules.report_builder      import render as render_report_builder
+from modules.evaluation          import render as render_evaluation
 
 try:
     from exports.pptx_generator import generate_pptx, generate_pptx_company
@@ -135,6 +136,7 @@ def render_sidebar():
             T("nav_investors"):         "investors",
             T("nav_opportunities"):     "opportunities",
             T("nav_report_builder"):    "report_builder",
+            T("nav_evaluation"):        "evaluation",
             T("nav_actions"):           "actions",
             T("nav_tasks"):             "tasks",
             T("nav_export"):            "export",
@@ -535,6 +537,9 @@ def main():
             _require_data()
         else:
             render_report_builder(dfs, lang())
+
+    elif page == "evaluation":
+        render_evaluation()
 
 
     elif page == "actions":
