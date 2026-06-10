@@ -34,11 +34,15 @@ _MODEL  = "claude-sonnet-4-6"
 
 def _init():
     defaults = {
-        "ev_api_key":  "",
-        "ev_brief":    None,
-        "ev_docx":     None,
-        "ev_context":  "",
-        "ev_file_key": "",
+        "ev_api_key":   "",
+        "ev_brief":     None,
+        "ev_docx":      None,
+        "ev_context":   "",
+        "ev_file_key":  "",
+        "ev_photo_key": "",
+        "ev_photo_bytes": None,
+        "ev_logo_key":  "",
+        "ev_logo_bytes": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -129,6 +133,22 @@ def _extract_text_from_docx(raw: bytes) -> str:
         return raw.decode("utf-8", errors="ignore")
 
 
+def _fetch_logo(domain: str) -> bytes | None:
+    """Try to fetch company logo from Clearbit. Returns bytes or None."""
+    if not domain:
+        return None
+    try:
+        import urllib.request
+        url = f"https://logo.clearbit.com/{domain.strip().lower()}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                return resp.read()
+    except Exception:
+        pass
+    return None
+
+
 def _build_content_blocks(files: list, context: str) -> list:
     """Build Anthropic message content blocks from uploaded files."""
     content = []
@@ -167,6 +187,7 @@ Required JSON structure:
   "visitorTitle": "string",
   "company": "string",
   "companyShort": "string (2-3 word abbreviation)",
+  "companyDomain": "string (primary website domain e.g. capitaland.com, blackrock.com — no https://)",
   "visitDates": "string",
   "accompaniedBy": "string",
   "organisation": "string (include country and ecosystem)",
@@ -275,8 +296,8 @@ def _add_run(para, text, bold=False, italic=False, size=11,
 
 def _section_head(doc, text: str):
     p = doc.add_paragraph()
-    p.paragraph_format.space_before = Pt(10)
-    p.paragraph_format.space_after  = Pt(5)
+    p.paragraph_format.space_before = Pt(6)
+    p.paragraph_format.space_after  = Pt(3)
     pPr = p._p.get_or_add_pPr()
     pBdr = OxmlElement("w:pBdr")
     bot  = OxmlElement("w:bottom")
@@ -310,18 +331,17 @@ def _bullet_para(doc_or_cell, text: str, sub=False, bold=False, font_size=9):
     return p
 
 
-def _build_docx(d: dict) -> bytes:
+def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None) -> bytes:
     doc = Document()
 
-    # ── Page setup (A4) ──────────────────────────────────────────────────────
-    from docx.oxml import parse_xml
+    # ── Page setup (A4, tighter margins to fit one page) ─────────────────────
     section = doc.sections[0]
     section.page_height   = Cm(29.7)
     section.page_width    = Cm(21.0)
-    section.top_margin    = Cm(1.2)
-    section.bottom_margin = Cm(1.2)
-    section.left_margin   = Cm(1.6)
-    section.right_margin  = Cm(1.6)
+    section.top_margin    = Cm(1.0)
+    section.bottom_margin = Cm(1.0)
+    section.left_margin   = Cm(1.5)
+    section.right_margin  = Cm(1.5)
 
     today = date.today().strftime("%d %B %Y").lstrip("0")
 
@@ -356,14 +376,26 @@ def _build_docx(d: dict) -> bytes:
     _add_run(p2, "Ministry of Investment of Saudi Arabia (MISA)", size=9, color="C8E6D4")
     c0.paragraphs[0].paragraph_format.space_before = Pt(4)
 
-    # Middle cell — company name
+    # Middle cell — company logo or company name
     c1.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-    pm = c1.add_paragraph()
-    pm.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_run(pm, d.get("company", ""), bold=True, size=12, color="FFFFFF")
-    pm2 = c1.add_paragraph()
-    pm2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_run(pm2, "Investment", size=9, color="C8E6D4")
+    if logo_bytes:
+        try:
+            pl_logo = c1.add_paragraph()
+            pl_logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            pl_logo.paragraph_format.space_before = Pt(4)
+            pl_logo.paragraph_format.space_after  = Pt(4)
+            pl_logo.add_run().add_picture(io.BytesIO(logo_bytes), width=Cm(3.5))
+        except Exception:
+            pm = c1.add_paragraph()
+            pm.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _add_run(pm, d.get("company", ""), bold=True, size=12, color="FFFFFF")
+    else:
+        pm = c1.add_paragraph()
+        pm.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _add_run(pm, d.get("company", ""), bold=True, size=12, color="FFFFFF")
+        pm2 = c1.add_paragraph()
+        pm2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _add_run(pm2, "Investment", size=9, color="C8E6D4")
 
     # Right cell — confidential / date / ref
     c2.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
@@ -378,7 +410,6 @@ def _build_docx(d: dict) -> bytes:
     _add_run(pr3, d.get("refNumber", ""), size=8, color="C8E6D4")
 
     # ── Subject line ─────────────────────────────────────────────────────────
-    doc.add_paragraph()
     subj = doc.add_paragraph()
     subj.paragraph_format.space_before = Pt(4)
     subj.paragraph_format.space_after  = Pt(4)
@@ -433,30 +464,38 @@ def _build_docx(d: dict) -> bytes:
         pv.paragraph_format.space_before = Pt(3)
         pv.paragraph_format.space_after  = Pt(3)
         _add_run(pv, val or "—", size=10, color=_DARK)
-        # Right column: show name+title centered on first two rows, blank otherwise
+        # Right column: photo (all rows merged visually) or name/title placeholder
+        _cell_shading(nc, "F0F7F3")
         if i == 0:
-            _cell_shading(nc, "F0F7F3")
             nc.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-            pn = nc.add_paragraph()
-            pn.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            pn.paragraph_format.space_before = Pt(4)
-            _add_run(pn, d.get("visitorName", ""), bold=True, size=9, color=_GREEN)
-        elif i == 1:
-            _cell_shading(nc, "F0F7F3")
-            nc.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            if photo_bytes:
+                try:
+                    pp_img = nc.add_paragraph()
+                    pp_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    pp_img.paragraph_format.space_before = Pt(4)
+                    pp_img.paragraph_format.space_after  = Pt(2)
+                    pp_img.add_run().add_picture(io.BytesIO(photo_bytes), width=Cm(3.0))
+                except Exception:
+                    pn = nc.add_paragraph()
+                    pn.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    _add_run(pn, d.get("visitorName", ""), bold=True, size=9, color=_GREEN)
+            else:
+                pn = nc.add_paragraph()
+                pn.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                pn.paragraph_format.space_before = Pt(4)
+                _add_run(pn, d.get("visitorName", ""), bold=True, size=9, color=_GREEN)
+        elif i == 1 and not photo_bytes:
+            nc.vertical_alignment = WD_ALIGN_VERTICAL.TOP
             pt2 = nc.add_paragraph()
             pt2.alignment = WD_ALIGN_PARAGRAPH.CENTER
             title_short = (d.get("visitorTitle") or "").split(",")[0]
             _add_run(pt2, title_short, size=8, color="666666")
-        else:
-            _cell_shading(nc, "F0F7F3")
 
     # ── Strategic Context ─────────────────────────────────────────────────────
-    doc.add_paragraph()
     _section_head(doc, "Strategic Context")
     ctx = doc.add_paragraph()
     ctx.paragraph_format.space_before = Pt(2)
-    ctx.paragraph_format.space_after  = Pt(6)
+    ctx.paragraph_format.space_after  = Pt(3)
     _add_run(ctx, d.get("strategicContext", ""), size=11)
 
     # ── Areas / Sectors (2-column) ────────────────────────────────────────────
@@ -491,7 +530,6 @@ def _build_docx(d: dict) -> bytes:
             _add_run(ps, f"– {sec.get('subbullet','')}", size=11, color=_MED)
 
     # ── Recommendation box ────────────────────────────────────────────────────
-    doc.add_paragraph()
     rec_tbl = doc.add_table(rows=1, cols=1)
     rec_tbl.style = "Table Grid"
     rec_tbl.autofit = False
@@ -502,13 +540,13 @@ def _build_docx(d: dict) -> bytes:
     rc.vertical_alignment = WD_ALIGN_VERTICAL.TOP
 
     rh = rc.add_paragraph()
-    rh.paragraph_format.space_before = Pt(4)
-    rh.paragraph_format.space_after  = Pt(4)
+    rh.paragraph_format.space_before = Pt(2)
+    rh.paragraph_format.space_after  = Pt(2)
     _add_run(rh, "RECOMMENDATION", bold=True, size=13, color=_GREEN)
 
     rec = d.get("recommendation", {})
     rd = rc.add_paragraph()
-    rd.paragraph_format.space_after = Pt(4)
+    rd.paragraph_format.space_after = Pt(2)
     _add_run(rd, "Delegate this meeting to ", size=11)
     _add_run(rd, rec.get("delegateTo", ""), bold=True, size=11)
     _add_run(rd, ", given:", size=11)
@@ -521,7 +559,6 @@ def _build_docx(d: dict) -> bytes:
         _add_run(rp, f"• {r_item}", size=11)
 
     # ── Discussion Points (2-column) ──────────────────────────────────────────
-    doc.add_paragraph()
     _section_head(doc, "Suggested Discussion Points")
 
     dps = d.get("discussionPoints", [])
@@ -547,7 +584,6 @@ def _build_docx(d: dict) -> bytes:
             _add_run(pp, f"• {dp}", size=11)
 
     # ── Footer ────────────────────────────────────────────────────────────────
-    doc.add_paragraph()
     div2 = doc.add_paragraph()
     div2.paragraph_format.space_before = Pt(4)
     div2.paragraph_format.space_after  = Pt(2)
@@ -772,11 +808,11 @@ def render():
             for i, f in enumerate(uploaded):
                 cols[i % 4].success(f"📄 {f.name}")
 
-    # ── Step 2: Context + API key ─────────────────────────────────────────────
+    # ── Step 2: Context + images + API key ───────────────────────────────────
     with st.container(border=True):
         st.markdown('<p class="ev-section">Step 2 — Context & settings</p>',
                     unsafe_allow_html=True)
-        col_a, col_b = st.columns([3, 2])
+        col_a, col_b, col_c, col_d = st.columns([3, 1, 1, 2])
         with col_a:
             s["ev_context"] = st.text_area(
                 "Additional context (optional)",
@@ -786,6 +822,28 @@ def render():
                 placeholder="e.g. Visitor arriving 20–22 June. Focus on logistics and data centres. Recommend delegating to HE Ibrahim…",
             )
         with col_b:
+            st.markdown("**Visitor photo**")
+            st.caption("Optional — PNG/JPG")
+            photo_up = st.file_uploader("photo", type=["png","jpg","jpeg"],
+                                        key="ev_photo_up", label_visibility="collapsed")
+            if photo_up is not None:
+                _pk = f"{photo_up.name}_{photo_up.size}"
+                if _pk != s.get("ev_photo_key", ""):
+                    s["ev_photo_key"]   = _pk
+                    s["ev_photo_bytes"] = photo_up.read()
+                st.image(s["ev_photo_bytes"], width=80)
+        with col_c:
+            st.markdown("**Company logo**")
+            st.caption("Optional — PNG/JPG")
+            logo_up = st.file_uploader("logo", type=["png","jpg","jpeg"],
+                                       key="ev_logo_up", label_visibility="collapsed")
+            if logo_up is not None:
+                _lk = f"{logo_up.name}_{logo_up.size}"
+                if _lk != s.get("ev_logo_key", ""):
+                    s["ev_logo_key"]   = _lk
+                    s["ev_logo_bytes"] = logo_up.read()
+                st.image(s["ev_logo_bytes"], width=80)
+        with col_d:
             # Resolve key: session state → Report Builder key → env var
             _resolved_key = (
                 s.get("ev_api_key")
@@ -840,10 +898,26 @@ def render():
                 prog.progress(35)
 
                 brief = _call_claude(files, s.get("ev_context", ""), api_key)
-                prog.progress(70)
+                prog.progress(60)
+
+                # Auto-fetch logo from Clearbit if not manually uploaded
+                logo_bytes = s.get("ev_logo_bytes")
+                if not logo_bytes:
+                    domain = brief.get("companyDomain", "")
+                    if domain:
+                        status.markdown(f"→ Fetching {brief.get('company','')} logo…")
+                        logo_bytes = _fetch_logo(domain)
+                        if logo_bytes:
+                            s["ev_logo_bytes"] = logo_bytes
+
+                prog.progress(75)
 
                 status.markdown("→ Generating briefing document…")
-                docx_bytes = _build_docx(brief)
+                docx_bytes = _build_docx(
+                    brief,
+                    photo_bytes=s.get("ev_photo_bytes"),
+                    logo_bytes=logo_bytes,
+                )
                 prog.progress(100)
 
                 s["ev_brief"] = brief
