@@ -787,11 +787,17 @@ _DELEGATES = {
         "role":  "Very Senior / Organisation Meeting",
         "desc":  "Recommended for meetings with very senior executives or high-profile organisations where ministerial-level representation is required.",
         "color": "#1D4ED8",
+    },
+    "minister_direct": {
+        "name":  "H.E. The Minister of Investment",
+        "role":  "Direct Ministerial Meeting",
+        "desc":  "Reserved for engagements that meet the highest strategic threshold — sovereign-level counterparts, national-impact commitments, or state-to-state partnerships.",
+        "color": "#7C1A1A",
         "minister_criteria": [
-            "Company is a Fortune 500, sovereign entity, or global HQ-level organisation",
-            "Meeting involves a CEO, Board Chair, or Government Minister counterpart",
-            "Investment value or strategic impact is of national significance",
-            "Engagement relates to a formal MOU, partnership agreement, or state-level commitment",
+            "Counterpart is a Head of State, Minister, or CEO of a sovereign / Fortune 100 entity",
+            "Engagement involves a national-scale commitment (SAR 1B+, MOU, or state partnership)",
+            "The meeting outcome directly shapes Vision 2030 investment targets or MISA's mandate",
+            "No assistant minister can represent MISA at the required protocol level",
         ],
     },
 }
@@ -839,7 +845,8 @@ def _render_recommendation_mode(brief: dict):
     nature = st.selectbox(
         "Meeting nature",
         ["", "Challenges or Active Deals", "Exploration / Events / New Companies",
-         "Based on Sector & Company Level", "Very Senior / Organisation Meeting"],
+         "Based on Sector & Company Level", "Very Senior / Organisation Meeting",
+         "Match Minister Criteria"],
         format_func=lambda x: "— Select meeting type to see recommendation —" if x == "" else x,
         key="ev_nature",
         label_visibility="collapsed",
@@ -853,6 +860,7 @@ def _render_recommendation_mode(brief: dict):
         "Exploration / Events / New Companies":  "exploration_events",
         "Based on Sector & Company Level":       "sector_services",
         "Very Senior / Organisation Meeting":    "senior_org",
+        "Match Minister Criteria":               "minister_direct",
     }
     selected_key = key_map[nature]
     dg = _DELEGATES[selected_key]
