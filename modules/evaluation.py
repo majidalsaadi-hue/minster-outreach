@@ -777,16 +777,22 @@ _DELEGATES = {
         "color": "#C9974A",
     },
     "sector_services": {
-        "name":  "Assistant Minister — Services Industry",
+        "name":  "Assistant Deputy — Services Industry",
         "role":  "Sector Services",
         "desc":  "Recommended based on the company's sector, size, and strategic relevance to Saudi service industry priorities.",
         "color": "#2D7A54",
     },
     "senior_org": {
         "name":  "H.E. Assistant Minister Ibrahim Al-Mubarak",
-        "role":  "Very Senior / Organisation Meetings",
+        "role":  "Very Senior / Organisation Meeting",
         "desc":  "Recommended for meetings with very senior executives or high-profile organisations where ministerial-level representation is required.",
         "color": "#1D4ED8",
+        "minister_criteria": [
+            "Company is a Fortune 500, sovereign entity, or global HQ-level organisation",
+            "Meeting involves a CEO, Board Chair, or Government Minister counterpart",
+            "Investment value or strategic impact is of national significance",
+            "Engagement relates to a formal MOU, partnership agreement, or state-level commitment",
+        ],
     },
 }
 
@@ -863,7 +869,22 @@ def _render_recommendation_mode(brief: dict):
         st.caption(dg["desc"])
 
     with col_rat:
-        if rec.get("rationale"):
+        if dg.get("minister_criteria"):
+            criteria_rows = "".join(
+                f'<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:5px;">'
+                f'<span style="color:#1D4ED8;font-weight:700;flex-shrink:0;">✓</span>'
+                f'<span style="font-size:11px;color:#1E3A5F;">{c}</span>'
+                f'</div>'
+                for c in dg["minister_criteria"]
+            )
+            st.markdown(
+                f'<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:12px 14px;margin-top:6px;">'
+                f'<div style="font-size:9px;font-weight:700;letter-spacing:.06em;color:#1D4ED8;text-transform:uppercase;margin-bottom:8px;">Minister Criteria — Meeting Qualifies If:</div>'
+                f'{criteria_rows}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        elif rec.get("rationale"):
             st.markdown("**Rationale from AI briefing:**")
             for pt in rec.get("rationale", []):
                 st.markdown(f"- {pt}")
