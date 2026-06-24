@@ -294,6 +294,7 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
                 "Status":             status,
                 "Escalation Flag":    "None",
                 "Remarks":            _safe_get(row, col_map, "Remarks", ""),
+                "AM Input":           _safe_get(row, col_map, "AM Input", ""),
                 "Outcome":            "",
                 "Next Action":        "",
                 "Next Action Date":   None,
@@ -335,6 +336,7 @@ def _build_legacy_col_map(cols: list[str]) -> dict:
         "Progress":          ["progress"],
         "Status":            ["status"],
         "Remarks":           ["remarks"],
+        "AM Input":          ["am input"],
     }
     for logical, options in candidates.items():
         for opt in options:
