@@ -133,15 +133,17 @@ def render_action_advisor(dfs: dict, lang: str):
             desc     = str(row.get("Action Description", ""))[:90]
             owner    = str(row.get("Assigned To", "—"))
             prio     = str(row.get("Priority", ""))
-            remark   = str(row.get("Remarks", "") or "").strip()[:80]
+            remark   = str(row.get("Remarks", "") or "").strip()
+            am_input = str(row.get("AM Input", "") or row.get("AM Notes", "") or row.get("AM Update", "") or "").strip()
             status   = str(row.get("Status", "") or "").strip()
             prog_raw = row.get("Progress", None)
             try:
                 prog_pct = int(float(prog_raw) * 100) if prog_raw not in (None, "") else None
             except (ValueError, TypeError):
                 prog_pct = None
-            if remark:
-                update_txt = remark
+            note = (remark or am_input or "")[:80]
+            if note and note.lower() not in ("nan", "none", "n/a"):
+                update_txt = note
             else:
                 parts = []
                 if status:
