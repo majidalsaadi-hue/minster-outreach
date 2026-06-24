@@ -11,6 +11,8 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
+from pptx.chart.data import ChartData
+from pptx.enum.chart import XL_CHART_TYPE
 
 from config.settings import (
     MISA_GREEN, MISA_GOLD, MISA_GREEN_LIGHT, JOURNEY_STAGES,
@@ -641,46 +643,17 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     # ── Strategic brief — synthesised from all action items ────────────────────
     goal_text, strat_text, action_text = _build_strategic_brief(acts, opps, meetings, inv_row)
 
-    # Dividers — split brief strip into 3 panels
-    _add_rect(slide, Inches(6.40), BRIEF_Y + Inches(0.08), Inches(0.02),
-              BRIEF_H - Inches(0.16), fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
+    # Single divider — 2-panel brief strip (Strategic Goal | Immediate Action)
     _add_rect(slide, Inches(10.10), BRIEF_Y + Inches(0.08), Inches(0.02),
               BRIEF_H - Inches(0.16), fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
 
-    # Panel 1: Strategic Goal  (label inline left, text fills rest)
+    # Panel 1: Strategic Goal — expanded to fill left 77% of strip
     _add_text_box(slide, "STRATEGIC GOAL", Inches(0.3), BRIEF_Y + Inches(0.07),
                   Inches(1.16), Inches(0.22), font_size=9, bold=True, color=_rgb(MISA_GREEN))
     _add_text_box(slide, goal_text, Inches(1.50), BRIEF_Y + Inches(0.06),
-                  Inches(4.78), Inches(0.74), font_size=9, color=DARK)
+                  Inches(8.40), Inches(0.74), font_size=9, color=DARK)
 
-    # Panel 2: Ministry Strategy — compact pillar distribution bars
-    _add_text_box(slide, "MINISTRY STRATEGY", Inches(6.50), BRIEF_Y + Inches(0.07),
-                  Inches(3.45), Inches(0.22), font_size=9, bold=True, color=_rgb(MISA_GOLD))
-    _s1_pillar_counts = {"Attract Investment": 0, "Matchmaking": 0, "Resolve Challenges": 0}
-    if not acts.empty and "Action Description" in acts.columns:
-        for _, _s1r in acts.iterrows():
-            _s1p = _map_to_strategy_pillar(
-                str(_s1r.get("Action Description", "")) + " " +
-                str(_s1r.get("Type of Engagement", "")) + " " +
-                str(_s1r.get("Sector", ""))
-            )
-            if _s1p in _s1_pillar_counts:
-                _s1_pillar_counts[_s1p] += 1
-    _s1_total = max(sum(_s1_pillar_counts.values()), 1)
-    _S1_PILLAR_COLS  = {"Attract Investment": "#065F46", "Matchmaking": "#1D4ED8", "Resolve Challenges": "#92400E"}
-    _S1_PILLAR_SHORT = {"Attract Investment": "Attract Invest.", "Matchmaking": "Matchmaking", "Resolve Challenges": "Resolve Chall."}
-    _s1_bar_y = BRIEF_Y + Inches(0.32)
-    for _s1_pillar, _s1_pcol in _S1_PILLAR_COLS.items():
-        _s1_cnt = _s1_pillar_counts[_s1_pillar]
-        _s1_bw  = max(Inches(3.40) * _s1_cnt / _s1_total, Inches(0.08)) if _s1_cnt > 0 else Inches(0.08)
-        _add_rect(slide, Inches(6.50), _s1_bar_y, _s1_bw, Inches(0.12),
-                  fill_color=_rgb(_s1_pcol), line_color=_rgb(_s1_pcol))
-        _add_text_box(slide, f"{_S1_PILLAR_SHORT[_s1_pillar]}  {_s1_cnt}",
-                      Inches(6.50), _s1_bar_y + Inches(0.13),
-                      Inches(3.45), Inches(0.09), font_size=6, color=_rgb(_s1_pcol))
-        _s1_bar_y += Inches(0.21)
-
-    # Panel 3: Immediate Action (renamed from "Minister Action")
+    # Panel 2: Immediate Action
     _add_text_box(slide, "IMMEDIATE ACTION", Inches(10.20), BRIEF_Y + Inches(0.07),
                   Inches(2.93), Inches(0.22), font_size=9, bold=True, color=RED)
     _add_text_box(slide, action_text, Inches(10.20), BRIEF_Y + Inches(0.32),
@@ -928,61 +901,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _add_text_box(slide, f"{int(prog_val * 100)}%", px, ry + Inches(0.18),
                       pcw, Inches(0.12), font_size=6.5, color=DARK, align=PP_ALIGN.CENTER)
 
-    # ── Strategy Overview Chart (bottom-left) — completion bar + pillar alignment ──
-    chart_y = HDR_Y + HDR_H + len(display_acts) * ROW_H + Inches(0.12)
-    if chart_y + Inches(0.6) < Inches(6.95):
-        n_total   = len(acts) if not acts.empty else 0
-        n_done    = int(acts["Status"].str.lower().str.contains("complet").sum()) if not acts.empty and "Status" in acts.columns else 0
-        n_remain  = n_total - n_done
-        n_inprog  = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
-        n_due_cnt = n_remain - n_inprog
-
-        # Section header
-        _add_text_box(slide, "MINISTRY STRATEGY — Action Progress & Pillar Alignment",
-                      TBL_L, chart_y, Inches(9.6), Inches(0.16),
-                      font_size=8, bold=True, color=_rgb(MISA_GOLD))
-        chart_y += Inches(0.18)
-
-        # Completion segmented bar
-        bar_total_w = Inches(9.2)
-        if n_total > 0:
-            bx = TBL_L
-            for bw, bcol, lbl in [
-                (bar_total_w * n_done    / n_total, _rgb(MISA_GREEN), f"Completed {n_done}"),
-                (bar_total_w * n_inprog  / n_total, _rgb(MISA_GOLD),  f"In Progress {n_inprog}"),
-                (bar_total_w * n_due_cnt / n_total, _rgb("#9CA3AF"),   f"Due {n_due_cnt}"),
-            ]:
-                if bw > Inches(0.05):
-                    _add_rect(slide, bx, chart_y, bw, Inches(0.20), fill_color=bcol, line_color=bcol)
-                    if bw > Inches(0.5):
-                        _add_text_box(slide, lbl, bx + Inches(0.04), chart_y + Inches(0.02),
-                                      bw - Inches(0.06), Inches(0.16), font_size=6.5, color=WHITE)
-                    bx += bw
-        chart_y += Inches(0.24)
-
-        # Pillar distribution bars
-        _btm_pillar_counts = {"Attract Investment": 0, "Matchmaking": 0, "Resolve Challenges": 0}
-        if not acts.empty and "Action Description" in acts.columns:
-            for _, _bpr in acts.iterrows():
-                _bpp = _map_to_strategy_pillar(
-                    str(_bpr.get("Action Description","")) + " " +
-                    str(_bpr.get("Type of Engagement","")) + " " +
-                    str(_bpr.get("Sector",""))
-                )
-                if _bpp in _btm_pillar_counts:
-                    _btm_pillar_counts[_bpp] += 1
-        _btm_total = max(sum(_btm_pillar_counts.values()), 1)
-        _BTM_PCOLS  = {"Attract Investment": "#065F46", "Matchmaking": "#1D4ED8", "Resolve Challenges": "#92400E"}
-        for _bpillar, _bpcol in _BTM_PCOLS.items():
-            _bcnt = _btm_pillar_counts[_bpillar]
-            _bw   = max(bar_total_w * _bcnt / _btm_total, Inches(0.06)) if _bcnt > 0 else Inches(0.06)
-            _add_rect(slide, TBL_L, chart_y, _bw, Inches(0.13),
-                      fill_color=_rgb(_bpcol), line_color=_rgb(_bpcol))
-            _add_text_box(slide, f"{_bpillar}  {_bcnt}",
-                          TBL_L + _bw + Inches(0.06), chart_y,
-                          bar_total_w - _bw - Inches(0.06), Inches(0.13),
-                          font_size=6, color=_rgb(_bpcol))
-            chart_y += Inches(0.15)
+    # (progress chart moved to right-panel donut — see below)
 
     # ══════════════════════════════════════════════════════════════════════════
     # RIGHT: Status summary + Deals + Opportunities + KPI cards
@@ -990,24 +909,59 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     RX = DIVX + Inches(0.2)
     RW = Inches(13.33) - RX - Inches(0.15)
 
-    # Action status bars
-    _add_text_box(slide, "Action Items", RX, Inches(2.46), RW, Inches(0.24),
+    # Action completion donut chart (right panel)
+    _add_text_box(slide, "Action Items", RX, Inches(2.46), RW, Inches(0.22),
                   font_size=9, bold=True, color=DARK)
-    y_r = Inches(2.76)
-    for sname, scol in [("Completed","#2D7A54"), ("In Progress",MISA_GOLD),
-                        ("Not Started","#888888"), ("Blocked","#C0392B"), ("Cancelled","#AAAAAA")]:
-        cnt = int(acts["Status"].value_counts().get(sname, 0)) if not acts.empty and "Status" in acts.columns else 0
-        if cnt == 0:
-            continue
-        bw = max(Inches(0.12), RW * cnt / max(len(acts), 1))
-        _add_rect(slide, RX, y_r, bw, Inches(0.24), fill_color=_rgb(scol), line_color=_rgb(scol))
-        _add_text_box(slide, f"{sname}: {cnt}",
-                      RX + Inches(0.05), y_r + Inches(0.04),
-                      RW - Inches(0.08), Inches(0.16), font_size=7.5, color=WHITE)
-        y_r += Inches(0.28)
-    if acts.empty:
-        _add_text_box(slide, "No action items.", RX, y_r, RW, Inches(0.22), font_size=8, color=MGRAY)
-        y_r += Inches(0.28)
+    _n_tot_r  = len(acts) if not acts.empty else 0
+    _n_done_r = int(acts["Status"].str.lower().str.contains("complet").sum()) if not acts.empty and "Status" in acts.columns else 0
+    _n_prog_r = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
+    _n_due_r  = max(_n_tot_r - _n_done_r - _n_prog_r, 0)
+
+    if _n_tot_r > 0:
+        _cd = ChartData()
+        _cd.categories = ['Completed', 'In Progress', 'Due']
+        _cd.add_series('', (_n_done_r, _n_prog_r, _n_due_r))
+        _cshp = slide.shapes.add_chart(
+            XL_CHART_TYPE.DOUGHNUT,
+            RX, Inches(2.70), RW, Inches(2.40), _cd)
+        _cobj = _cshp.chart
+        _cobj.has_legend = False
+        # Color each slice via XML
+        from pptx.oxml import parse_xml as _px
+        _ser_el = _cobj.series[0]._element
+        for _di, _dhex in enumerate(["1B5C3F", "C9974A", "9CA3AF"]):
+            _dPt = _px(
+                f'<c:dPt xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"'
+                f' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+                f'<c:idx val="{_di}"/><c:bubble3D val="0"/>'
+                f'<c:spPr><a:solidFill><a:srgbClr val="{_dhex}"/></a:solidFill></c:spPr>'
+                f'</c:dPt>'
+            )
+            _ser_el.append(_dPt)
+        # Completion % label below chart
+        _pct_done_r = round(_n_done_r / _n_tot_r * 100)
+        _add_text_box(slide, f"{_pct_done_r}%  done  ({_n_done_r}/{_n_tot_r})",
+                      RX, Inches(5.14), RW, Inches(0.20),
+                      font_size=9, bold=True, color=_rgb(MISA_GREEN), align=PP_ALIGN.CENTER)
+        # Colour legend
+        y_r = Inches(5.38)
+        for _ll, _lc, _lv in [
+            ("Completed", "#1B5C3F", _n_done_r),
+            ("In Progress", MISA_GOLD, _n_prog_r),
+            ("Due", "#9CA3AF", _n_due_r),
+        ]:
+            _add_rect(slide, RX, y_r + Inches(0.03), Inches(0.10), Inches(0.10),
+                      fill_color=_rgb(_lc), line_color=_rgb(_lc))
+            _add_text_box(slide, f"{_ll}: {_lv}",
+                          RX + Inches(0.14), y_r, RW - Inches(0.14), Inches(0.17),
+                          font_size=7.5, color=DARK)
+            y_r += Inches(0.20)
+    else:
+        _add_text_box(slide, "No action items.", RX, Inches(2.70), RW, Inches(0.22),
+                      font_size=8, color=MGRAY)
+        y_r = Inches(3.00)
+
+    y_r = max(y_r, Inches(5.82))
 
     # Opportunities — per-item list: title, sector, classification
     y_r += Inches(0.16)
@@ -1102,8 +1056,12 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
     # ── Resolve what to show as cards ─────────────────────────────────────────
     # Only show formal opportunities — never action items as opportunity cards
     use_act_cards = False
-    card_source = opps
-    n_cards     = len(opps)
+    # Exclude entries literally named "Action Item" — those are not formal opportunities
+    if not opps.empty and "Opportunity Name" in opps.columns:
+        card_source = opps[~opps["Opportunity Name"].fillna("").str.strip().str.lower().eq("action item")]
+    else:
+        card_source = opps
+    n_cards = len(card_source)
     n_active    = int((opps["Opportunity Status"] == "Active").sum())    if not opps.empty and "Opportunity Status" in opps.columns else 0
     n_done      = int((opps["Opportunity Stage"]  == "Committed").sum()) if not opps.empty and "Opportunity Stage"  in opps.columns else 0
     total_val   = _sum_col(opps, "Est. Value (SAR)")
