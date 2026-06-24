@@ -884,11 +884,10 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                           pcw, Inches(0.12), font_size=6, color=DARK, align=PP_ALIGN.CENTER)
             # Pillar column
             plx, plcw = CX_T[5], CW[5]
-            pl_bg = _rgb(_PILLAR_BG.get(pillar, "#6B7280"))
-            _add_rect(slide, plx, ry, plcw, ROW_H, fill_color=pl_bg, line_color=pl_bg)
+            _add_rect(slide, plx, ry, plcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
             _add_text_box(slide, _PILLAR_ABB.get(pillar, "—"), plx + Inches(0.01), ry + Inches(0.05),
-                          plcw - Inches(0.02), Inches(0.20), font_size=6, bold=True,
-                          color=WHITE, align=PP_ALIGN.CENTER)
+                          plcw - Inches(0.02), Inches(0.20), font_size=6, bold=False,
+                          color=DARK, align=PP_ALIGN.CENTER)
 
     _render_tbl(pend_df, PEND_X, "Pending Actions",   GREEN)
     _render_tbl(done_df, DONE_X, "Completed Actions", _rgb("#2D7A54"))
