@@ -782,6 +782,12 @@ _DELEGATES = {
         "desc":  "Recommended based on the company's sector, size, and strategic relevance to Saudi service industry priorities.",
         "color": "#2D7A54",
     },
+    "senior_org": {
+        "name":  "H.E. Assistant Minister Ibrahim Al-Mubarak",
+        "role":  "Very Senior / Organisation Meetings",
+        "desc":  "Recommended for meetings with very senior executives or high-profile organisations where ministerial-level representation is required.",
+        "color": "#1D4ED8",
+    },
 }
 
 _TALKING_POINTS_BY_SECTOR = {
@@ -827,7 +833,7 @@ def _render_recommendation_mode(brief: dict):
     nature = st.selectbox(
         "Meeting nature",
         ["", "Challenges or Active Deals", "Exploration / Events / New Companies",
-         "Based on Sector & Company Level"],
+         "Based on Sector & Company Level", "Very Senior / Organisation Meeting"],
         format_func=lambda x: "— Select meeting type to see recommendation —" if x == "" else x,
         key="ev_nature",
         label_visibility="collapsed",
@@ -840,6 +846,7 @@ def _render_recommendation_mode(brief: dict):
         "Challenges or Active Deals":            "challenges_deals",
         "Exploration / Events / New Companies":  "exploration_events",
         "Based on Sector & Company Level":       "sector_services",
+        "Very Senior / Organisation Meeting":    "senior_org",
     }
     selected_key = key_map[nature]
     dg = _DELEGATES[selected_key]
