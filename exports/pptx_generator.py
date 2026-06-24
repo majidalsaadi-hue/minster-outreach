@@ -659,10 +659,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, action_text, Inches(6.90), BRIEF_Y + Inches(0.32),
                   Inches(6.10), Inches(0.52), font_size=9, color=DARK)
 
-    # ── Vertical divider ────────────────────────────────────────────────────────
-    DIVX = Inches(10.2)
-    _add_rect(slide, DIVX, Inches(2.41), Inches(0.02), Inches(4.59),
-              fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
+    # No vertical divider — tables now span full width
 
     # ══════════════════════════════════════════════════════════════════════════
     # LEFT: Compact timeline + Full action items table
@@ -900,7 +897,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _n_due_r  = max(_n_tot_r - _n_done_r - _n_prog_r, 0)
     if _n_tot_r > 0:
         _pct_r = round(_n_done_r / _n_tot_r * 100)
-        _badge_x, _badge_y, _badge_w, _badge_h = Inches(9.80), Inches(2.20), Inches(3.35), Inches(0.80)
+        _badge_x, _badge_y, _badge_w, _badge_h = Inches(9.80), Inches(1.90), Inches(3.35), Inches(0.80)
         _add_rect(slide, _badge_x, _badge_y, _badge_w, _badge_h,
                   fill_color=_rgb("#EEF7EE"), line_color=GREEN)
         _add_text_box(slide, f"{_pct_r}% complete  —  {_n_done_r}/{_n_tot_r} actions",
