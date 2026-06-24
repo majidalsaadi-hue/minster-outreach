@@ -784,10 +784,17 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     # ── Action Items full table ────────────────────────────────────────────────
     n_total   = len(acts)
-    n_pending = len(acts[~acts["Status"].isin(["Completed", "Cancelled"])]) if not acts.empty and "Status" in acts.columns else 0
-    _add_text_box(slide, f"Action Items  —  {n_total} total  |  {n_pending} pending",
-                  Inches(0.3), Inches(3.28), Inches(9.75), Inches(0.20),
-                  font_size=9, bold=True, color=DARK)
+    n_done_s  = int(acts["Status"].str.lower().str.contains("complet").sum()) if not acts.empty and "Status" in acts.columns else 0
+    n_prog_s  = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
+    n_due_s   = max(n_total - n_done_s - n_prog_s, 0)
+    pct_s     = round(n_done_s / n_total * 100) if n_total > 0 else 0
+    # ── Full-width summary bar ────────────────────────────────────────────────
+    _add_rect(slide, Inches(0.20), Inches(3.20), Inches(13.00), Inches(0.28),
+              fill_color=_rgb("#EEF7EE"), line_color=GREEN)
+    _bar_txt = (f"ACTION ITEMS  ·  {n_total} total  ·  "
+                f"✓ {n_done_s} Done  ·  ◑ {n_prog_s} In Progress  ·  ○ {n_due_s} Due  ·  {pct_s}% complete")
+    _add_text_box(slide, _bar_txt, Inches(0.30), Inches(3.22), Inches(12.80), Inches(0.24),
+                  font_size=9, bold=True, color=GREEN)
 
     # ── Two-table layout: Pending (left) | Completed (right) ────────────────
     HDR_Y  = Inches(3.52)
@@ -890,25 +897,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _render_tbl(pend_df, PEND_X, "Pending Actions",   GREEN)
     _render_tbl(done_df, DONE_X, "Completed Actions", _rgb("#2D7A54"))
 
-    # ── Compact action-summary badge (top-right, above timeline) ─────────────
-    _n_tot_r  = len(acts) if not acts.empty else 0
-    _n_done_r = int(acts["Status"].str.lower().str.contains("complet").sum()) if not acts.empty and "Status" in acts.columns else 0
-    _n_prog_r = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
-    _n_due_r  = max(_n_tot_r - _n_done_r - _n_prog_r, 0)
-    if _n_tot_r > 0:
-        _pct_r = round(_n_done_r / _n_tot_r * 100)
-        _badge_x, _badge_y, _badge_w, _badge_h = Inches(9.80), Inches(1.90), Inches(3.35), Inches(0.80)
-        _add_rect(slide, _badge_x, _badge_y, _badge_w, _badge_h,
-                  fill_color=_rgb("#EEF7EE"), line_color=GREEN)
-        _add_text_box(slide, f"{_pct_r}% complete  —  {_n_done_r}/{_n_tot_r} actions",
-                      _badge_x + Inches(0.10), _badge_y + Inches(0.04),
-                      _badge_w - Inches(0.15), Inches(0.26),
-                      font_size=10, bold=True, color=GREEN)
-        _stat_line = f"✓ Done: {_n_done_r}   ◑ In Progress: {_n_prog_r}   ○ Due: {_n_due_r}"
-        _add_text_box(slide, _stat_line,
-                      _badge_x + Inches(0.10), _badge_y + Inches(0.34),
-                      _badge_w - Inches(0.15), Inches(0.22),
-                      font_size=8.5, color=DARK)
+    # (summary bar rendered above the tables — see full-width summary bar)
 
     # ── Gold footer ───────────────────────────────────────────────────────────
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
