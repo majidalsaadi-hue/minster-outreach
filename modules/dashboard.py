@@ -48,62 +48,58 @@ def render_progress_chart(dfs: dict, lang: str):
     if actions.empty or "Status" not in actions.columns:
         return
 
-    total    = len(actions)
+    total  = len(actions)
     if total == 0:
         return
 
-    n_done   = int(actions["Status"].str.lower().str.contains("complet", na=False).sum())
-    n_prog   = int(actions["Status"].isin(["In Progress", "Inprogress"]).sum())
-    n_due    = total - n_done - n_prog
+    n_done = int(actions["Status"].str.lower().str.contains("complet", na=False).sum())
+    n_prog = int(actions["Status"].isin(["In Progress", "Inprogress"]).sum())
+    n_due  = max(total - n_done - n_prog, 0)
 
     pct_done = round(n_done / total * 100)
     pct_prog = round(n_prog / total * 100)
     pct_due  = 100 - pct_done - pct_prog
 
-    fig = go.Figure(go.Pie(
-        labels=["Completed", "In Progress", "Due"],
-        values=[n_done, n_prog, max(n_due, 0)],
-        hole=0.60,
-        marker_colors=[MISA_GREEN, MISA_GOLD, "#9CA3AF"],
-        textinfo="none",
-        hovertemplate="%{label}: %{value} actions (%{percent})<extra></extra>",
-        showlegend=False,
-    ))
-    fig.add_annotation(
-        text=f"<b>{total}</b><br><span style='font-size:10px'>Actions</span>",
-        x=0.5, y=0.5, showarrow=False, font_size=14,
-    )
-    fig.update_layout(
-        margin=dict(t=10, b=10, l=10, r=10),
-        height=200,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, sans-serif"),
+    # Build conic-gradient segments
+    g_done = pct_done
+    g_prog = g_done + pct_prog
+    gradient = (
+        f"conic-gradient("
+        f"{MISA_GREEN} 0% {g_done}%, "
+        f"{MISA_GOLD} {g_done}% {g_prog}%, "
+        f"#9CA3AF {g_prog}% 100%)"
     )
 
-    c_chart, c_stats = st.columns([2, 1])
-    with c_chart:
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-    with c_stats:
-        st.markdown(f"""
-        <div style="padding:12px 0;font-family:'Segoe UI',sans-serif;">
-          <div style="margin-bottom:10px;">
-            <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">Completed</div>
-            <div style="font-size:24px;font-weight:700;color:{MISA_GREEN};">{pct_done}%</div>
-            <div style="font-size:11px;color:#4B5563;">{n_done} of {total} actions</div>
-          </div>
-          <div style="margin-bottom:10px;">
-            <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">In Progress</div>
-            <div style="font-size:24px;font-weight:700;color:{MISA_GOLD};">{pct_prog}%</div>
-            <div style="font-size:11px;color:#4B5563;">{n_prog} actions</div>
-          </div>
-          <div>
-            <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">Due / Pending</div>
-            <div style="font-size:24px;font-weight:700;color:#6B7280;">{pct_due}%</div>
-            <div style="font-size:11px;color:#4B5563;">{max(n_due,0)} actions</div>
-          </div>
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:16px;padding:8px 0;">
+      <div style="position:relative;flex-shrink:0;width:110px;height:110px;">
+        <div style="width:110px;height:110px;border-radius:50%;background:{gradient};"></div>
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+                    width:70px;height:70px;border-radius:50%;background:#f8f8f4;
+                    display:flex;flex-direction:column;align-items:center;justify-content:center;">
+          <span style="font-size:18px;font-weight:700;color:#1F2937;line-height:1;">{total}</span>
+          <span style="font-size:9px;color:#6B7280;">Actions</span>
         </div>
-        """, unsafe_allow_html=True)
+      </div>
+      <div style="font-family:'Segoe UI',sans-serif;min-width:110px;">
+        <div style="margin-bottom:8px;">
+          <div style="font-size:9px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">Completed</div>
+          <div style="font-size:22px;font-weight:700;color:{MISA_GREEN};line-height:1.1;">{pct_done}%</div>
+          <div style="font-size:10px;color:#4B5563;">{n_done} of {total}</div>
+        </div>
+        <div style="margin-bottom:8px;">
+          <div style="font-size:9px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">In Progress</div>
+          <div style="font-size:22px;font-weight:700;color:{MISA_GOLD};line-height:1.1;">{pct_prog}%</div>
+          <div style="font-size:10px;color:#4B5563;">{n_prog} actions</div>
+        </div>
+        <div>
+          <div style="font-size:9px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">Due / Pending</div>
+          <div style="font-size:22px;font-weight:700;color:#6B7280;line-height:1.1;">{pct_due}%</div>
+          <div style="font-size:10px;color:#4B5563;">{n_due} actions</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ── Today's Briefing — Action Advisor ────────────────────────────────────────
