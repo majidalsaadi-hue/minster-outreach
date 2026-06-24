@@ -794,12 +794,12 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     # ── Two-table layout: Pending (left) | Completed (right) ────────────────
     HDR_Y  = Inches(3.52)
-    HDR_H  = Inches(0.30)
-    ROW_H  = Inches(0.42)
-    # Each table 4.85" wide — fills the full left panel with a 0.20" gap
-    CW     = [Inches(w) for w in [0.28, 2.22, 0.98, 0.65, 0.44, 0.28]]
+    HDR_H  = Inches(0.32)
+    ROW_H  = Inches(0.46)
+    # Full-width — each table 6.40", 0.20" margins, 0.13" gap
+    CW     = [Inches(w) for w in [0.30, 3.00, 1.20, 0.75, 0.55, 0.60]]
     PEND_X = Inches(0.20)
-    DONE_X = Inches(5.25)
+    DONE_X = Inches(6.80)
 
     _PILLAR_BG  = {"Attract Investment": "#065F46", "Matchmaking": "#1D4ED8",
                    "Resolve Challenges": "#92400E"}
@@ -816,7 +816,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         pend_df = acts.copy() if not acts.empty else pd.DataFrame()
         done_df = pd.DataFrame()
 
-    max_rows = int((Inches(7.30) - HDR_Y - HDR_H) / ROW_H)
+    max_rows = int((Inches(7.00) - HDR_Y - HDR_H) / ROW_H)
 
     def _render_tbl(df, tbl_x, title, hdr_color):
         CX_T = [tbl_x + sum(CW[:j]) for j in range(len(CW))]
@@ -825,7 +825,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _add_rect(slide, cx, HDR_Y, cw, HDR_H, fill_color=hdr_color, line_color=hdr_color)
             _add_text_box(slide, hdr, cx + Inches(0.02), HDR_Y + Inches(0.04),
                           cw - Inches(0.04), HDR_H - Inches(0.06),
-                          font_size=8, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+                          font_size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
         for i, (_, row) in enumerate(df.head(max_rows).iterrows()):
             ry   = HDR_Y + HDR_H + i * ROW_H
             alt  = _rgb("#F7F7F2") if i % 2 == 0 else WHITE
@@ -860,18 +860,18 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 fc = RED if (j == 3 and is_ov) else DARK
                 al = PP_ALIGN.CENTER if j in (0, 3) else PP_ALIGN.LEFT
                 if j == 1:
-                    _add_text_box(slide, desc[:55], cx + Inches(0.03), ry + Inches(0.02),
-                                  cw - Inches(0.06), Inches(0.17), font_size=8, color=DARK)
+                    _add_text_box(slide, desc[:70], cx + Inches(0.04), ry + Inches(0.02),
+                                  cw - Inches(0.08), Inches(0.20), font_size=9, color=DARK)
                     note = (remark if remark and remark not in ("nan",) else "") or \
                            (am_input if am_input and am_input not in ("nan",) else "") or \
                            _action_context_line(desc, eng_type, sector)
                     if note:
-                        _add_text_box(slide, f"↳ {note[:40]}", cx + Inches(0.03), ry + Inches(0.22),
-                                      cw - Inches(0.06), Inches(0.16), font_size=7, color=MGRAY)
+                        _add_text_box(slide, f"↳ {note[:55]}", cx + Inches(0.04), ry + Inches(0.25),
+                                      cw - Inches(0.08), Inches(0.17), font_size=7.5, color=MGRAY)
                 else:
-                    _add_text_box(slide, val, cx + Inches(0.02), ry + Inches(0.06),
-                                  cw - Inches(0.04), Inches(0.20),
-                                  font_size=8 if j == 0 else 7.5, color=fc, align=al)
+                    _add_text_box(slide, val, cx + Inches(0.03), ry + Inches(0.07),
+                                  cw - Inches(0.05), Inches(0.22),
+                                  font_size=9 if j == 0 else 8.5, color=fc, align=al)
             # Progress column
             px, pcw = CX_T[4], CW[4]
             _add_rect(slide, px, ry, pcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
@@ -881,79 +881,37 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             if prog_val > 0:
                 fc2 = _rgb(MISA_GREEN) if prog_val >= 1.0 else (_rgb(MISA_GOLD) if prog_val >= 0.5 else _rgb("#888888"))
                 _add_rect(slide, bx, by, max(bw * prog_val, Inches(0.02)), bh, fill_color=fc2, line_color=fc2)
-            _add_text_box(slide, f"{int(prog_val * 100)}%", px, ry + Inches(0.20),
-                          pcw, Inches(0.16), font_size=7, color=DARK, align=PP_ALIGN.CENTER)
+            _add_text_box(slide, f"{int(prog_val * 100)}%", px, ry + Inches(0.22),
+                          pcw, Inches(0.18), font_size=8, color=DARK, align=PP_ALIGN.CENTER)
             # Pillar column
             plx, plcw = CX_T[5], CW[5]
             _add_rect(slide, plx, ry, plcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
-            _add_text_box(slide, _PILLAR_ABB.get(pillar, "—"), plx + Inches(0.01), ry + Inches(0.08),
-                          plcw - Inches(0.02), Inches(0.20), font_size=7, bold=False,
+            _add_text_box(slide, _PILLAR_ABB.get(pillar, "—"), plx + Inches(0.01), ry + Inches(0.10),
+                          plcw - Inches(0.02), Inches(0.22), font_size=8, bold=False,
                           color=DARK, align=PP_ALIGN.CENTER)
 
     _render_tbl(pend_df, PEND_X, "Pending Actions",   GREEN)
     _render_tbl(done_df, DONE_X, "Completed Actions", _rgb("#2D7A54"))
 
-    # (progress chart moved to right-panel donut — see below)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # RIGHT: Status summary + Deals + Opportunities + KPI cards
-    # ══════════════════════════════════════════════════════════════════════════
-    RX = DIVX + Inches(0.2)
-    RW = Inches(13.33) - RX - Inches(0.15)
-
-    # Action completion donut chart (right panel)
-    _add_text_box(slide, "Action Items", RX, Inches(2.46), RW, Inches(0.22),
-                  font_size=9, bold=True, color=DARK)
+    # ── Compact action-summary badge (top-right, above timeline) ─────────────
     _n_tot_r  = len(acts) if not acts.empty else 0
     _n_done_r = int(acts["Status"].str.lower().str.contains("complet").sum()) if not acts.empty and "Status" in acts.columns else 0
     _n_prog_r = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
     _n_due_r  = max(_n_tot_r - _n_done_r - _n_prog_r, 0)
-
     if _n_tot_r > 0:
-        _cd = ChartData()
-        _cd.categories = ['Completed', 'In Progress', 'Due']
-        _cd.add_series('', (_n_done_r, _n_prog_r, _n_due_r))
-        _cshp = slide.shapes.add_chart(
-            XL_CHART_TYPE.DOUGHNUT,
-            RX, Inches(2.70), RW, Inches(2.40), _cd)
-        _cobj = _cshp.chart
-        _cobj.has_legend = False
-        # Color each slice via XML
-        from pptx.oxml import parse_xml as _px
-        _ser_el = _cobj.series[0]._element
-        for _di, _dhex in enumerate(["1B5C3F", "C9974A", "9CA3AF"]):
-            _dPt = _px(
-                f'<c:dPt xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"'
-                f' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
-                f'<c:idx val="{_di}"/><c:bubble3D val="0"/>'
-                f'<c:spPr><a:solidFill><a:srgbClr val="{_dhex}"/></a:solidFill></c:spPr>'
-                f'</c:dPt>'
-            )
-            _ser_el.append(_dPt)
-        # Completion % label below chart
-        _pct_done_r = round(_n_done_r / _n_tot_r * 100)
-        _add_text_box(slide, f"{_pct_done_r}%  done  ({_n_done_r}/{_n_tot_r})",
-                      RX, Inches(5.14), RW, Inches(0.20),
-                      font_size=9, bold=True, color=_rgb(MISA_GREEN), align=PP_ALIGN.CENTER)
-        # Colour legend
-        y_r = Inches(5.38)
-        for _ll, _lc, _lv in [
-            ("Completed", "#1B5C3F", _n_done_r),
-            ("In Progress", MISA_GOLD, _n_prog_r),
-            ("Due", "#9CA3AF", _n_due_r),
-        ]:
-            _add_rect(slide, RX, y_r + Inches(0.03), Inches(0.10), Inches(0.10),
-                      fill_color=_rgb(_lc), line_color=_rgb(_lc))
-            _add_text_box(slide, f"{_ll}: {_lv}",
-                          RX + Inches(0.14), y_r, RW - Inches(0.14), Inches(0.17),
-                          font_size=7.5, color=DARK)
-            y_r += Inches(0.20)
-    else:
-        _add_text_box(slide, "No action items.", RX, Inches(2.70), RW, Inches(0.22),
-                      font_size=8, color=MGRAY)
-        y_r = Inches(3.00)
-
-    y_r = max(y_r, Inches(5.82))
+        _pct_r = round(_n_done_r / _n_tot_r * 100)
+        _badge_x, _badge_y, _badge_w, _badge_h = Inches(9.80), Inches(2.20), Inches(3.35), Inches(0.80)
+        _add_rect(slide, _badge_x, _badge_y, _badge_w, _badge_h,
+                  fill_color=_rgb("#EEF7EE"), line_color=GREEN)
+        _add_text_box(slide, f"{_pct_r}% complete  —  {_n_done_r}/{_n_tot_r} actions",
+                      _badge_x + Inches(0.10), _badge_y + Inches(0.04),
+                      _badge_w - Inches(0.15), Inches(0.26),
+                      font_size=10, bold=True, color=GREEN)
+        _stat_line = f"✓ Done: {_n_done_r}   ◑ In Progress: {_n_prog_r}   ○ Due: {_n_due_r}"
+        _add_text_box(slide, _stat_line,
+                      _badge_x + Inches(0.10), _badge_y + Inches(0.34),
+                      _badge_w - Inches(0.15), Inches(0.22),
+                      font_size=8.5, color=DARK)
 
     # ── Gold footer ───────────────────────────────────────────────────────────
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
