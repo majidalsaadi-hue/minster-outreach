@@ -821,31 +821,21 @@ _TALKING_POINTS_BY_SECTOR = {
 
 def _render_recommendation_mode(brief: dict):
     """Step 4 Option 1 — Recommendation Mode: suggest leadership level to delegate to."""
-    rec      = brief.get("recommendation", {})
-    delegate = rec.get("delegateTo", "")
-    sectors  = brief.get("sectors", [])
-    subject  = brief.get("subject", "")
-
-    # Auto-classify meeting nature from subject + sectors + existing recommendation
-    text_lower = (subject + " " + str(sectors)).lower()
-    if any(w in text_lower for w in ["challenge", "resolve", "nda", "blocker", "lease",
-                                      "energy", "cost", "regulatory", "residency"]):
-        auto_key = "challenges_deals"
-    elif any(w in text_lower for w in ["explore", "introduction", "event", "roadshow",
-                                        "new", "first", "ecosystem", "promotion"]):
-        auto_key = "exploration_events"
-    else:
-        auto_key = "sector_services"
+    rec = brief.get("recommendation", {})
 
     st.markdown("**Select meeting nature to determine the appropriate leadership level:**")
-    nature = st.radio(
+    nature = st.selectbox(
         "Meeting nature",
-        ["Challenges or Active Deals", "Exploration / Events / New Companies",
+        ["", "Challenges or Active Deals", "Exploration / Events / New Companies",
          "Based on Sector & Company Level"],
-        index=["challenges_deals", "exploration_events", "sector_services"].index(auto_key),
+        format_func=lambda x: "— Select meeting type to see recommendation —" if x == "" else x,
         key="ev_nature",
         label_visibility="collapsed",
     )
+    if not nature:
+        st.caption("Select a meeting type above to see the recommended leadership level.")
+        return
+
     key_map = {
         "Challenges or Active Deals":            "challenges_deals",
         "Exploration / Events / New Companies":  "exploration_events",
@@ -870,12 +860,6 @@ def _render_recommendation_mode(brief: dict):
             st.markdown("**Rationale from AI briefing:**")
             for pt in rec.get("rationale", []):
                 st.markdown(f"- {pt}")
-        if delegate:
-            st.caption(f"AI-suggested delegate: *{delegate}*")
-
-    if brief.get("recommendation", {}).get("rationale"):
-        st.info(f"Override: the AI originally suggested **{delegate}**. "
-                f"Your selection overrides this for the final briefing.")
 
 
 def _render_direction_mode(brief: dict):

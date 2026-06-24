@@ -281,39 +281,88 @@ def render_dashboard():
         _render_no_data_welcome()
         return
 
+    # ── Company filter + action summary bar ───────────────────────────────
+    _inv = dfs.get("Investor Master", pd.DataFrame())
+    _act = dfs.get("Action Items", pd.DataFrame())
+    _companies = sorted(_inv["Company Name"].dropna().unique().tolist()) if "Company Name" in _inv.columns else []
+
+    filter_col, summary_col = st.columns([2, 3])
+    with filter_col:
+        selected_company = st.selectbox(
+            "View company:",
+            ["All Companies"] + _companies,
+            key="dash_company_filter",
+        )
+    with summary_col:
+        if not _act.empty and "Status" in _act.columns:
+            _act_f = _act if selected_company == "All Companies" else (
+                _act[_act["Company Name"] == selected_company] if "Company Name" in _act.columns else _act
+            )
+            _n_tot  = len(_act_f)
+            _n_done = int(_act_f["Status"].str.lower().str.contains("complet", na=False).sum())
+            _n_prog = int(_act_f["Status"].str.lower().str.contains("in progress|inprogress", na=False).sum())
+            _n_due  = max(_n_tot - _n_done - _n_prog, 0)
+            _next_due = ""
+            if "Due Date" in _act_f.columns:
+                _pending = _act_f[~_act_f["Status"].str.lower().str.contains("complet", na=False)]
+                _dates   = pd.to_datetime(_pending["Due Date"], errors="coerce").dropna()
+                _future  = _dates[_dates >= pd.Timestamp(date.today())]
+                if not _future.empty:
+                    _next_due = " · Next due " + _future.min().strftime("%-d %b")
+            st.markdown(
+                f"<div style='margin-top:28px;font-size:13px;color:#555;'>"
+                f"<b>{_n_tot}</b> actions total — "
+                f"<span style='color:#1B5C3F'><b>{_n_done}</b> completed</span> · "
+                f"<span style='color:#C9974A'><b>{_n_prog}</b> in progress</span> · "
+                f"<b>{_n_due}</b> due{_next_due}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+    # Build filtered view
+    if selected_company == "All Companies":
+        view_dfs = dfs
+    else:
+        view_dfs = {}
+        for sheet, df in dfs.items():
+            if isinstance(df, pd.DataFrame) and "Company Name" in df.columns:
+                view_dfs[sheet] = df[df["Company Name"] == selected_company].reset_index(drop=True)
+            else:
+                view_dfs[sheet] = df
+
     # ── Today's Briefing — action advisor + progress chart ───────────────
     adv_col, chart_col = st.columns([3, 1])
     with adv_col:
-        render_action_advisor(dfs, lang())
+        render_action_advisor(view_dfs, lang())
     with chart_col:
         st.markdown("**Action Progress**")
-        render_progress_chart(dfs, lang())
+        render_progress_chart(view_dfs, lang())
 
     # ── Row 1 + Row 2: KPI strips ──────────────────────────────────────────
-    render_kpi_cards(dfs, lang())
+    render_kpi_cards(view_dfs, lang())
 
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
     st.markdown("---")
 
     # ── Active Investment Opportunities (minister view) ────────────────────
-    render_active_opportunities_panel(dfs, lang())
+    render_active_opportunities_panel(view_dfs, lang())
 
     st.markdown("---")
 
     # ── Strategic Alerts ──────────────────────────────────────────────────
     st.markdown("#### Strategic Alerts")
-    render_alerts(dfs, lang())
+    render_alerts(view_dfs, lang())
 
     st.markdown("---")
 
     # ── Action Items — attention panel ───────────────────────────────────
-    render_action_summary_widget(dfs, lang())
+    render_action_summary_widget(view_dfs, lang())
 
     st.markdown("---")
 
     # ── Investment Flow ───────────────────────────────────────────────────
     st.markdown(f"#### {T('dash_investment_flow')}")
-    render_investment_flow(dfs, lang())
+    render_investment_flow(view_dfs, lang())
 
 
 def _render_no_data_welcome():
