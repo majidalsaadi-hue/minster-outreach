@@ -619,14 +619,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             ("Country",       _mv(inv_row, "Country")),
             ("Sector",        _mv(inv_row, "Sector")),
             ("Journey Stage", _mv(inv_row, "Journey Stage")),
-            ("Status",        _mv(inv_row, "Relationship Status")),
             ("RM",            _mv(inv_row, "Relationship Manager")),
             ("AM",            _mv(inv_row, "Account Manager", "TBD")),
         ]):
-            x = Inches(0.4) + i * Inches(2.1)
-            _add_text_box(slide, lbl, x, Inches(0.87), Inches(2.0), Inches(0.18),
+            x = Inches(0.4) + i * Inches(2.52)
+            _add_text_box(slide, lbl, x, Inches(0.87), Inches(2.4), Inches(0.18),
                           font_size=8, color=MGRAY)
-            _add_text_box(slide, val[:22], x, Inches(1.04), Inches(2.0), Inches(0.3),
+            _add_text_box(slide, val[:26], x, Inches(1.04), Inches(2.4), Inches(0.3),
                           font_size=10, bold=True, color=DARK)
 
     # Gold accent line under metadata
@@ -654,11 +653,32 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, goal_text, Inches(1.50), BRIEF_Y + Inches(0.06),
                   Inches(4.78), Inches(0.74), font_size=9, color=DARK)
 
-    # Panel 2: Ministry Strategy
+    # Panel 2: Ministry Strategy — compact pillar distribution bars
     _add_text_box(slide, "MINISTRY STRATEGY", Inches(6.50), BRIEF_Y + Inches(0.07),
                   Inches(3.45), Inches(0.22), font_size=9, bold=True, color=_rgb(MISA_GOLD))
-    _add_text_box(slide, strat_text, Inches(6.50), BRIEF_Y + Inches(0.32),
-                  Inches(3.45), Inches(0.52), font_size=9, color=DARK)
+    _s1_pillar_counts = {"Attract Investment": 0, "Matchmaking": 0, "Resolve Challenges": 0}
+    if not acts.empty and "Action Description" in acts.columns:
+        for _, _s1r in acts.iterrows():
+            _s1p = _map_to_strategy_pillar(
+                str(_s1r.get("Action Description", "")) + " " +
+                str(_s1r.get("Type of Engagement", "")) + " " +
+                str(_s1r.get("Sector", ""))
+            )
+            if _s1p in _s1_pillar_counts:
+                _s1_pillar_counts[_s1p] += 1
+    _s1_total = max(sum(_s1_pillar_counts.values()), 1)
+    _S1_PILLAR_COLS  = {"Attract Investment": "#065F46", "Matchmaking": "#1D4ED8", "Resolve Challenges": "#92400E"}
+    _S1_PILLAR_SHORT = {"Attract Investment": "Attract Invest.", "Matchmaking": "Matchmaking", "Resolve Challenges": "Resolve Chall."}
+    _s1_bar_y = BRIEF_Y + Inches(0.32)
+    for _s1_pillar, _s1_pcol in _S1_PILLAR_COLS.items():
+        _s1_cnt = _s1_pillar_counts[_s1_pillar]
+        _s1_bw  = max(Inches(3.40) * _s1_cnt / _s1_total, Inches(0.08)) if _s1_cnt > 0 else Inches(0.08)
+        _add_rect(slide, Inches(6.50), _s1_bar_y, _s1_bw, Inches(0.12),
+                  fill_color=_rgb(_s1_pcol), line_color=_rgb(_s1_pcol))
+        _add_text_box(slide, f"{_S1_PILLAR_SHORT[_s1_pillar]}  {_s1_cnt}",
+                      Inches(6.50), _s1_bar_y + Inches(0.13),
+                      Inches(3.45), Inches(0.09), font_size=6, color=_rgb(_s1_pcol))
+        _s1_bar_y += Inches(0.21)
 
     # Panel 3: Immediate Action (renamed from "Minister Action")
     _add_text_box(slide, "IMMEDIATE ACTION", Inches(10.20), BRIEF_Y + Inches(0.07),
@@ -820,9 +840,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         if "Due Date" in pend_df.columns:
             pend_df["_due"] = pd.to_datetime(pend_df["Due Date"], errors="coerce")
             pend_df = pend_df.sort_values("_due")
-        display_acts = pd.concat([pend_df, done_df], ignore_index=True).head(7)
+        display_acts = pd.concat([pend_df, done_df], ignore_index=True).head(5)
     else:
-        display_acts = acts.head(7) if not acts.empty else pd.DataFrame()
+        display_acts = acts.head(5) if not acts.empty else pd.DataFrame()
 
     _SBG = {
         "Completed":   "#E8F5E9", "In Progress": "#FFF8E1", "Inprogress": "#FFF8E1",
@@ -908,7 +928,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _add_text_box(slide, f"{int(prog_val * 100)}%", px, ry + Inches(0.18),
                       pcw, Inches(0.12), font_size=6.5, color=DARK, align=PP_ALIGN.CENTER)
 
-    # ── Action Completion Chart (bottom-left, below table) ───────────────────
+    # ── Strategy Overview Chart (bottom-left) — completion bar + pillar alignment ──
     chart_y = HDR_Y + HDR_H + len(display_acts) * ROW_H + Inches(0.12)
     if chart_y + Inches(0.6) < Inches(6.95):
         n_total   = len(acts) if not acts.empty else 0
@@ -917,27 +937,52 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         n_inprog  = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
         n_due_cnt = n_remain - n_inprog
 
-        _add_text_box(slide, f"Action Summary: {n_total} total  |  {n_done} completed  |  {n_remain} remaining",
-                      TBL_L, chart_y, Inches(9.6), Inches(0.18),
-                      font_size=8, bold=True, color=DARK)
-        chart_y += Inches(0.22)
+        # Section header
+        _add_text_box(slide, "MINISTRY STRATEGY — Action Progress & Pillar Alignment",
+                      TBL_L, chart_y, Inches(9.6), Inches(0.16),
+                      font_size=8, bold=True, color=_rgb(MISA_GOLD))
+        chart_y += Inches(0.18)
+
+        # Completion segmented bar
         bar_total_w = Inches(9.2)
         if n_total > 0:
-            w_done   = bar_total_w * n_done   / n_total
-            w_prog   = bar_total_w * n_inprog / n_total
-            w_due    = bar_total_w * n_due_cnt / n_total
             bx = TBL_L
             for bw, bcol, lbl in [
-                (w_done, _rgb(MISA_GREEN), f"Completed {n_done}"),
-                (w_prog, _rgb(MISA_GOLD),  f"In Progress {n_inprog}"),
-                (w_due,  _rgb("#9CA3AF"),   f"Due {n_due_cnt}"),
+                (bar_total_w * n_done    / n_total, _rgb(MISA_GREEN), f"Completed {n_done}"),
+                (bar_total_w * n_inprog  / n_total, _rgb(MISA_GOLD),  f"In Progress {n_inprog}"),
+                (bar_total_w * n_due_cnt / n_total, _rgb("#9CA3AF"),   f"Due {n_due_cnt}"),
             ]:
                 if bw > Inches(0.05):
-                    _add_rect(slide, bx, chart_y, bw, Inches(0.22), fill_color=bcol, line_color=bcol)
+                    _add_rect(slide, bx, chart_y, bw, Inches(0.20), fill_color=bcol, line_color=bcol)
                     if bw > Inches(0.5):
                         _add_text_box(slide, lbl, bx + Inches(0.04), chart_y + Inches(0.02),
-                                      bw - Inches(0.06), Inches(0.18), font_size=6.5, color=WHITE)
+                                      bw - Inches(0.06), Inches(0.16), font_size=6.5, color=WHITE)
                     bx += bw
+        chart_y += Inches(0.24)
+
+        # Pillar distribution bars
+        _btm_pillar_counts = {"Attract Investment": 0, "Matchmaking": 0, "Resolve Challenges": 0}
+        if not acts.empty and "Action Description" in acts.columns:
+            for _, _bpr in acts.iterrows():
+                _bpp = _map_to_strategy_pillar(
+                    str(_bpr.get("Action Description","")) + " " +
+                    str(_bpr.get("Type of Engagement","")) + " " +
+                    str(_bpr.get("Sector",""))
+                )
+                if _bpp in _btm_pillar_counts:
+                    _btm_pillar_counts[_bpp] += 1
+        _btm_total = max(sum(_btm_pillar_counts.values()), 1)
+        _BTM_PCOLS  = {"Attract Investment": "#065F46", "Matchmaking": "#1D4ED8", "Resolve Challenges": "#92400E"}
+        for _bpillar, _bpcol in _BTM_PCOLS.items():
+            _bcnt = _btm_pillar_counts[_bpillar]
+            _bw   = max(bar_total_w * _bcnt / _btm_total, Inches(0.06)) if _bcnt > 0 else Inches(0.06)
+            _add_rect(slide, TBL_L, chart_y, _bw, Inches(0.13),
+                      fill_color=_rgb(_bpcol), line_color=_rgb(_bpcol))
+            _add_text_box(slide, f"{_bpillar}  {_bcnt}",
+                          TBL_L + _bw + Inches(0.06), chart_y,
+                          bar_total_w - _bw - Inches(0.06), Inches(0.13),
+                          font_size=6, color=_rgb(_bpcol))
+            chart_y += Inches(0.15)
 
     # ══════════════════════════════════════════════════════════════════════════
     # RIGHT: Status summary + Deals + Opportunities + KPI cards
@@ -1102,12 +1147,14 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
     _PRI_COL   = {"High":"#991B1B","Very High":"#7F1D1D","Medium":"#1B5C3F","Low":"#6B7280"}
     _PRI_LIGHT = {"High":"#FEE2E2","Very High":"#FEE2E2","Medium":"#D1FAE5","Low":"#F3F4F6"}
 
-    CARD_W  = Inches(6.28)
+    CARD_W  = Inches(4.08)
     CARD_H  = Inches(1.65)
     GAP_X   = Inches(0.13)
     GAP_Y   = Inches(0.12)
     COL_X   = [Inches(0.24), Inches(0.24) + CARD_W + GAP_X]
     START_Y = Inches(1.73)
+    SB_X    = Inches(8.70)
+    SB_W    = Inches(4.48)
 
     if card_source.empty:
         _add_text_box(slide,
@@ -1260,50 +1307,42 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
                               font_size=7.5, bold=True, color=_rgb(pfg))
                 pill_x += pw + Inches(0.06)
 
-            # Rows 3+: Action history list matched by sector/keyword
+            # Row 3: 2-line auto description + impact
+            opp_desc, opp_impact = _build_opportunity_narrative(opp, acts, idx)
+            _add_text_box(slide, opp_desc[:68],
+                          IX, cy + Inches(0.62), IW, Inches(0.14),
+                          font_size=7.5, color=DARK)
+            _add_text_box(slide, opp_impact[:72],
+                          IX, cy + Inches(0.77), IW, Inches(0.12),
+                          font_size=6.5, color=MGRAY)
+
+            # Rows 4+: Related action items (up to 2)
             _ACT_DOT = {
                 "Completed":   MISA_GREEN, "Inprogress":  MISA_GOLD,
                 "In Progress": MISA_GOLD,  "Not Started": "#AAAAAA",
                 "Blocked":     "#C0392B",  "Cancelled":   "#CCCCCC",
             }
             matched_acts = _match_acts_to_opp(opp_name, acts)
-            act_y = cy + Inches(0.62)
-            ACT_ROW = Inches(0.32)
+            act_y = cy + Inches(0.92)
+            ACT_ROW = Inches(0.27)
             shown_acts = 0
-            for _, ar in matched_acts.head(3).iterrows():
-                if act_y + ACT_ROW > cy + CARD_H - Inches(0.04):
+            for _, ar in matched_acts.head(2).iterrows():
+                if act_y + ACT_ROW > cy + CARD_H - Inches(0.18):
                     break
-                ad  = str(ar.get("Action Description", "") or "").strip()
-                rem = str(ar.get("Remarks",            "") or "").strip()
-                st  = str(ar.get("Status",             "") or "").strip()
+                ad = str(ar.get("Action Description", "") or "").strip()
+                st = str(ar.get("Status",             "") or "").strip()
                 if not ad or ad in ("nan",):
                     continue
                 dot_col = _rgb(_ACT_DOT.get(st, "#AAAAAA"))
                 _add_rect(slide, IX, act_y + Inches(0.04), Inches(0.07), Inches(0.07),
                           fill_color=dot_col, line_color=dot_col)
-                _add_text_box(slide, ad[:72], IX + Inches(0.11), act_y,
+                _add_text_box(slide, ad[:58], IX + Inches(0.11), act_y,
                               IW - Inches(0.11), Inches(0.17),
-                              font_size=7.5, color=DARK)
-                if rem and rem not in ("nan", "Key notes", ""):
-                    _add_text_box(slide, f"↳ {rem[:72]}", IX + Inches(0.14), act_y + Inches(0.17),
-                                  IW - Inches(0.14), Inches(0.14),
-                                  font_size=6.5, color=MGRAY)
+                              font_size=7, color=DARK)
                 act_y += ACT_ROW
                 shown_acts += 1
 
-            if shown_acts == 0:
-                # No matched actions — show stage context
-                stage_map = {
-                    "Committed": "secured and committed", "Negotiation": "in active negotiation",
-                    "Exploration": "in early-stage exploration", "Active": "actively progressing",
-                    "Opportunity Matching": "being matched to MISA priorities",
-                }
-                stage_desc = stage_map.get(stage, "under development")
-                _add_text_box(slide, f"Engagement {stage_desc}. No actions logged yet.",
-                              IX, cy + Inches(0.62), IW, Inches(0.24),
-                              font_size=8, color=MGRAY)
-
-            # Summary footer inside card
+            # Footer: completion count
             if not matched_acts.empty and "Status" in matched_acts.columns:
                 n_tot  = len(matched_acts)
                 n_done = int(matched_acts["Status"].str.lower().str.contains("complet").sum())
@@ -1311,6 +1350,98 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
                               f"{n_done}/{n_tot} completed",
                               IX, cy + CARD_H - Inches(0.18), IW, Inches(0.16),
                               font_size=6.5, color=MGRAY)
+
+    # ── Ministry Strategy Sidebar (right of opportunity cards) ───────────────
+    _add_rect(slide, SB_X - Inches(0.07), Inches(1.60), Inches(0.02), Inches(5.42),
+              fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
+    # Sidebar title band
+    _add_rect(slide, SB_X, Inches(1.73), SB_W, Inches(0.30),
+              fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
+    _add_text_box(slide, "MINISTRY STRATEGY",
+                  SB_X + Inches(0.10), Inches(1.77),
+                  SB_W - Inches(0.20), Inches(0.22),
+                  font_size=9, bold=True, color=WHITE)
+
+    _SB_PILLAR_META = {
+        "Attract Investment": {
+            "alignment": "FDI growth — Vision 2030 pipeline targets",
+            "team_aim":  "Secure commitment from target investors",
+            "color":     "#065F46",
+            "light":     "#D1FAE5",
+        },
+        "Matchmaking": {
+            "alignment": "Connects investors with MISA priority sectors",
+            "team_aim":  "Facilitate introductions & sector engagement",
+            "color":     "#1D4ED8",
+            "light":     "#DBEAFE",
+        },
+        "Resolve Challenges": {
+            "alignment": "Removes barriers to investment facilitation",
+            "team_aim":  "Cross-ministry coordination to unblock deals",
+            "color":     "#92400E",
+            "light":     "#FEF3C7",
+        },
+    }
+
+    _sb_pillar_acts = {p: [] for p in _SB_PILLAR_META}
+    if not acts.empty and "Action Description" in acts.columns:
+        for _, _sbr in acts.iterrows():
+            _sbp = _map_to_strategy_pillar(
+                str(_sbr.get("Action Description", "")) + " " +
+                str(_sbr.get("Type of Engagement", "")) + " " +
+                str(_sbr.get("Sector", ""))
+            )
+            if _sbp in _sb_pillar_acts:
+                _sb_pillar_acts[_sbp].append(_sbr)
+
+    _sb_y = Inches(2.10)
+    for _sb_pillar, _sb_meta in _SB_PILLAR_META.items():
+        _sb_items = _sb_pillar_acts[_sb_pillar]
+        _sb_cnt   = len(_sb_items)
+        _sb_pcol  = _sb_meta["color"]
+        _sb_plight = _sb_meta["light"]
+        _sb_n_act  = min(_sb_cnt, 3)
+        _sb_detail_h = Inches(0.36 + _sb_n_act * 0.20)
+
+        if _sb_y + Inches(0.30) + _sb_detail_h > Inches(7.02):
+            break
+
+        # Pillar header
+        _add_rect(slide, SB_X, _sb_y, SB_W, Inches(0.28),
+                  fill_color=_rgb(_sb_pcol), line_color=_rgb(_sb_pcol))
+        _add_text_box(slide,
+                      f"{_sb_pillar}  —  {_sb_cnt} action{'s' if _sb_cnt != 1 else ''}",
+                      SB_X + Inches(0.08), _sb_y + Inches(0.05),
+                      SB_W - Inches(0.16), Inches(0.20),
+                      font_size=8, bold=True, color=WHITE)
+        _sb_y += Inches(0.28)
+
+        # Light detail block
+        _add_rect(slide, SB_X, _sb_y, SB_W, _sb_detail_h,
+                  fill_color=_rgb(_sb_plight), line_color=_rgb(_sb_plight))
+
+        # Alignment + team aim
+        _add_text_box(slide, f"↗ {_sb_meta['alignment']}",
+                      SB_X + Inches(0.08), _sb_y + Inches(0.03),
+                      SB_W - Inches(0.16), Inches(0.13),
+                      font_size=6.5, color=_rgb(_sb_pcol))
+        _add_text_box(slide, f"▸ {_sb_meta['team_aim']}",
+                      SB_X + Inches(0.08), _sb_y + Inches(0.17),
+                      SB_W - Inches(0.16), Inches(0.13),
+                      font_size=6.5, color=DARK)
+
+        # Top action items
+        _sb_act_y = _sb_y + Inches(0.33)
+        for _sbact in _sb_items[:_sb_n_act]:
+            _sb_ad = str(_sbact.get("Action Description", "") or "").strip()[:56]
+            if _sb_ad:
+                _add_text_box(slide, f"• {_sb_ad}",
+                              SB_X + Inches(0.08), _sb_act_y,
+                              SB_W - Inches(0.16), Inches(0.16),
+                              font_size=6, color=DARK)
+                _sb_act_y += Inches(0.19)
+
+        _sb_y += _sb_detail_h + Inches(0.08)
 
     # ── Gold footer
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
