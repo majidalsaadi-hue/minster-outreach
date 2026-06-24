@@ -763,6 +763,166 @@ body{{background:#fff;padding:0}}
     components.html(full, height=920, scrolling=True)
 
 
+_DELEGATES = {
+    "challenges_deals": {
+        "name":  "Assistant Minister Abdullah A. Aldubaikhi",
+        "role":  "Challenges & Deals",
+        "desc":  "Recommended for meetings focused on active investment deals, regulatory challenges, or situations requiring ministerial-level problem resolution.",
+        "color": "#1B5C3F",
+    },
+    "exploration_events": {
+        "name":  "CEO of Saudi Investment Promotion Authority — Khaled S. Alkhattaf",
+        "role":  "Exploration & Events",
+        "desc":  "Recommended for companies exploring the Saudi market for the first time, event participation, or early-stage investment roadshows.",
+        "color": "#C9974A",
+    },
+    "sector_services": {
+        "name":  "Assistant Minister — Services Industry",
+        "role":  "Sector Services",
+        "desc":  "Recommended based on the company's sector, size, and strategic relevance to Saudi service industry priorities.",
+        "color": "#2D7A54",
+    },
+}
+
+_TALKING_POINTS_BY_SECTOR = {
+    "Technology": [
+        "Saudi Arabia's National Digital Transformation Programme and MISA's ICT investment pipeline.",
+        "Data centre incentives and cloud adoption targets under Vision 2030.",
+        "NEOM, Diriyah, and mega-projects as test-beds for technology deployment.",
+    ],
+    "Healthcare": [
+        "Saudi Arabia's Vision 2030 healthcare localisation targets (Saudisation and local manufacturing).",
+        "National Health Transformation Programme and opportunities in digital health.",
+        "Partnership models with MOH, Saudi Health Council, and existing healthcare city developments.",
+    ],
+    "Finance": [
+        "SAMA and CMA regulatory environment — new licences and fintech sandbox opportunities.",
+        "Riyadh Financial District as the regional financial hub and gateway for Gulf capital deployment.",
+        "Saudi Arabia's sovereign wealth ecosystem (PIF, Sanabil) and co-investment opportunities.",
+    ],
+    "Infrastructure": [
+        "SAR 1 trillion infrastructure pipeline across transport, logistics, and utilities.",
+        "GIGA projects (NEOM, Red Sea, Qiddiya) requiring international infrastructure expertise.",
+        "PPP framework and MISA's one-stop-shop for regulatory approvals.",
+    ],
+    "Real Estate": [
+        "Premium residency programme and its link to property investment thresholds.",
+        "Affordable housing demand — Vision 2030 target of 70% homeownership.",
+        "Development opportunities across GIGA and new city projects.",
+    ],
+    "default": [
+        "MISA's mandate to attract, retain, and grow foreign investment in Saudi Arabia.",
+        "Vision 2030 pillars aligned to the company's sector and areas of expertise.",
+        "Licensing, regulatory, and operational support available through MISA's one-stop-shop.",
+        "Saudi Arabia's economic transformation: open markets, privatisation, and PPP opportunities.",
+    ],
+}
+
+
+def _render_recommendation_mode(brief: dict):
+    """Step 4 Option 1 — Recommendation Mode: suggest leadership level to delegate to."""
+    rec      = brief.get("recommendation", {})
+    delegate = rec.get("delegateTo", "")
+    sectors  = brief.get("sectors", [])
+    subject  = brief.get("subject", "")
+
+    # Auto-classify meeting nature from subject + sectors + existing recommendation
+    text_lower = (subject + " " + str(sectors)).lower()
+    if any(w in text_lower for w in ["challenge", "resolve", "nda", "blocker", "lease",
+                                      "energy", "cost", "regulatory", "residency"]):
+        auto_key = "challenges_deals"
+    elif any(w in text_lower for w in ["explore", "introduction", "event", "roadshow",
+                                        "new", "first", "ecosystem", "promotion"]):
+        auto_key = "exploration_events"
+    else:
+        auto_key = "sector_services"
+
+    st.markdown("**Select meeting nature to determine the appropriate leadership level:**")
+    nature = st.radio(
+        "Meeting nature",
+        ["Challenges or Active Deals", "Exploration / Events / New Companies",
+         "Based on Sector & Company Level"],
+        index=["challenges_deals", "exploration_events", "sector_services"].index(auto_key),
+        key="ev_nature",
+        label_visibility="collapsed",
+    )
+    key_map = {
+        "Challenges or Active Deals":            "challenges_deals",
+        "Exploration / Events / New Companies":  "exploration_events",
+        "Based on Sector & Company Level":       "sector_services",
+    }
+    selected_key = key_map[nature]
+    dg = _DELEGATES[selected_key]
+
+    col_dg, col_rat = st.columns([2, 3])
+    with col_dg:
+        st.markdown(f"""
+        <div style="background:{dg['color']};color:#fff;border-radius:8px;padding:12px 14px;margin-top:6px;">
+          <div style="font-size:9px;letter-spacing:.08em;opacity:.8;text-transform:uppercase;margin-bottom:4px;">Recommended Delegate</div>
+          <div style="font-size:13px;font-weight:700;line-height:1.3;">{dg['name']}</div>
+          <div style="font-size:10px;opacity:.85;margin-top:4px;">{dg['role']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.caption(dg["desc"])
+
+    with col_rat:
+        if rec.get("rationale"):
+            st.markdown("**Rationale from AI briefing:**")
+            for pt in rec.get("rationale", []):
+                st.markdown(f"- {pt}")
+        if delegate:
+            st.caption(f"AI-suggested delegate: *{delegate}*")
+
+    if brief.get("recommendation", {}).get("rationale"):
+        st.info(f"Override: the AI originally suggested **{delegate}**. "
+                f"Your selection overrides this for the final briefing.")
+
+
+def _render_direction_mode(brief: dict):
+    """Step 4 Option 2 — Direction Mode: minister has approved, assign stakeholder + talking points."""
+    sector   = brief.get("sectors", [{}])[0].get("title", "") if brief.get("sectors") else ""
+    company  = brief.get("company", "")
+    subject  = brief.get("subject", "")
+    dps      = brief.get("discussionPoints", [])
+
+    st.markdown("**The Minister has approved this meeting. Proceed directly with the assigned stakeholder.**")
+
+    a1, a2 = st.columns(2)
+    with a1:
+        assigned = st.text_input(
+            "Assigned Stakeholder",
+            value=brief.get("recommendation", {}).get("delegateTo", ""),
+            key="ev_dir_stakeholder",
+            placeholder="e.g. HE Ibrahim / Dr. Arwa Alrawais",
+        )
+    with a2:
+        meeting_date = st.text_input(
+            "Scheduled Date",
+            value=brief.get("visitDates", ""),
+            key="ev_dir_date",
+            placeholder="e.g. 25 June 2026",
+        )
+
+    # Talking points
+    sector_key = next((k for k in _TALKING_POINTS_BY_SECTOR if k.lower() in sector.lower()), "default")
+    tp_list = _TALKING_POINTS_BY_SECTOR[sector_key]
+
+    st.markdown("**Predefined Talking Points:**")
+    col_ai, col_pre = st.columns(2)
+    with col_ai:
+        st.markdown("*From AI Briefing:*")
+        for pt in (dps or tp_list)[:4]:
+            st.markdown(f"- {pt}")
+    with col_pre:
+        st.markdown(f"*MISA Standard — {sector or 'General'}:*")
+        for pt in tp_list[:4]:
+            st.markdown(f"- {pt}")
+
+    if assigned:
+        st.success(f"Direction confirmed: meeting proceeds with **{assigned}**"
+                   + (f" on {meeting_date}" if meeting_date else "") + ".")
+
+
 # ─── Main render ───────────────────────────────────────────────────────────────
 
 def render():
@@ -962,5 +1122,24 @@ def render():
                         s.pop(k, None)
                     st.rerun()
 
-            st.markdown("---")
-            _render_preview(brief)
+        # ── Decision / Mode selector ──────────────────────────────────────────
+        with st.container(border=True):
+            st.markdown('<p class="ev-section">Decision & Direction</p>',
+                        unsafe_allow_html=True)
+            st.caption("Select how to proceed with this meeting.")
+
+            mode = st.radio(
+                "Mode",
+                ["Recommendation Mode", "Direction Mode"],
+                horizontal=True,
+                key="ev_mode",
+                label_visibility="collapsed",
+            )
+
+            if mode == "Recommendation Mode":
+                _render_recommendation_mode(brief)
+            else:
+                _render_direction_mode(brief)
+
+        st.markdown("---")
+        _render_preview(brief)

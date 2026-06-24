@@ -21,6 +21,92 @@ _PALETTE       = [MISA_GREEN, MISA_GOLD, "#2D7A54", "#E4B96A", "#0F3D2A", "#C039
 
 _URGENCY_ORDER = {"critical": 0, "today": 1, "soon": 2, "strategic": 3, "watch": 4}
 
+_STRATEGY_PILLARS = {
+    "Attract Investment": ["invest", "capital", "fund", "pipeline", "value", "narrative",
+                           "promotion", "roadshow", "airport", "infrastructure", "strategy"],
+    "Matchmaking":        ["meeting", "introduction", "introductory", "connect", "sector",
+                           "ict", "health", "fintech", "data center", "humain", "modon",
+                           "stc", "interhealth", "engage", "explore"],
+    "Resolve Challenges": ["nda", "residency", "regulatory", "guidance", "energy",
+                           "challenge", "resolve", "land", "lease", "fiber", "request",
+                           "support", "premium", "cost", "manufacturing"],
+}
+
+
+def _map_to_pillar(text: str) -> str:
+    t_lower = text.lower()
+    scores = {p: sum(1 for kw in kws if kw in t_lower) for p, kws in _STRATEGY_PILLARS.items()}
+    best = max(scores, key=lambda p: scores[p])
+    return best if scores[best] > 0 else "Matchmaking"
+
+
+# ── Progress Overview Chart ───────────────────────────────────────────────────
+
+def render_progress_chart(dfs: dict, lang: str):
+    """Compact progress donut chart — Done / In Progress / Due percentages."""
+    actions = dfs.get("Action Items", pd.DataFrame())
+    if actions.empty or "Status" not in actions.columns:
+        return
+
+    total    = len(actions)
+    if total == 0:
+        return
+
+    n_done   = int(actions["Status"].str.lower().str.contains("complet", na=False).sum())
+    n_prog   = int(actions["Status"].isin(["In Progress", "Inprogress"]).sum())
+    n_due    = total - n_done - n_prog
+
+    pct_done = round(n_done / total * 100)
+    pct_prog = round(n_prog / total * 100)
+    pct_due  = 100 - pct_done - pct_prog
+
+    fig = go.Figure(go.Pie(
+        labels=["Completed", "In Progress", "Due"],
+        values=[n_done, n_prog, max(n_due, 0)],
+        hole=0.55,
+        marker_colors=[MISA_GREEN, MISA_GOLD, "#9CA3AF"],
+        textinfo="percent",
+        textfont_size=11,
+        showlegend=True,
+    ))
+    fig.add_annotation(
+        text=f"<b>{total}</b><br><span style='font-size:10px'>Actions</span>",
+        x=0.5, y=0.5, showarrow=False, font_size=13,
+    )
+    fig.update_layout(
+        margin=dict(t=20, b=10, l=10, r=10),
+        height=220,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5,
+                    font=dict(size=10)),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+    )
+
+    c_chart, c_stats = st.columns([2, 1])
+    with c_chart:
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    with c_stats:
+        st.markdown(f"""
+        <div style="padding:12px 0;font-family:'Segoe UI',sans-serif;">
+          <div style="margin-bottom:10px;">
+            <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">Completed</div>
+            <div style="font-size:24px;font-weight:700;color:{MISA_GREEN};">{pct_done}%</div>
+            <div style="font-size:11px;color:#4B5563;">{n_done} of {total} actions</div>
+          </div>
+          <div style="margin-bottom:10px;">
+            <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">In Progress</div>
+            <div style="font-size:24px;font-weight:700;color:{MISA_GOLD};">{pct_prog}%</div>
+            <div style="font-size:11px;color:#4B5563;">{n_prog} actions</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">Due / Pending</div>
+            <div style="font-size:24px;font-weight:700;color:#6B7280;">{pct_due}%</div>
+            <div style="font-size:11px;color:#4B5563;">{max(n_due,0)} actions</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
 
 # ── Today's Briefing — Action Advisor ────────────────────────────────────────
 
@@ -52,12 +138,12 @@ def render_action_advisor(dfs: dict, lang: str):
                 items.append({
                     "score":    120 + days_late * 3,
                     "urgency":  "critical",
-                    "tag":      "OVERDUE",
-                    "tag_color":"#DC2626",
+                    "tag":      f"DUE {d.strftime('%d %b').upper()}",
+                    "tag_color":"#D97706",
                     "company":  company,
                     "action":   desc or "Complete pending action",
-                    "detail":   f"{days_late}d overdue · {owner}",
-                    "icon":     "🔴",
+                    "detail":   f"Due {d.strftime('%d %b %Y')} · {owner}",
+                    "icon":     "🟠",
                 })
             elif (d - today).days == 0:
                 items.append({
@@ -264,6 +350,7 @@ def render_action_advisor(dfs: dict, lang: str):
     n_crit  = sum(1 for i in items if i["urgency"] in ("critical", "today"))
     n_soon  = sum(1 for i in items if i["urgency"] == "soon")
     n_strat = sum(1 for i in items if i["urgency"] in ("strategic", "watch"))
+    n_done  = sum(1 for i in items if i.get("tag", "").startswith("COMPLETED"))
     day_label = today.strftime("%A, %d %B %Y")
 
     # ── Header bar (always render as one complete block) ──────────────────────

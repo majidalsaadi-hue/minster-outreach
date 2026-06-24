@@ -270,9 +270,11 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
             except (ValueError, TypeError):
                 continue
 
-            desc    = _safe_get(row, col_map, "Action Item", "")
+            desc     = _safe_get(row, col_map, "Action Item", "")
             eng_type = _safe_get(row, col_map, "Type of Engagement", "")
-            sector  = _safe_get(row, col_map, "Sector", "")
+            sector   = _safe_get(row, col_map, "Sector", "")
+            progress = _normalise_progress(_safe_get(row, col_map, "Progress", 0))
+            status   = _derive_status_from_progress(progress)
 
             action_rows.append({
                 "Action ID":          f"ACT-{inv_id}-{action_num:03d}",
@@ -288,8 +290,8 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
                 "Start Date":         _to_date(_safe_get(row, col_map, "Start Date", None)),
                 "Due Date":           _to_date(_safe_get(row, col_map, "Due Date", None)),
                 "Priority":           _safe_get(row, col_map, "Priority", "Medium"),
-                "Progress":           _normalise_progress(_safe_get(row, col_map, "Progress", 0)),
-                "Status":             _normalise_status(_safe_get(row, col_map, "Status", "Not Started")),
+                "Progress":           progress,
+                "Status":             status,
                 "Escalation Flag":    "None",
                 "Remarks":            _safe_get(row, col_map, "Remarks", ""),
                 "Outcome":            "",
@@ -386,18 +388,31 @@ def _normalise_progress(val) -> str:
     except (TypeError, ValueError):
         return "0%"
     pct = round(f * 100) if f <= 1.0 else round(f)
-    # Snap to nearest 25
-    snapped = round(pct / 25) * 25
-    snapped = max(0, min(100, snapped))
-    return f"{snapped}%"
+    pct = max(0, min(100, pct))
+    return f"{pct}%"
+
+
+def _derive_status_from_progress(progress_str: str) -> str:
+    """Derive a neutral status from the progress percentage.
+    100% → Completed, >5% → In Progress, ≤5% → Due (no negative labels)."""
+    try:
+        pct = float(str(progress_str).rstrip("%"))
+    except (ValueError, TypeError):
+        pct = 0.0
+    if pct >= 100:
+        return "Completed"
+    elif pct > 5:
+        return "In Progress"
+    else:
+        return "Due"
 
 
 def _normalise_status(val: str) -> str:
     mapping = {
         "inprogress":  "In Progress",
         "in progress": "In Progress",
-        "notstarted":  "Not Started",
-        "not started": "Not Started",
+        "notstarted":  "Due",
+        "not started": "Due",
         "completed":   "Completed",
         "blocked":     "Blocked",
         "cancelled":   "Cancelled",

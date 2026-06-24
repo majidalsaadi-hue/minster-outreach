@@ -37,6 +37,7 @@ from modules.dashboard     import (
     render_investment_flow,
     render_alerts,
     render_active_opportunities_panel,
+    render_progress_chart,
 )
 from modules.investors     import render as render_investors
 from modules.meetings      import render as render_meetings
@@ -280,8 +281,13 @@ def render_dashboard():
         _render_no_data_welcome()
         return
 
-    # ── Today's Briefing — action advisor ─────────────────────────────────
-    render_action_advisor(dfs, lang())
+    # ── Today's Briefing — action advisor + progress chart ───────────────
+    adv_col, chart_col = st.columns([3, 1])
+    with adv_col:
+        render_action_advisor(dfs, lang())
+    with chart_col:
+        st.markdown("**Action Progress**")
+        render_progress_chart(dfs, lang())
 
     # ── Row 1 + Row 2: KPI strips ──────────────────────────────────────────
     render_kpi_cards(dfs, lang())

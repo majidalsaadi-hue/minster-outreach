@@ -360,12 +360,12 @@ def _slide_pipeline_performance(prs, investors, meetings, opportunities, actions
 
 
 def _slide_minister_vision(prs, investors, lang):
-    """Left: Minister decision log. Right: Vision 2030 + Deal classification."""
+    """Left: Immediate action log. Right: Vision 2030 + Strategy pillars."""
     slide = _blank_slide(prs)
-    _add_slide_header(slide, "Minister Log & Vision 2030")
+    _add_slide_header(slide, "Immediate Actions & Vision 2030")
 
-    # ── LEFT: Minister items ────────────────────────────────────────
-    _add_text_box(slide, "Minister Attention Required",
+    # ── LEFT: Immediate action items ────────────────────────────────
+    _add_text_box(slide, "Immediate Actions Required",
                   Inches(0.3), Inches(1.1), Inches(6.5), Inches(0.35),
                   font_size=12, bold=True, color=DARK)
 
@@ -660,8 +660,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, strat_text, Inches(6.50), BRIEF_Y + Inches(0.32),
                   Inches(3.45), Inches(0.52), font_size=9, color=DARK)
 
-    # Panel 3: Minister Action
-    _add_text_box(slide, "MINISTER ACTION", Inches(10.20), BRIEF_Y + Inches(0.07),
+    # Panel 3: Immediate Action (renamed from "Minister Action")
+    _add_text_box(slide, "IMMEDIATE ACTION", Inches(10.20), BRIEF_Y + Inches(0.07),
                   Inches(2.93), Inches(0.22), font_size=9, bold=True, color=RED)
     _add_text_box(slide, action_text, Inches(10.20), BRIEF_Y + Inches(0.32),
                   Inches(2.93), Inches(0.52), font_size=9, color=DARK)
@@ -802,7 +802,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     TBL_L = Inches(0.3)
     HDR_Y = Inches(3.52)
     HDR_H = Inches(0.30)
-    ROW_H = Inches(0.32)
+    ROW_H = Inches(0.40)   # increased to fit action desc + context + pillar tag
     CW    = [Inches(w) for w in [0.40, 4.85, 1.65, 1.20, 0.80, 0.70]]
     CX    = [TBL_L + sum(CW[:j]) for j in range(len(CW))]
     HDRS  = ["#", "Action Item", "Assigned To", "Status", "Due", "Progress"]
@@ -813,16 +813,16 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       cw - Inches(0.06), HDR_H - Inches(0.06),
                       font_size=8, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
 
-    # Sort: pending by due date first, then completed
+    # Sort: pending by due date first, then completed. Cap at 7 rows to leave chart space.
     if not acts.empty and "Status" in acts.columns:
         pend_df = acts[~acts["Status"].isin(["Completed", "Cancelled"])].copy()
         done_df = acts[acts["Status"].isin(["Completed", "Cancelled"])].copy()
         if "Due Date" in pend_df.columns:
             pend_df["_due"] = pd.to_datetime(pend_df["Due Date"], errors="coerce")
             pend_df = pend_df.sort_values("_due")
-        display_acts = pd.concat([pend_df, done_df], ignore_index=True).head(10)
+        display_acts = pd.concat([pend_df, done_df], ignore_index=True).head(7)
     else:
-        display_acts = acts.head(10) if not acts.empty else pd.DataFrame()
+        display_acts = acts.head(7) if not acts.empty else pd.DataFrame()
 
     _SBG = {
         "Completed":   "#E8F5E9", "In Progress": "#FFF8E1", "Inprogress": "#FFF8E1",
@@ -837,11 +837,14 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         ry  = HDR_Y + HDR_H + i * ROW_H
         alt = _rgb("#F7F7F2") if i % 2 == 0 else WHITE
 
-        desc   = str(row.get("Action Description", "") or "")
-        owner  = str(row.get("Assigned To",        "") or "")[:20]
-        status = str(row.get("Status", "Not Started") or "Not Started")
-        due    = row.get("Due Date", "")
-        remark = str(row.get("Remarks", "") or "")[:42]
+        desc     = str(row.get("Action Description", "") or "")
+        owner    = str(row.get("Assigned To",        "") or "")[:20]
+        status   = str(row.get("Status", "Due") or "Due")
+        due      = row.get("Due Date", "")
+        remark   = str(row.get("Remarks", "") or "")[:42]
+        eng_type = str(row.get("Type of Engagement", "") or "")
+        sector   = str(row.get("Sector", "") or "")
+        pillar   = _map_to_strategy_pillar(desc + " " + eng_type + " " + sector)
 
         try:
             due_d = pd.to_datetime(due)
@@ -870,11 +873,20 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             fc = sfg if j == 3 else (RED if (j == 4 and is_ov) else DARK)
             al = PP_ALIGN.CENTER if j in (0, 3, 4) else PP_ALIGN.LEFT
             if j == 1:
-                _add_text_box(slide, desc[:58], cx + Inches(0.04), ry + Inches(0.02),
-                              cw - Inches(0.08), Inches(0.15), font_size=7.5, color=DARK)
-                if remark:
-                    _add_text_box(slide, f"↳ {remark}", cx + Inches(0.05), ry + Inches(0.17),
-                                  cw - Inches(0.10), Inches(0.12), font_size=6, color=MGRAY)
+                _add_text_box(slide, desc[:58], cx + Inches(0.04), ry + Inches(0.01),
+                              cw - Inches(0.08), Inches(0.14), font_size=7.5, color=DARK)
+                ctx_line = remark if remark and remark not in ("nan",) else _action_context_line(desc, eng_type, sector)
+                if ctx_line:
+                    _add_text_box(slide, f"↳ {ctx_line[:56]}", cx + Inches(0.05), ry + Inches(0.16),
+                                  cw - Inches(0.10), Inches(0.11), font_size=6, color=MGRAY)
+                # Strategy pillar tag
+                pillar_abbr = {"Attract Investment": "Attract Invest.", "Matchmaking": "Matchmaking",
+                               "Resolve Challenges": "Resolve Chlng."}
+                pillar_col  = {"Attract Investment": "#065F46", "Matchmaking": "#1D4ED8",
+                               "Resolve Challenges": "#92400E"}
+                _add_text_box(slide, pillar_abbr.get(pillar, pillar), cx + Inches(0.04), ry + Inches(0.27),
+                              cw - Inches(0.08), Inches(0.11), font_size=5.5,
+                              color=_rgb(pillar_col.get(pillar, "#444444")))
             else:
                 _add_text_box(slide, val, cx + Inches(0.03), ry + Inches(0.05),
                               cw - Inches(0.06), Inches(0.20),
@@ -895,6 +907,37 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       fill_color=fc2, line_color=fc2)
         _add_text_box(slide, f"{int(prog_val * 100)}%", px, ry + Inches(0.18),
                       pcw, Inches(0.12), font_size=6.5, color=DARK, align=PP_ALIGN.CENTER)
+
+    # ── Action Completion Chart (bottom-left, below table) ───────────────────
+    chart_y = HDR_Y + HDR_H + len(display_acts) * ROW_H + Inches(0.12)
+    if chart_y + Inches(0.6) < Inches(6.95):
+        n_total   = len(acts) if not acts.empty else 0
+        n_done    = int(acts["Status"].str.lower().str.contains("complet").sum()) if not acts.empty and "Status" in acts.columns else 0
+        n_remain  = n_total - n_done
+        n_inprog  = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
+        n_due_cnt = n_remain - n_inprog
+
+        _add_text_box(slide, f"Action Summary: {n_total} total  |  {n_done} completed  |  {n_remain} remaining",
+                      TBL_L, chart_y, Inches(9.6), Inches(0.18),
+                      font_size=8, bold=True, color=DARK)
+        chart_y += Inches(0.22)
+        bar_total_w = Inches(9.2)
+        if n_total > 0:
+            w_done   = bar_total_w * n_done   / n_total
+            w_prog   = bar_total_w * n_inprog / n_total
+            w_due    = bar_total_w * n_due_cnt / n_total
+            bx = TBL_L
+            for bw, bcol, lbl in [
+                (w_done, _rgb(MISA_GREEN), f"Completed {n_done}"),
+                (w_prog, _rgb(MISA_GOLD),  f"In Progress {n_inprog}"),
+                (w_due,  _rgb("#9CA3AF"),   f"Due {n_due_cnt}"),
+            ]:
+                if bw > Inches(0.05):
+                    _add_rect(slide, bx, chart_y, bw, Inches(0.22), fill_color=bcol, line_color=bcol)
+                    if bw > Inches(0.5):
+                        _add_text_box(slide, lbl, bx + Inches(0.04), chart_y + Inches(0.02),
+                                      bw - Inches(0.06), Inches(0.18), font_size=6.5, color=WHITE)
+                    bx += bw
 
     # ══════════════════════════════════════════════════════════════════════════
     # RIGHT: Status summary + Deals + Opportunities + KPI cards
@@ -1012,40 +1055,22 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
                   font_size=11, color=GOLD, align=PP_ALIGN.RIGHT)
 
     # ── Resolve what to show as cards ─────────────────────────────────────────
-    # If no formal opportunities exist, use Type="Opportunity" action items
-    use_act_cards = opps.empty and not acts.empty
-    if use_act_cards:
-        opp_acts = pd.DataFrame()
-        if "Type of Engagement" in acts.columns:
-            opp_acts = acts[acts["Type of Engagement"].fillna("").str.lower().str.contains("opport", regex=False)]
-        card_source = opp_acts if not opp_acts.empty else acts
-        n_cards  = len(card_source)
-        n_active = int(card_source["Status"].isin(["Inprogress","In Progress","Not Started"]).sum()) if "Status" in card_source.columns else 0
-        n_done   = int(card_source["Status"].str.lower().str.contains("complet", na=False).sum())   if "Status" in card_source.columns else 0
-        total_val = 0.0
-    else:
-        card_source = opps
-        n_cards     = len(opps)
-        n_active    = int((opps["Opportunity Status"] == "Active").sum())    if not opps.empty and "Opportunity Status" in opps.columns else 0
-        n_done      = int((opps["Opportunity Stage"]  == "Committed").sum()) if not opps.empty and "Opportunity Stage"  in opps.columns else 0
-        total_val   = _sum_col(opps, "Est. Value (SAR)")
+    # Only show formal opportunities — never action items as opportunity cards
+    use_act_cards = False
+    card_source = opps
+    n_cards     = len(opps)
+    n_active    = int((opps["Opportunity Status"] == "Active").sum())    if not opps.empty and "Opportunity Status" in opps.columns else 0
+    n_done      = int((opps["Opportunity Stage"]  == "Committed").sum()) if not opps.empty and "Opportunity Stage"  in opps.columns else 0
+    total_val   = _sum_col(opps, "Est. Value (SAR)")
 
     # ── KPI strip (4 cards across full width)
     kw = Inches(3.13)
-    if use_act_cards:
-        kpi_data = [
-            (str(n_cards),  "Engagement Actions", MISA_GREEN),
-            (str(n_active), "Active / Pending",   MISA_GREEN),
-            (str(n_done),   "Completed",           MISA_GOLD),
-            ("—",           "Pipeline Value",      MISA_GREEN),
-        ]
-    else:
-        kpi_data = [
-            (str(n_cards),         "Total Opportunities", MISA_GREEN),
-            (str(n_active),        "Active",              MISA_GREEN),
-            (str(n_done),          "Committed",           MISA_GOLD),
-            (_fmt_sar(total_val),  "Pipeline Value",      MISA_GREEN),
-        ]
+    kpi_data = [
+        (str(n_cards),         "Total Opportunities", MISA_GREEN),
+        (str(n_active),        "Active",              MISA_GREEN),
+        (str(n_done),          "Committed",           MISA_GOLD),
+        (_fmt_sar(total_val),  "Pipeline Value",      MISA_GREEN),
+    ]
     for i, (val, lbl, col) in enumerate(kpi_data):
         kx = Inches(0.3) + i * (kw + Inches(0.08))
         _add_rect(slide, kx, Inches(0.97), kw, Inches(0.56),
@@ -1587,6 +1612,54 @@ def _build_opportunity_narrative(opp, acts=None, card_idx: int = 0) -> tuple:
     return desc[:105], impact[:90]
 
 
+_STRATEGY_PILLAR_KEYWORDS = {
+    "Attract Investment": ["invest", "capital", "fund", "pipeline", "value", "narrative",
+                           "promotion", "roadshow", "airport", "infrastructure", "strategy",
+                           "financial", "aum", "commitment", "deal"],
+    "Matchmaking":        ["meeting", "introduction", "introductory", "connect", "sector",
+                           "ict", "health", "fintech", "data center", "humain", "modon",
+                           "stc", "interhealth", "engage", "explore", "outreach", "bilateral"],
+    "Resolve Challenges": ["nda", "residency", "regulatory", "guidance", "energy",
+                           "challenge", "resolve", "land", "lease", "fiber", "request",
+                           "support", "premium", "cost", "manufacturing", "modon", "land"],
+}
+
+
+def _map_to_strategy_pillar(text: str) -> str:
+    """Map action description to the nearest MISA strategy pillar."""
+    t = text.lower()
+    scores = {p: sum(1 for kw in kws if kw in t)
+              for p, kws in _STRATEGY_PILLAR_KEYWORDS.items()}
+    best = max(scores, key=lambda p: scores[p])
+    return best if scores[best] > 0 else "Matchmaking"
+
+
+def _action_context_line(desc: str, eng_type: str = "", sector: str = "") -> str:
+    """Generate a short 1-line context description for an action item."""
+    desc_l = desc.lower()
+    if "meeting" in desc_l or "introductory" in desc_l:
+        return f"Engagement action — {eng_type or 'outreach'} to advance the relationship."
+    if "nda" in desc_l:
+        return "Formal agreement to protect information exchange and enable deeper discussions."
+    if "plan" in desc_l or "submit" in desc_l:
+        return f"Deliverable from {sector or 'engagement'} workstream — pending review."
+    if "regulatory" in desc_l or "guidance" in desc_l:
+        return "Regulatory enablement to support the investor's soft-landing in Saudi Arabia."
+    if "energy" in desc_l or "cost" in desc_l:
+        return "Infrastructure challenge requiring cross-ministry coordination to resolve."
+    if "residency" in desc_l:
+        return "Premium residency processing to facilitate the investor's team presence in KSA."
+    if "fiber" in desc_l or "stc" in desc_l:
+        return "Connectivity facilitation to support data centre operational requirements."
+    if "land" in desc_l or "modon" in desc_l:
+        return "Site allocation support required to proceed with investment facility setup."
+    if "roadshow" in desc_l or "promotion" in desc_l:
+        return "Investor promotion activity to build pipeline ahead of formal commitment."
+    if eng_type:
+        return f"{eng_type} workstream{(' — ' + sector) if sector else ''} engagement."
+    return "Coordinated action to advance investment engagement objectives."
+
+
 def _build_strategic_brief(acts, opps, meetings, inv_row):
     """
     Synthesise a minister-grade strategic brief from all action items.
@@ -1671,25 +1744,38 @@ def _build_strategic_brief(acts, opps, meetings, inv_row):
     if n_opps == 0:
         strat += "Next step: formalise opportunity pipeline."
 
-    # ── MINISTER ACTION ───────────────────────────────────────────────────────
+    # ── IMMEDIATE ACTION (renamed from "Minister Action") ────────────────────
     if minister_act and minister_act not in ("None Required", "—", ""):
-        m_act = f"ACTION REQUIRED: {minister_act}. Immediate senior-level engagement needed."
+        m_act = f"{minister_act}. Immediate senior-level engagement needed."
     elif blocked_n > 0 and blocker_descs:
-        m_act = f"ESCALATE: '{blocker_descs[0]}' — ministerial intervention required to unblock and restore momentum."
+        m_act = f"Resolve: '{blocker_descs[0]}' — senior intervention needed to unblock and restore momentum."
     elif blocked_n > 0:
-        m_act = f"{blocked_n} action{'s' if blocked_n > 1 else ''} blocked. Minister to intervene directly — signal MISA's commitment to resolve."
+        m_act = f"{blocked_n} action{'s' if blocked_n > 1 else ''} pending resolution. Signal MISA's commitment to resolve."
     elif blocker_lvl not in ("None", "—", "nan", ""):
-        m_act = f"Blocker level: {blocker_lvl}. Minister to champion resolution and reassure company at executive level."
+        m_act = f"Blocker: {blocker_lvl}. Senior engagement needed to champion resolution."
     elif high_descs:
-        m_act = f"Champion: '{high_descs[0]}'. Ministerial endorsement will accelerate delivery and signal strategic priority."
+        m_act = f"Advance: '{high_descs[0]}'. Endorsement will accelerate delivery and signal strategic priority."
     elif stage in ("Active Negotiation",):
-        m_act = "Deal in negotiation. Minister to maintain executive contact — closing requires a clear political commitment signal from ministry leadership."
+        m_act = "Deal in negotiation — maintain executive contact and signal commitment to close."
     elif stage in ("Committed", "Post-Investment"):
-        m_act = "Investment committed. Minister to publicly acknowledge relationship and identify next expansion opportunity."
+        m_act = "Investment committed. Acknowledge relationship and identify next expansion opportunity."
     elif pct >= 70 and n_opps > 0:
-        m_act = "Engagement maturing. Minister to initiate commitment conversation — redirect dialogue to deal closure and headline terms."
+        m_act = "Engagement maturing. Initiate commitment conversation — redirect to deal closure."
     else:
-        m_act = "Strengthen partnership: arrange senior bilateral meeting, present MISA's strategic value proposition and Vision 2030 alignment."
+        m_act = "Arrange senior bilateral meeting. Present MISA's strategic value proposition and Vision 2030 alignment."
+
+    # ── Strategy Pillar Summary ───────────────────────────────────────────────
+    if not acts.empty and "Action Description" in acts.columns:
+        pillar_counts: dict = {}
+        for _, r in acts.iterrows():
+            desc_v   = str(r.get("Action Description", "") or "")
+            eng_v    = str(r.get("Type of Engagement", "") or "")
+            sec_v    = str(r.get("Sector", "") or "")
+            p        = _map_to_strategy_pillar(desc_v + " " + eng_v + " " + sec_v)
+            pillar_counts[p] = pillar_counts.get(p, 0) + 1
+        if pillar_counts:
+            top_p = max(pillar_counts, key=lambda k: pillar_counts[k])
+            strat += f" Primary pillar: {top_p}."
 
     return goal[:220], strat.strip()[:220], m_act[:220]
 
