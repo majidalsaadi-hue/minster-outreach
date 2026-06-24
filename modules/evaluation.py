@@ -545,11 +545,16 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None) ->
     _add_run(rh, "RECOMMENDATION", bold=True, size=13, color=_GREEN)
 
     rec = d.get("recommendation", {})
+    _sel_delegate = _get_selected_delegate_name()
+    _delegate_display = _sel_delegate if _sel_delegate else rec.get("delegateTo", "")
     rd = rc.add_paragraph()
     rd.paragraph_format.space_after = Pt(2)
-    _add_run(rd, "Delegate this meeting to ", size=11)
-    _add_run(rd, rec.get("delegateTo", ""), bold=True, size=11)
-    _add_run(rd, ", given:", size=11)
+    if _delegate_display:
+        _add_run(rd, "Delegate this meeting to ", size=11)
+        _add_run(rd, _delegate_display, bold=True, size=11)
+        _add_run(rd, ", given:", size=11)
+    else:
+        _add_run(rd, "Select meeting nature in Decision & Direction to confirm the recommended delegate.", size=11, color=_MED)
 
     for r_item in rec.get("rationale", []):
         rp = rc.add_paragraph()
@@ -685,8 +690,11 @@ def _render_preview(d: dict):
 
         <div class="ev-recbox">
           <h4>RECOMMENDATION</h4>
-          <p style="font-size:12px;margin:0 0 8px">Delegate this meeting to
-            <strong>{rec.get("delegateTo","")}</strong>, given:</p>
+          <p style="font-size:12px;margin:0 0 8px">{
+            f'Delegate this meeting to <strong>{_get_selected_delegate_name() or rec.get("delegateTo","")}</strong>, given:'
+            if (_get_selected_delegate_name() or rec.get("delegateTo",""))
+            else 'Select meeting nature in Decision &amp; Direction to confirm the recommended delegate.'
+          }</p>
           {rat_html}
         </div>
 
@@ -747,7 +755,10 @@ body{{background:#fff;padding:0}}
     <div class="cols"><div>{sec_html(left_s)}</div><div>{sec_html(right_s)}</div></div>
     <div class="recbox">
       <h4>RECOMMENDATION</h4>
-      <p>Delegate this meeting to <strong>{rec.get("delegateTo","")}</strong>, given:</p>
+      <p>{"Delegate this meeting to <strong>" + (_get_selected_delegate_name() or rec.get("delegateTo","")) + "</strong>, given:"
+         if (_get_selected_delegate_name() or rec.get("delegateTo",""))
+         else "Select meeting nature in Decision &amp; Direction to confirm the recommended delegate."
+      }</p>
       {rat_html}
     </div>
     <div class="shead">Suggested Discussion Points</div>
@@ -836,6 +847,22 @@ _TALKING_POINTS_BY_SECTOR = {
     ],
 }
 
+_EV_NATURE_KEY_MAP = {
+    "Challenges or Active Deals":            "challenges_deals",
+    "Exploration / Events / New Companies":  "exploration_events",
+    "Based on Sector & Company Level":       "sector_services",
+    "Very Senior / Organisation Meeting":    "senior_org",
+    "Match Minister Criteria":               "minister_direct",
+}
+
+
+def _get_selected_delegate_name() -> str:
+    """Return the delegate name chosen in the selectbox, or empty string if not yet selected."""
+    sel = st.session_state.get("ev_nature", "")
+    if sel and sel in _EV_NATURE_KEY_MAP:
+        return _DELEGATES[_EV_NATURE_KEY_MAP[sel]]["name"]
+    return ""
+
 
 def _render_recommendation_mode(brief: dict):
     """Step 4 Option 1 — Recommendation Mode: suggest leadership level to delegate to."""
@@ -855,14 +882,7 @@ def _render_recommendation_mode(brief: dict):
         st.caption("Select a meeting type above to see the recommended leadership level.")
         return
 
-    key_map = {
-        "Challenges or Active Deals":            "challenges_deals",
-        "Exploration / Events / New Companies":  "exploration_events",
-        "Based on Sector & Company Level":       "sector_services",
-        "Very Senior / Organisation Meeting":    "senior_org",
-        "Match Minister Criteria":               "minister_direct",
-    }
-    selected_key = key_map[nature]
+    selected_key = _EV_NATURE_KEY_MAP[nature]
     dg = _DELEGATES[selected_key]
 
     col_dg, col_rat = st.columns([2, 3])
