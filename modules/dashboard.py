@@ -138,18 +138,20 @@ def render_action_advisor(dfs: dict, lang: str):
             status   = str(row.get("Status", "") or "").strip()
             prog_raw = row.get("Progress", None)
             try:
-                prog_pct = int(float(prog_raw) * 100) if prog_raw not in (None, "") else None
+                prog_str = str(prog_raw).strip().rstrip("%")
+                prog_pct = round(float(prog_str) * 100) if float(prog_str) <= 1.0 else round(float(prog_str))
+                prog_pct = max(0, min(100, prog_pct))
             except (ValueError, TypeError):
                 prog_pct = None
             note = (remark or am_input or "")[:80]
-            if note and note.lower() not in ("nan", "none", "n/a"):
+            if note and note.lower() not in ("nan", "none", "n/a", ""):
                 update_txt = note
             else:
                 parts = []
                 if status:
                     parts.append(status)
                 if prog_pct is not None:
-                    parts.append(f"{prog_pct}% complete")
+                    parts.append(f"{prog_pct}% done")
                 if prio and prio.lower() not in ("", "none", "medium"):
                     parts.append(f"{prio} priority")
                 update_txt = " · ".join(parts)
