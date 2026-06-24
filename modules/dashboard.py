@@ -129,11 +129,28 @@ def render_action_advisor(dfs: dict, lang: str):
             d = _safe_date(due_dates.iloc[idx] if idx < len(due_dates) else None)
             if not d:
                 continue
-            company = str(row.get("Company Name", "?"))
-            desc    = str(row.get("Action Description", ""))[:90]
-            owner   = str(row.get("Assigned To", "—"))
-            prio    = str(row.get("Priority", ""))
-            remark  = str(row.get("Remarks", "") or "").strip()[:80]
+            company  = str(row.get("Company Name", "?"))
+            desc     = str(row.get("Action Description", ""))[:90]
+            owner    = str(row.get("Assigned To", "—"))
+            prio     = str(row.get("Priority", ""))
+            remark   = str(row.get("Remarks", "") or "").strip()[:80]
+            status   = str(row.get("Status", "") or "").strip()
+            prog_raw = row.get("Progress", None)
+            try:
+                prog_pct = int(float(prog_raw) * 100) if prog_raw not in (None, "") else None
+            except (ValueError, TypeError):
+                prog_pct = None
+            if remark:
+                update_txt = remark
+            else:
+                parts = []
+                if status:
+                    parts.append(status)
+                if prog_pct is not None:
+                    parts.append(f"{prog_pct}% complete")
+                if prio and prio.lower() not in ("", "none", "medium"):
+                    parts.append(f"{prio} priority")
+                update_txt = " · ".join(parts)
             days_late = (today - d).days
             if days_late > 0:
                 items.append({
@@ -144,7 +161,7 @@ def render_action_advisor(dfs: dict, lang: str):
                     "company":  company,
                     "action":   desc or "Complete pending action",
                     "detail":   f"Due {d.strftime('%d %b %Y')} · {owner}",
-                    "update":   remark,
+                    "update":   update_txt,
                     "icon":     "🟠",
                 })
             elif (d - today).days == 0:
@@ -156,7 +173,7 @@ def render_action_advisor(dfs: dict, lang: str):
                     "company":  company,
                     "action":   desc or "Complete action",
                     "detail":   f"Due today · {owner}",
-                    "update":   remark,
+                    "update":   update_txt,
                     "icon":     "⚡",
                 })
             elif (d - today).days <= 7:
@@ -168,7 +185,7 @@ def render_action_advisor(dfs: dict, lang: str):
                     "company":  company,
                     "action":   desc or "Complete action",
                     "detail":   f"In {(d-today).days}d · {owner}",
-                    "update":   remark,
+                    "update":   update_txt,
                     "icon":     "🟡",
                 })
 
