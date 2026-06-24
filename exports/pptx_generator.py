@@ -644,20 +644,20 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     goal_text, strat_text, action_text = _build_strategic_brief(acts, opps, meetings, inv_row)
 
     # Single divider — 2-panel brief strip (Strategic Goal | Immediate Action)
-    _add_rect(slide, Inches(10.10), BRIEF_Y + Inches(0.08), Inches(0.02),
+    _add_rect(slide, Inches(6.80), BRIEF_Y + Inches(0.08), Inches(0.02),
               BRIEF_H - Inches(0.16), fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
 
-    # Panel 1: Strategic Goal — expanded to fill left 77% of strip
+    # Panel 1: Strategic Goal — narrowed to ~50% of strip
     _add_text_box(slide, "STRATEGIC GOAL", Inches(0.3), BRIEF_Y + Inches(0.07),
                   Inches(1.16), Inches(0.22), font_size=9, bold=True, color=_rgb(MISA_GREEN))
     _add_text_box(slide, goal_text, Inches(1.50), BRIEF_Y + Inches(0.06),
-                  Inches(8.40), Inches(0.74), font_size=9, color=DARK)
+                  Inches(5.10), Inches(0.74), font_size=9, color=DARK)
 
-    # Panel 2: Immediate Action
-    _add_text_box(slide, "IMMEDIATE ACTION", Inches(10.20), BRIEF_Y + Inches(0.07),
-                  Inches(2.93), Inches(0.22), font_size=9, bold=True, color=RED)
-    _add_text_box(slide, action_text, Inches(10.20), BRIEF_Y + Inches(0.32),
-                  Inches(2.93), Inches(0.52), font_size=9, color=DARK)
+    # Panel 2: Immediate Action — expanded to right half
+    _add_text_box(slide, "IMMEDIATE ACTION", Inches(6.90), BRIEF_Y + Inches(0.07),
+                  Inches(6.10), Inches(0.22), font_size=9, bold=True, color=RED)
+    _add_text_box(slide, action_text, Inches(6.90), BRIEF_Y + Inches(0.32),
+                  Inches(6.10), Inches(0.52), font_size=9, color=DARK)
 
     # ── Vertical divider ────────────────────────────────────────────────────────
     DIVX = Inches(10.2)
@@ -792,119 +792,106 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   Inches(0.3), Inches(3.28), Inches(9.75), Inches(0.20),
                   font_size=9, bold=True, color=DARK)
 
-    TBL_L = Inches(0.3)
-    HDR_Y = Inches(3.52)
-    HDR_H = Inches(0.30)
-    ROW_H = Inches(0.40)   # increased to fit action desc + context + pillar tag
-    CW    = [Inches(w) for w in [0.40, 5.50, 2.00, 1.00, 0.70]]
-    CX    = [TBL_L + sum(CW[:j]) for j in range(len(CW))]
-    HDRS  = ["#", "Action Item", "Assigned To", "Due", "Progress"]
+    # ── Two-table layout: Pending (left) | Completed (right) ────────────────
+    HDR_Y = Inches(2.50)
+    HDR_H = Inches(0.24)
+    ROW_H = Inches(0.33)
+    CW    = [Inches(w) for w in [0.24, 1.52, 0.80, 0.54, 0.38, 0.52]]
+    PEND_X = Inches(0.24)
+    DONE_X = Inches(4.38)
 
-    for hdr, cx, cw in zip(HDRS, CX, CW):
-        _add_rect(slide, cx, HDR_Y, cw, HDR_H, fill_color=GREEN, line_color=GREEN)
-        _add_text_box(slide, hdr, cx + Inches(0.03), HDR_Y + Inches(0.04),
-                      cw - Inches(0.06), HDR_H - Inches(0.06),
-                      font_size=8, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+    _PILLAR_BG  = {"Attract Investment": "#065F46", "Matchmaking": "#1D4ED8",
+                   "Resolve Challenges": "#92400E"}
+    _PILLAR_ABB = {"Attract Investment": "Attract", "Matchmaking": "Match.",
+                   "Resolve Challenges": "Resolve"}
 
-    # Sort: pending by due date first, then completed. Show up to 6 pending + up to 4 completed.
     if not acts.empty and "Status" in acts.columns:
         pend_df = acts[~acts["Status"].isin(["Completed", "Cancelled"])].copy()
         done_df = acts[acts["Status"].isin(["Completed", "Cancelled"])].copy()
         if "Due Date" in pend_df.columns:
             pend_df["_due"] = pd.to_datetime(pend_df["Due Date"], errors="coerce")
             pend_df = pend_df.sort_values("_due")
-        n_pend = min(len(pend_df), 6)
-        n_done = min(len(done_df), max(2, 8 - n_pend))
-        display_acts = pd.concat([pend_df.head(n_pend), done_df.head(n_done)], ignore_index=True)
     else:
-        display_acts = acts.head(8) if not acts.empty else pd.DataFrame()
+        pend_df = acts.copy() if not acts.empty else pd.DataFrame()
+        done_df = pd.DataFrame()
 
-    _SBG = {
-        "Completed":   "#E8F5E9", "In Progress": "#FFF8E1", "Inprogress": "#FFF8E1",
-        "Not Started": "#F5F5F5", "Blocked":     "#FFEBEE", "Cancelled":  "#EEEEEE",
-    }
-    _SFG = {
-        "Completed":   "#2D7A54", "In Progress": "#B45309", "Inprogress": "#B45309",
-        "Not Started": "#666666", "Blocked":     "#C0392B", "Cancelled":  "#999999",
-    }
+    max_rows = int((Inches(7.40) - HDR_Y - HDR_H) / ROW_H)
 
-    for i, (_, row) in enumerate(display_acts.iterrows()):
-        ry  = HDR_Y + HDR_H + i * ROW_H
-        alt = _rgb("#F7F7F2") if i % 2 == 0 else WHITE
+    def _render_tbl(df, tbl_x, title, hdr_color):
+        CX_T = [tbl_x + sum(CW[:j]) for j in range(len(CW))]
+        hdrs = ["#", title, "Owner", "Due", "%", "Pillar"]
+        for hdr, cx, cw in zip(hdrs, CX_T, CW):
+            _add_rect(slide, cx, HDR_Y, cw, HDR_H, fill_color=hdr_color, line_color=hdr_color)
+            _add_text_box(slide, hdr, cx + Inches(0.02), HDR_Y + Inches(0.03),
+                          cw - Inches(0.04), HDR_H - Inches(0.06),
+                          font_size=7, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        for i, (_, row) in enumerate(df.head(max_rows).iterrows()):
+            ry   = HDR_Y + HDR_H + i * ROW_H
+            alt  = _rgb("#F7F7F2") if i % 2 == 0 else WHITE
+            desc     = str(row.get("Action Description", "") or "")
+            owner    = str(row.get("Assigned To", "") or "")[:16]
+            status   = str(row.get("Status", "Due") or "Due")
+            due      = row.get("Due Date", "")
+            remark   = str(row.get("Remarks", "") or "").strip()
+            am_input = str(row.get("AM Input", "") or "").strip()
+            eng_type = str(row.get("Type of Engagement", "") or "")
+            sector   = str(row.get("Sector", "") or "")
+            pillar   = _map_to_strategy_pillar(desc + " " + eng_type + " " + sector)
+            try:
+                due_d = pd.to_datetime(due)
+                due_s = due_d.strftime("%d %b") if pd.notna(due) else "—"
+                is_ov = due_d.date() < today_d and status not in ("Completed", "Cancelled")
+            except Exception:
+                due_s, is_ov = "—", False
+            try:
+                prog_raw = row.get("Progress", 0)
+                prog_val = float(str(prog_raw).replace("%", "")) if prog_raw not in (None, "", "nan") else 0.0
+                if prog_val > 1.0:
+                    prog_val /= 100.0
+            except Exception:
+                prog_val = 0.0
+            # Columns 0-3
+            for j, (val, cx, cw) in enumerate(zip(
+                [str(i + 1), desc, owner, due_s], CX_T[:4], CW[:4]
+            )):
+                bg = _rgb("#FFEBEE") if (j == 3 and is_ov) else alt
+                _add_rect(slide, cx, ry, cw, ROW_H, fill_color=bg, line_color=_rgb("#DDDDDD"))
+                fc = RED if (j == 3 and is_ov) else DARK
+                al = PP_ALIGN.CENTER if j in (0, 3) else PP_ALIGN.LEFT
+                if j == 1:
+                    _add_text_box(slide, desc[:50], cx + Inches(0.03), ry + Inches(0.01),
+                                  cw - Inches(0.06), Inches(0.13), font_size=7, color=DARK)
+                    note = (remark if remark and remark not in ("nan",) else "") or \
+                           (am_input if am_input and am_input not in ("nan",) else "") or \
+                           _action_context_line(desc, eng_type, sector)
+                    if note:
+                        _add_text_box(slide, f"↳ {note[:50]}", cx + Inches(0.03), ry + Inches(0.16),
+                                      cw - Inches(0.06), Inches(0.13), font_size=6, color=MGRAY)
+                else:
+                    _add_text_box(slide, val, cx + Inches(0.02), ry + Inches(0.04),
+                                  cw - Inches(0.04), Inches(0.18),
+                                  font_size=7 if j == 0 else 6.5, color=fc, align=al)
+            # Progress column
+            px, pcw = CX_T[4], CW[4]
+            _add_rect(slide, px, ry, pcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
+            bx, by = px + Inches(0.03), ry + Inches(0.05)
+            bw, bh = pcw - Inches(0.06), Inches(0.07)
+            _add_rect(slide, bx, by, bw, bh, fill_color=_rgb("#E0E0E0"), line_color=_rgb("#E0E0E0"))
+            if prog_val > 0:
+                fc2 = _rgb(MISA_GREEN) if prog_val >= 1.0 else (_rgb(MISA_GOLD) if prog_val >= 0.5 else _rgb("#888888"))
+                _add_rect(slide, bx, by, max(bw * prog_val, Inches(0.02)), bh, fill_color=fc2, line_color=fc2)
+            _add_text_box(slide, f"{int(prog_val * 100)}%", px, ry + Inches(0.17),
+                          pcw, Inches(0.12), font_size=6, color=DARK, align=PP_ALIGN.CENTER)
+            # Pillar column
+            plx, plcw = CX_T[5], CW[5]
+            pl_bg = _rgb(_PILLAR_BG.get(pillar, "#6B7280"))
+            _add_rect(slide, plx, ry, plcw, ROW_H, fill_color=pl_bg, line_color=pl_bg)
+            _add_text_box(slide, _PILLAR_ABB.get(pillar, "—"), plx + Inches(0.01), ry + Inches(0.05),
+                          plcw - Inches(0.02), Inches(0.20), font_size=6, bold=True,
+                          color=WHITE, align=PP_ALIGN.CENTER)
 
-        desc     = str(row.get("Action Description", "") or "")
-        owner    = str(row.get("Assigned To",        "") or "")[:20]
-        status   = str(row.get("Status", "Due") or "Due")
-        due      = row.get("Due Date", "")
-        remark   = str(row.get("Remarks", "") or "").strip()
-        am_input = str(row.get("AM Input", "") or "").strip()
-        eng_type = str(row.get("Type of Engagement", "") or "")
-        sector   = str(row.get("Sector", "") or "")
-        pillar   = _map_to_strategy_pillar(desc + " " + eng_type + " " + sector)
-
-        try:
-            due_d = pd.to_datetime(due)
-            due_s = due_d.strftime("%d %b %y") if pd.notna(due) else "—"
-            is_ov = due_d.date() < today_d and status not in ("Completed", "Cancelled")
-        except Exception:
-            due_s, is_ov = "—", False
-
-        try:
-            prog_raw = row.get("Progress", 0)
-            prog_val = float(str(prog_raw).replace("%", "")) if prog_raw not in (None, "", "nan") else 0.0
-            if prog_val > 1.0:
-                prog_val /= 100.0
-        except Exception:
-            prog_val = 0.0
-
-        sbg = _rgb(_SBG.get(status, "#F5F5F5"))
-        sfg = _rgb(_SFG.get(status, "#666666"))
-
-        for j, (val, cx, cw) in enumerate(zip(
-            [str(i + 1), desc, owner, due_s],
-            CX[:4], CW[:4]
-        )):
-            bg = _rgb("#FFEBEE") if (j == 3 and is_ov) else alt
-            _add_rect(slide, cx, ry, cw, ROW_H, fill_color=bg, line_color=_rgb("#DDDDDD"))
-            fc = RED if (j == 3 and is_ov) else DARK
-            al = PP_ALIGN.CENTER if j in (0, 3) else PP_ALIGN.LEFT
-            if j == 1:
-                _add_text_box(slide, desc[:70], cx + Inches(0.04), ry + Inches(0.01),
-                              cw - Inches(0.08), Inches(0.14), font_size=7.5, color=DARK)
-                note1 = (remark if remark and remark not in ("nan",) else "") or \
-                        (am_input if am_input and am_input not in ("nan",) else "") or \
-                        _action_context_line(desc, eng_type, sector)
-                note2 = (am_input if am_input and am_input not in ("nan",) and am_input != note1 else "")
-                if note1:
-                    _add_text_box(slide, f"↳ {note1[:68]}", cx + Inches(0.05), ry + Inches(0.16),
-                                  cw - Inches(0.10), Inches(0.11), font_size=6, color=MGRAY)
-                # Strategy pillar tag
-                pillar_abbr = {"Attract Investment": "Attract Invest.", "Matchmaking": "Matchmaking",
-                               "Resolve Challenges": "Resolve Chlng."}
-                pillar_col  = {"Attract Investment": "#065F46", "Matchmaking": "#1D4ED8",
-                               "Resolve Challenges": "#92400E"}
-                _add_text_box(slide, pillar_abbr.get(pillar, pillar), cx + Inches(0.04), ry + Inches(0.27),
-                              cw - Inches(0.08), Inches(0.11), font_size=5.5,
-                              color=_rgb(pillar_col.get(pillar, "#444444")))
-            else:
-                _add_text_box(slide, val, cx + Inches(0.03), ry + Inches(0.05),
-                              cw - Inches(0.06), Inches(0.20),
-                              font_size=8 if j == 0 else 7.5, color=fc, align=al)
-
-        # Progress bar + % label
-        px, pcw = CX[4], CW[4]
-        _add_rect(slide, px, ry, pcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
-        bx = px + Inches(0.07)
-        by = ry + Inches(0.07)
-        bw = pcw - Inches(0.14)
-        bh = Inches(0.09)
-        _add_rect(slide, bx, by, bw, bh, fill_color=_rgb("#E0E0E0"), line_color=_rgb("#E0E0E0"))
-        if prog_val > 0:
-            fc2 = _rgb(MISA_GREEN) if prog_val >= 1.0 else (_rgb(MISA_GOLD) if prog_val >= 0.5 else _rgb("#888888"))
-            _add_rect(slide, bx, by, max(bw * prog_val, Inches(0.02)), bh,
-                      fill_color=fc2, line_color=fc2)
-        _add_text_box(slide, f"{int(prog_val * 100)}%", px, ry + Inches(0.18),
-                      pcw, Inches(0.12), font_size=6.5, color=DARK, align=PP_ALIGN.CENTER)
+    _render_tbl(pend_df, PEND_X, "Pending Actions",   GREEN)
+    _render_tbl(done_df, DONE_X, "Completed Actions", _rgb("#2D7A54"))
 
     # (progress chart moved to right-panel donut — see below)
 
