@@ -764,47 +764,36 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _add_rect(slide, ax - SQ / 2, sq_y, SQ, SQ * 0.85,
                       fill_color=scol, line_color=scol)
 
-    # Compact legend
-    leg_y = Inches(3.09)
-    lx = Inches(0.55)
-    for lbl, col in [("Completed mtg", MISA_GREEN), ("Scheduled", MISA_GOLD), ("Cancelled", "#AAAAAA")]:
-        _add_rect(slide, lx, leg_y + Inches(0.02), Inches(0.11), Inches(0.11),
+    # ── Compact legend — right of timeline, two tidy columns ─────────────────
+    LG_X1 = Inches(9.85)   # Meeting types
+    LG_X2 = Inches(11.45)  # Action statuses
+    LG_Y0 = Inches(2.41)   # Top — aligns with "Engagement Timeline" label
+    LG_DY = Inches(0.20)
+    LG_SQ = Inches(0.09)
+    for ri, (lbl, col) in enumerate([
+        ("Completed mtg", MISA_GREEN), ("Scheduled", MISA_GOLD), ("Cancelled", "#AAAAAA"),
+    ]):
+        gy = LG_Y0 + ri * LG_DY
+        _add_rect(slide, LG_X1, gy + Inches(0.03), LG_SQ, LG_SQ,
                   fill_color=_rgb(col), line_color=_rgb(col))
-        _add_text_box(slide, lbl, lx + Inches(0.14), leg_y,
-                      Inches(0.95), Inches(0.16), font_size=6, color=MGRAY)
-        lx += Inches(1.10)
-    lx += Inches(0.1)
-    for lbl, col in [("Done", MISA_GREEN), ("In Progress", MISA_GOLD),
-                     ("Pending", "#888888"), ("Blocked", "#C0392B")]:
-        _add_rect(slide, lx, leg_y + Inches(0.03), Inches(0.09), Inches(0.09),
+        _add_text_box(slide, lbl, LG_X1 + Inches(0.13), gy,
+                      Inches(1.45), Inches(0.18), font_size=6.5, color=MGRAY)
+    for ri, (lbl, col) in enumerate([
+        ("Done", MISA_GREEN), ("In Progress", MISA_GOLD),
+        ("Pending", "#888888"), ("Blocked", "#C0392B"),
+    ]):
+        gy = LG_Y0 + ri * LG_DY
+        _add_rect(slide, LG_X2, gy + Inches(0.03), LG_SQ, LG_SQ,
                   fill_color=_rgb(col), line_color=_rgb(col))
-        _add_text_box(slide, lbl, lx + Inches(0.12), leg_y,
-                      Inches(0.80), Inches(0.16), font_size=6, color=MGRAY)
-        lx += Inches(0.92)
+        _add_text_box(slide, lbl, LG_X2 + Inches(0.13), gy,
+                      Inches(1.60), Inches(0.18), font_size=6.5, color=MGRAY)
 
     # ── Action Items full table ────────────────────────────────────────────────
-    n_total   = len(acts)
-    n_done_s  = int(acts["Status"].str.lower().str.contains("complet").sum()) if not acts.empty and "Status" in acts.columns else 0
-    n_prog_s  = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
-    n_due_s   = max(n_total - n_done_s - n_prog_s, 0)
-    pct_s     = round(n_done_s / n_total * 100) if n_total > 0 else 0
-    # ── Action count dots appended to the legend row ──────────────────────────
-    lx += Inches(0.30)
-    _add_rect(slide, lx, leg_y, Inches(0.022), Inches(0.16),
-              fill_color=MGRAY, line_color=MGRAY)   # vertical separator
-    lx += Inches(0.12)
-    for _lbl, _col, _cnt in [
-        ("Done",        MISA_GREEN, n_done_s),
-        ("In Progress", MISA_GOLD,  n_prog_s),
-        ("Due",         "#888888",  n_due_s),
-    ]:
-        _add_rect(slide, lx, leg_y + Inches(0.03), Inches(0.09), Inches(0.09),
-                  fill_color=_rgb(_col), line_color=_rgb(_col))
-        _add_text_box(slide, f"{_cnt} {_lbl}", lx + Inches(0.12), leg_y,
-                      Inches(1.0), Inches(0.16), font_size=6, bold=True, color=DARK)
-        lx += Inches(1.10)
-    _add_text_box(slide, f"{pct_s}% complete", lx, leg_y,
-                  Inches(1.20), Inches(0.16), font_size=6, bold=True, color=GREEN)
+    n_total  = len(acts)
+    n_done_s = int(acts["Status"].str.lower().str.contains("complet").sum()) if not acts.empty and "Status" in acts.columns else 0
+    n_prog_s = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
+    n_due_s  = max(n_total - n_done_s - n_prog_s, 0)
+    pct_s    = round(n_done_s / n_total * 100) if n_total > 0 else 0
 
     # ── Two-table layout: Pending (left) | Completed (right) ────────────────
     HDR_Y  = Inches(3.52)
@@ -830,7 +819,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         pend_df = acts.copy() if not acts.empty else pd.DataFrame()
         done_df = pd.DataFrame()
 
-    max_rows = int((Inches(7.00) - HDR_Y - HDR_H) / ROW_H)
+    max_rows = 6
 
     def _render_tbl(df, tbl_x, title, hdr_color):
         CX_T = [tbl_x + sum(CW[:j]) for j in range(len(CW))]
@@ -907,7 +896,25 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _render_tbl(pend_df, PEND_X, "Pending Actions",   GREEN)
     _render_tbl(done_df, DONE_X, "Completed Actions", _rgb("#2D7A54"))
 
-    # (summary bar rendered above the tables — see full-width summary bar)
+    # ── Action summary strip — clean bar below tables ─────────────────────────
+    STAT_Y = Inches(6.62)
+    STAT_H = Inches(0.35)
+    _add_rect(slide, Inches(0.20), STAT_Y, Inches(13.00), STAT_H,
+              fill_color=_rgb("#EFF7F3"), line_color=_rgb("#C8E0D4"))
+    sx = Inches(0.50)
+    for _lbl, _col, _cnt in [
+        ("Done",        MISA_GREEN, n_done_s),
+        ("In Progress", MISA_GOLD,  n_prog_s),
+        ("Due",         "#888888",  n_due_s),
+    ]:
+        _add_rect(slide, sx, STAT_Y + Inches(0.12), Inches(0.11), Inches(0.11),
+                  fill_color=_rgb(_col), line_color=_rgb(_col))
+        _add_text_box(slide, f"{_cnt}  {_lbl}", sx + Inches(0.16), STAT_Y + Inches(0.08),
+                      Inches(1.25), Inches(0.20), font_size=9, bold=True, color=DARK)
+        sx += Inches(1.55)
+    _add_text_box(slide, f"{pct_s}% complete", Inches(10.80), STAT_Y + Inches(0.08),
+                  Inches(2.20), Inches(0.20), font_size=9, bold=True, color=GREEN,
+                  align=PP_ALIGN.RIGHT)
 
     # ── Gold footer ───────────────────────────────────────────────────────────
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
