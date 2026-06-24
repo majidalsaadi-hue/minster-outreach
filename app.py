@@ -308,7 +308,7 @@ def render_dashboard():
                 _dates   = pd.to_datetime(_pending["Due Date"], errors="coerce").dropna()
                 _future  = _dates[_dates >= pd.Timestamp(date.today())]
                 if not _future.empty:
-                    _next_due = " · Next due " + _future.min().strftime("%-d %b")
+                    _next_due = " · Next due " + _future.min().strftime("%d %b").lstrip("0")
             st.markdown(
                 f"<div style='margin-top:28px;font-size:13px;color:#555;'>"
                 f"<b>{_n_tot}</b> actions total — "
