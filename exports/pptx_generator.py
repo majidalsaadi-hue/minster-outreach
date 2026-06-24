@@ -796,9 +796,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     HDR_Y = Inches(3.52)
     HDR_H = Inches(0.30)
     ROW_H = Inches(0.40)   # increased to fit action desc + context + pillar tag
-    CW    = [Inches(w) for w in [0.40, 4.85, 1.65, 1.20, 0.80, 0.70]]
+    CW    = [Inches(w) for w in [0.40, 5.50, 2.00, 1.00, 0.70]]
     CX    = [TBL_L + sum(CW[:j]) for j in range(len(CW))]
-    HDRS  = ["#", "Action Item", "Assigned To", "Status", "Due", "Progress"]
+    HDRS  = ["#", "Action Item", "Assigned To", "Due", "Progress"]
 
     for hdr, cx, cw in zip(HDRS, CX, CW):
         _add_rect(slide, cx, HDR_Y, cw, HDR_H, fill_color=GREEN, line_color=GREEN)
@@ -858,19 +858,19 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         sfg = _rgb(_SFG.get(status, "#666666"))
 
         for j, (val, cx, cw) in enumerate(zip(
-            [str(i + 1), desc, owner, status, due_s],
-            CX[:5], CW[:5]
+            [str(i + 1), desc, owner, due_s],
+            CX[:4], CW[:4]
         )):
-            bg = sbg if j == 3 else (_rgb("#FFEBEE") if (j == 4 and is_ov) else alt)
+            bg = _rgb("#FFEBEE") if (j == 3 and is_ov) else alt
             _add_rect(slide, cx, ry, cw, ROW_H, fill_color=bg, line_color=_rgb("#DDDDDD"))
-            fc = sfg if j == 3 else (RED if (j == 4 and is_ov) else DARK)
-            al = PP_ALIGN.CENTER if j in (0, 3, 4) else PP_ALIGN.LEFT
+            fc = RED if (j == 3 and is_ov) else DARK
+            al = PP_ALIGN.CENTER if j in (0, 3) else PP_ALIGN.LEFT
             if j == 1:
-                _add_text_box(slide, desc[:58], cx + Inches(0.04), ry + Inches(0.01),
+                _add_text_box(slide, desc[:70], cx + Inches(0.04), ry + Inches(0.01),
                               cw - Inches(0.08), Inches(0.14), font_size=7.5, color=DARK)
                 ctx_line = remark if remark and remark not in ("nan",) else _action_context_line(desc, eng_type, sector)
                 if ctx_line:
-                    _add_text_box(slide, f"↳ {ctx_line[:56]}", cx + Inches(0.05), ry + Inches(0.16),
+                    _add_text_box(slide, f"↳ {ctx_line[:68]}", cx + Inches(0.05), ry + Inches(0.16),
                                   cw - Inches(0.10), Inches(0.11), font_size=6, color=MGRAY)
                 # Strategy pillar tag
                 pillar_abbr = {"Attract Investment": "Attract Invest.", "Matchmaking": "Matchmaking",
@@ -883,11 +883,10 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             else:
                 _add_text_box(slide, val, cx + Inches(0.03), ry + Inches(0.05),
                               cw - Inches(0.06), Inches(0.20),
-                              font_size=8 if j == 0 else 7.5, color=fc,
-                              bold=(j == 3), align=al)
+                              font_size=8 if j == 0 else 7.5, color=fc, align=al)
 
         # Progress bar + % label
-        px, pcw = CX[5], CW[5]
+        px, pcw = CX[4], CW[4]
         _add_rect(slide, px, ry, pcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
         bx = px + Inches(0.07)
         by = ry + Inches(0.07)
@@ -962,64 +961,6 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         y_r = Inches(3.00)
 
     y_r = max(y_r, Inches(5.82))
-
-    # Opportunities — per-item list: title, sector, classification
-    y_r += Inches(0.16)
-    _add_text_box(slide, f"Opportunities ({len(opps)})",
-                  RX, y_r, RW, Inches(0.24), font_size=9, bold=True, color=DARK)
-    y_r += Inches(0.30)
-
-    _OPP_STAGE_LABEL = {
-        "Exploration":          "Exploration",
-        "Opportunity Matching": "Exploration",
-        "Active":               "Exploration",
-        "Negotiation":          "Deal Negotiation",
-        "Deal Negotiation":     "Deal Negotiation",
-        "Under Negotiation":    "Deal Negotiation",
-        "Committed":            "Committed",
-        "Closed":               "Closed",
-        "Won":                  "Closed",
-        "Suspended":            "Suspended",
-        "Blocked":              "Blocked",
-    }
-    _OPP_CLASS_COL = {
-        "Exploration":     "#1D4ED8",
-        "Deal Negotiation":"#B45309",
-        "Committed":       "#065F46",
-        "Closed":          "#065F46",
-        "Suspended":       "#6B7280",
-        "Blocked":         "#991B1B",
-    }
-
-    if not opps.empty:
-        for _, opp in opps.iterrows():
-            if y_r + Inches(0.22) > Inches(6.90):
-                break
-            opp_name  = str(opp.get("Opportunity Name",  "") or "").strip()
-            opp_sec   = str(opp.get("Sector",            "") or "").strip()
-            opp_stage = str(opp.get("Opportunity Stage", "") or "").strip()
-            opp_class = _OPP_STAGE_LABEL.get(opp_stage, opp_stage or "Exploration")
-            dot_hex   = _OPP_CLASS_COL.get(opp_class, "#1B5C3F")
-
-            _add_rect(slide, RX, y_r + Inches(0.04),
-                      Inches(0.09), Inches(0.09),
-                      fill_color=_rgb(dot_hex), line_color=_rgb(dot_hex))
-            name_w = RW - Inches(0.15)
-            _add_text_box(slide, opp_name[:42],
-                          RX + Inches(0.13), y_r,
-                          name_w, Inches(0.18),
-                          font_size=8, bold=True, color=DARK)
-            detail = " | ".join(filter(None, [opp_sec, opp_class]))
-            if detail:
-                _add_text_box(slide, detail,
-                              RX + Inches(0.13), y_r + Inches(0.18),
-                              name_w, Inches(0.14),
-                              font_size=6.5, color=_rgb(dot_hex))
-            y_r += Inches(0.36)
-    else:
-        _add_text_box(slide, "No opportunities yet.",
-                      RX, y_r, RW, Inches(0.20),
-                      font_size=8, color=MGRAY)
 
     # ── Gold footer ───────────────────────────────────────────────────────────
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
