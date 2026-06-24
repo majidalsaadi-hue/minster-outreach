@@ -133,6 +133,7 @@ def render_action_advisor(dfs: dict, lang: str):
             desc    = str(row.get("Action Description", ""))[:90]
             owner   = str(row.get("Assigned To", "—"))
             prio    = str(row.get("Priority", ""))
+            remark  = str(row.get("Remarks", "") or "").strip()[:80]
             days_late = (today - d).days
             if days_late > 0:
                 items.append({
@@ -143,6 +144,7 @@ def render_action_advisor(dfs: dict, lang: str):
                     "company":  company,
                     "action":   desc or "Complete pending action",
                     "detail":   f"Due {d.strftime('%d %b %Y')} · {owner}",
+                    "update":   remark,
                     "icon":     "🟠",
                 })
             elif (d - today).days == 0:
@@ -154,6 +156,7 @@ def render_action_advisor(dfs: dict, lang: str):
                     "company":  company,
                     "action":   desc or "Complete action",
                     "detail":   f"Due today · {owner}",
+                    "update":   remark,
                     "icon":     "⚡",
                 })
             elif (d - today).days <= 7:
@@ -165,6 +168,7 @@ def render_action_advisor(dfs: dict, lang: str):
                     "company":  company,
                     "action":   desc or "Complete action",
                     "detail":   f"In {(d-today).days}d · {owner}",
+                    "update":   remark,
                     "icon":     "🟡",
                 })
 
@@ -408,6 +412,11 @@ def render_action_advisor(dfs: dict, lang: str):
         rows_html = ""
         for item in co_items:
             tc = item["tag_color"]
+            upd = item.get("update", "")
+            upd_html = (
+                f'<div style="color:#059669;font-size:9px;margin-top:2px;font-style:italic;">📝 {upd}</div>'
+                if upd else ""
+            )
             rows_html += (
                 f'<div style="display:flex;align-items:flex-start;gap:8px;'
                 f'padding:6px 8px;margin-bottom:4px;border-radius:6px;'
@@ -417,6 +426,7 @@ def render_action_advisor(dfs: dict, lang: str):
                 f'<div style="min-width:0;">'
                 f'<div style="color:#1F2937;font-size:11px;font-weight:500;line-height:1.3;">{item["action"]}</div>'
                 f'<div style="color:#6B7280;font-size:9px;margin-top:2px;">{item["detail"]}</div>'
+                f'{upd_html}'
                 f'</div></div>'
             )
 
