@@ -193,7 +193,32 @@ def render_action_advisor(dfs: dict, lang: str):
                     "icon":     "🟡",
                 })
 
-    # ── 2. Meetings: today + next 5 days ─────────────────────────────────────
+    # ── 1a. Completed action items ────────────────────────────────────────────
+    if not actions.empty and "Status" in actions.columns:
+        for idx, row in actions.iterrows():
+            if str(row.get("Status", "")).strip() != "Completed":
+                continue
+            company  = str(row.get("Company Name", "?"))
+            desc     = str(row.get("Action Description", ""))[:90]
+            owner    = str(row.get("Assigned To", "—"))
+            remark   = str(row.get("Remarks", "") or "").strip()
+            am_input = str(row.get("AM Input", "") or "").strip()
+            note     = (remark or am_input or "")[:80]
+            update_txt = note if note and note.lower() not in ("nan", "none", "n/a", "") else "Completed"
+            due_dates_c = pd.to_datetime(actions["Due Date"], errors="coerce")
+            d = _safe_date(due_dates_c.iloc[idx] if idx < len(due_dates_c) else None)
+            due_label = d.strftime("%d %b") if d else "—"
+            items.append({
+                "score":    5,
+                "urgency":  "done",
+                "tag":      f"✓ DONE",
+                "tag_color":"#059669",
+                "company":  company,
+                "action":   desc or "Action completed",
+                "detail":   f"Completed · Due was {due_label} · {owner}",
+                "update":   update_txt,
+                "icon":     "✅",
+            })
     if not meetings.empty and "Meeting Date" in meetings.columns:
         mtg = meetings.copy()
         mtg["Meeting Date"] = pd.to_datetime(mtg["Meeting Date"], errors="coerce")

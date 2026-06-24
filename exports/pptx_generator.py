@@ -806,16 +806,18 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       cw - Inches(0.06), HDR_H - Inches(0.06),
                       font_size=8, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
 
-    # Sort: pending by due date first, then completed. Cap at 7 rows to leave chart space.
+    # Sort: pending by due date first, then completed. Show up to 6 pending + up to 4 completed.
     if not acts.empty and "Status" in acts.columns:
         pend_df = acts[~acts["Status"].isin(["Completed", "Cancelled"])].copy()
         done_df = acts[acts["Status"].isin(["Completed", "Cancelled"])].copy()
         if "Due Date" in pend_df.columns:
             pend_df["_due"] = pd.to_datetime(pend_df["Due Date"], errors="coerce")
             pend_df = pend_df.sort_values("_due")
-        display_acts = pd.concat([pend_df, done_df], ignore_index=True).head(5)
+        n_pend = min(len(pend_df), 6)
+        n_done = min(len(done_df), max(2, 8 - n_pend))
+        display_acts = pd.concat([pend_df.head(n_pend), done_df.head(n_done)], ignore_index=True)
     else:
-        display_acts = acts.head(5) if not acts.empty else pd.DataFrame()
+        display_acts = acts.head(8) if not acts.empty else pd.DataFrame()
 
     _SBG = {
         "Completed":   "#E8F5E9", "In Progress": "#FFF8E1", "Inprogress": "#FFF8E1",
@@ -834,7 +836,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         owner    = str(row.get("Assigned To",        "") or "")[:20]
         status   = str(row.get("Status", "Due") or "Due")
         due      = row.get("Due Date", "")
-        remark   = str(row.get("Remarks", "") or "")[:42]
+        remark   = str(row.get("Remarks", "") or "").strip()
+        am_input = str(row.get("AM Input", "") or "").strip()
         eng_type = str(row.get("Type of Engagement", "") or "")
         sector   = str(row.get("Sector", "") or "")
         pillar   = _map_to_strategy_pillar(desc + " " + eng_type + " " + sector)
@@ -868,9 +871,12 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             if j == 1:
                 _add_text_box(slide, desc[:70], cx + Inches(0.04), ry + Inches(0.01),
                               cw - Inches(0.08), Inches(0.14), font_size=7.5, color=DARK)
-                ctx_line = remark if remark and remark not in ("nan",) else _action_context_line(desc, eng_type, sector)
-                if ctx_line:
-                    _add_text_box(slide, f"↳ {ctx_line[:68]}", cx + Inches(0.05), ry + Inches(0.16),
+                note1 = (remark if remark and remark not in ("nan",) else "") or \
+                        (am_input if am_input and am_input not in ("nan",) else "") or \
+                        _action_context_line(desc, eng_type, sector)
+                note2 = (am_input if am_input and am_input not in ("nan",) and am_input != note1 else "")
+                if note1:
+                    _add_text_box(slide, f"↳ {note1[:68]}", cx + Inches(0.05), ry + Inches(0.16),
                                   cw - Inches(0.10), Inches(0.11), font_size=6, color=MGRAY)
                 # Strategy pillar tag
                 pillar_abbr = {"Attract Investment": "Attract Invest.", "Matchmaking": "Matchmaking",
