@@ -63,21 +63,19 @@ def render_progress_chart(dfs: dict, lang: str):
     fig = go.Figure(go.Pie(
         labels=["Completed", "In Progress", "Due"],
         values=[n_done, n_prog, max(n_due, 0)],
-        hole=0.55,
+        hole=0.60,
         marker_colors=[MISA_GREEN, MISA_GOLD, "#9CA3AF"],
-        textinfo="percent",
-        textfont_size=11,
-        showlegend=True,
+        textinfo="none",
+        hovertemplate="%{label}: %{value} actions (%{percent})<extra></extra>",
+        showlegend=False,
     ))
     fig.add_annotation(
         text=f"<b>{total}</b><br><span style='font-size:10px'>Actions</span>",
-        x=0.5, y=0.5, showarrow=False, font_size=13,
+        x=0.5, y=0.5, showarrow=False, font_size=14,
     )
     fig.update_layout(
-        margin=dict(t=20, b=10, l=10, r=10),
-        height=220,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5,
-                    font=dict(size=10)),
+        margin=dict(t=10, b=10, l=10, r=10),
+        height=200,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif"),
