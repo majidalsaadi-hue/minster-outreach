@@ -793,12 +793,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   font_size=9, bold=True, color=DARK)
 
     # ── Two-table layout: Pending (left) | Completed (right) ────────────────
-    HDR_Y = Inches(3.52)
-    HDR_H = Inches(0.24)
-    ROW_H = Inches(0.33)
-    CW    = [Inches(w) for w in [0.24, 1.52, 0.80, 0.54, 0.38, 0.52]]
-    PEND_X = Inches(0.24)
-    DONE_X = Inches(4.38)
+    HDR_Y  = Inches(3.52)
+    HDR_H  = Inches(0.30)
+    ROW_H  = Inches(0.42)
+    # Each table 4.85" wide — fills the full left panel with a 0.20" gap
+    CW     = [Inches(w) for w in [0.28, 2.22, 0.98, 0.65, 0.44, 0.28]]
+    PEND_X = Inches(0.20)
+    DONE_X = Inches(5.25)
 
     _PILLAR_BG  = {"Attract Investment": "#065F46", "Matchmaking": "#1D4ED8",
                    "Resolve Challenges": "#92400E"}
@@ -815,16 +816,16 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         pend_df = acts.copy() if not acts.empty else pd.DataFrame()
         done_df = pd.DataFrame()
 
-    max_rows = int((Inches(7.35) - HDR_Y - HDR_H) / ROW_H)
+    max_rows = int((Inches(7.30) - HDR_Y - HDR_H) / ROW_H)
 
     def _render_tbl(df, tbl_x, title, hdr_color):
         CX_T = [tbl_x + sum(CW[:j]) for j in range(len(CW))]
         hdrs = ["#", title, "Owner", "Due", "%", "Pillar"]
         for hdr, cx, cw in zip(hdrs, CX_T, CW):
             _add_rect(slide, cx, HDR_Y, cw, HDR_H, fill_color=hdr_color, line_color=hdr_color)
-            _add_text_box(slide, hdr, cx + Inches(0.02), HDR_Y + Inches(0.03),
+            _add_text_box(slide, hdr, cx + Inches(0.02), HDR_Y + Inches(0.04),
                           cw - Inches(0.04), HDR_H - Inches(0.06),
-                          font_size=7, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+                          font_size=8, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
         for i, (_, row) in enumerate(df.head(max_rows).iterrows()):
             ry   = HDR_Y + HDR_H + i * ROW_H
             alt  = _rgb("#F7F7F2") if i % 2 == 0 else WHITE
@@ -859,18 +860,18 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 fc = RED if (j == 3 and is_ov) else DARK
                 al = PP_ALIGN.CENTER if j in (0, 3) else PP_ALIGN.LEFT
                 if j == 1:
-                    _add_text_box(slide, desc[:50], cx + Inches(0.03), ry + Inches(0.01),
-                                  cw - Inches(0.06), Inches(0.13), font_size=7, color=DARK)
+                    _add_text_box(slide, desc[:55], cx + Inches(0.03), ry + Inches(0.02),
+                                  cw - Inches(0.06), Inches(0.17), font_size=8, color=DARK)
                     note = (remark if remark and remark not in ("nan",) else "") or \
                            (am_input if am_input and am_input not in ("nan",) else "") or \
                            _action_context_line(desc, eng_type, sector)
                     if note:
-                        _add_text_box(slide, f"↳ {note[:35]}", cx + Inches(0.03), ry + Inches(0.16),
-                                      cw - Inches(0.06), Inches(0.13), font_size=6, color=MGRAY)
+                        _add_text_box(slide, f"↳ {note[:40]}", cx + Inches(0.03), ry + Inches(0.22),
+                                      cw - Inches(0.06), Inches(0.16), font_size=7, color=MGRAY)
                 else:
-                    _add_text_box(slide, val, cx + Inches(0.02), ry + Inches(0.04),
-                                  cw - Inches(0.04), Inches(0.18),
-                                  font_size=7 if j == 0 else 6.5, color=fc, align=al)
+                    _add_text_box(slide, val, cx + Inches(0.02), ry + Inches(0.06),
+                                  cw - Inches(0.04), Inches(0.20),
+                                  font_size=8 if j == 0 else 7.5, color=fc, align=al)
             # Progress column
             px, pcw = CX_T[4], CW[4]
             _add_rect(slide, px, ry, pcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
@@ -880,13 +881,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             if prog_val > 0:
                 fc2 = _rgb(MISA_GREEN) if prog_val >= 1.0 else (_rgb(MISA_GOLD) if prog_val >= 0.5 else _rgb("#888888"))
                 _add_rect(slide, bx, by, max(bw * prog_val, Inches(0.02)), bh, fill_color=fc2, line_color=fc2)
-            _add_text_box(slide, f"{int(prog_val * 100)}%", px, ry + Inches(0.17),
-                          pcw, Inches(0.12), font_size=6, color=DARK, align=PP_ALIGN.CENTER)
+            _add_text_box(slide, f"{int(prog_val * 100)}%", px, ry + Inches(0.20),
+                          pcw, Inches(0.16), font_size=7, color=DARK, align=PP_ALIGN.CENTER)
             # Pillar column
             plx, plcw = CX_T[5], CW[5]
             _add_rect(slide, plx, ry, plcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
-            _add_text_box(slide, _PILLAR_ABB.get(pillar, "—"), plx + Inches(0.01), ry + Inches(0.05),
-                          plcw - Inches(0.02), Inches(0.20), font_size=6, bold=False,
+            _add_text_box(slide, _PILLAR_ABB.get(pillar, "—"), plx + Inches(0.01), ry + Inches(0.08),
+                          plcw - Inches(0.02), Inches(0.20), font_size=7, bold=False,
                           color=DARK, align=PP_ALIGN.CENTER)
 
     _render_tbl(pend_df, PEND_X, "Pending Actions",   GREEN)
