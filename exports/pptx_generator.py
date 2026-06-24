@@ -788,13 +788,24 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     n_prog_s  = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
     n_due_s   = max(n_total - n_done_s - n_prog_s, 0)
     pct_s     = round(n_done_s / n_total * 100) if n_total > 0 else 0
-    # ── Full-width summary bar ────────────────────────────────────────────────
-    _add_rect(slide, Inches(0.20), Inches(3.20), Inches(13.00), Inches(0.28),
-              fill_color=_rgb("#EEF7EE"), line_color=GREEN)
-    _bar_txt = (f"ACTION ITEMS  ·  {n_total} total  ·  "
-                f"✓ {n_done_s} Done  ·  ◑ {n_prog_s} In Progress  ·  ○ {n_due_s} Due  ·  {pct_s}% complete")
-    _add_text_box(slide, _bar_txt, Inches(0.30), Inches(3.22), Inches(12.80), Inches(0.24),
-                  font_size=9, bold=True, color=GREEN)
+    # ── KPI chips row ─────────────────────────────────────────────────────────
+    _CY = Inches(3.18)
+    _CH = Inches(0.30)
+    _add_text_box(slide, "ACTION ITEMS", Inches(0.20), _CY + Inches(0.06),
+                  Inches(1.40), Inches(0.20), font_size=7.5, bold=True, color=MGRAY)
+    for _ctxt, _cbg, _cx, _cw in [
+        (f"✓  {n_done_s}  Done",        "#1B5C3F", Inches(1.70), Inches(2.10)),
+        (f"◑  {n_prog_s}  In Progress", "#C9974A", Inches(3.90), Inches(2.60)),
+        (f"○  {n_due_s}  Due",           "#6B7280", Inches(6.60), Inches(1.60)),
+    ]:
+        _add_rect(slide, _cx, _CY, _cw, _CH, fill_color=_rgb(_cbg), line_color=_rgb(_cbg))
+        _add_text_box(slide, _ctxt, _cx + Inches(0.12), _CY + Inches(0.05),
+                      _cw - Inches(0.16), Inches(0.20), font_size=9, bold=True, color=WHITE)
+    _px2, _pw2 = Inches(8.40), Inches(4.73)
+    _add_rect(slide, _px2, _CY, _pw2, _CH, fill_color=_rgb("#EEF7EE"), line_color=GREEN)
+    _add_text_box(slide, f"{pct_s}%  complete  —  {n_done_s} of {n_total} actions",
+                  _px2 + Inches(0.12), _CY + Inches(0.05),
+                  _pw2 - Inches(0.16), Inches(0.20), font_size=9, bold=True, color=GREEN)
 
     # ── Two-table layout: Pending (left) | Completed (right) ────────────────
     HDR_Y  = Inches(3.52)
