@@ -10,7 +10,7 @@ import pandas as pd
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
+from pptx.enum.text import PP_ALIGN, MSO_AUTO_SIZE
 from pptx.chart.data import ChartData
 from pptx.enum.chart import XL_CHART_TYPE
 
@@ -793,7 +793,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   font_size=9, bold=True, color=DARK)
 
     # ── Two-table layout: Pending (left) | Completed (right) ────────────────
-    HDR_Y = Inches(2.50)
+    HDR_Y = Inches(3.52)
     HDR_H = Inches(0.24)
     ROW_H = Inches(0.33)
     CW    = [Inches(w) for w in [0.24, 1.52, 0.80, 0.54, 0.38, 0.52]]
@@ -815,7 +815,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         pend_df = acts.copy() if not acts.empty else pd.DataFrame()
         done_df = pd.DataFrame()
 
-    max_rows = int((Inches(7.40) - HDR_Y - HDR_H) / ROW_H)
+    max_rows = int((Inches(7.35) - HDR_Y - HDR_H) / ROW_H)
 
     def _render_tbl(df, tbl_x, title, hdr_color):
         CX_T = [tbl_x + sum(CW[:j]) for j in range(len(CW))]
@@ -865,7 +865,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                            (am_input if am_input and am_input not in ("nan",) else "") or \
                            _action_context_line(desc, eng_type, sector)
                     if note:
-                        _add_text_box(slide, f"↳ {note[:50]}", cx + Inches(0.03), ry + Inches(0.16),
+                        _add_text_box(slide, f"↳ {note[:35]}", cx + Inches(0.03), ry + Inches(0.16),
                                       cw - Inches(0.06), Inches(0.13), font_size=6, color=MGRAY)
                 else:
                     _add_text_box(slide, val, cx + Inches(0.02), ry + Inches(0.04),
@@ -1445,6 +1445,7 @@ def _add_text_box(slide, text, left, top, width, height,
     tb = slide.shapes.add_textbox(left, top, width, height)
     tf = tb.text_frame
     tf.word_wrap = True
+    tf.auto_size = MSO_AUTO_SIZE.NONE
     p = tf.paragraphs[0]
     p.alignment = align
     run = p.add_run()
