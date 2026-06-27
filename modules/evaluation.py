@@ -1282,6 +1282,7 @@ def _render_recommendation_mode(brief: dict):
                 contact_email=_s.get("ev_email", ""),
                 contact_phone=_s.get("ev_phone", ""),
             )
+            st.rerun()  # refresh so the download button above picks up the new docx
 
     with col_rat:
         if dg.get("minister_criteria"):
@@ -1365,6 +1366,7 @@ def _render_direction_mode(brief: dict):
                 meeting_mode="direction",
                 direction_host=assigned,
             )
+            st.rerun()  # refresh so the download button above picks up the new docx
 
 
 # ─── Main render ───────────────────────────────────────────────────────────────
