@@ -48,6 +48,9 @@ def _init():
         "ev_attendees":  "",
         "ev_news":       [],
         "ev_auto_photo": False,
+        "ev_website":    "",
+        "ev_email":      "",
+        "ev_phone":      "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -405,7 +408,8 @@ def _bullet_para(doc_or_cell, text: str, sub=False, bold=False, font_size=9):
 
 
 def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
-                attendees: str = "", news: list = None) -> bytes:
+                attendees: str = "", news: list = None,
+                contact_email: str = "", contact_phone: str = "") -> bytes:
     doc = Document()
 
     # ── Page setup (A4, tighter margins to fit one page) ─────────────────────
@@ -514,6 +518,10 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
     ]
     if d.get("aum"):
         profile_rows.append(("AUM", d["aum"]))
+    if contact_email:
+        profile_rows.append(("Email", contact_email))
+    if contact_phone:
+        profile_rows.append(("Phone", contact_phone))
 
     # Profile table (label | value | name placeholder), 3 cols
     n_rows = len(profile_rows)
@@ -1362,32 +1370,63 @@ def render():
             if s.get("ev_auto_photo"):
                 st.caption("📸 Person photo auto-extracted from uploaded bio")
 
-    # ── Step 2: Context + images + API key ───────────────────────────────────
+    # ── Step 2: Company details, attendees, media & API key ──────────────────
     with st.container(border=True):
-        st.markdown('<p class="ev-section">Step 2 — Context & settings</p>',
+        st.markdown('<p class="ev-section">Step 2 — Company details & settings</p>',
                     unsafe_allow_html=True)
-        col_a, col_b, col_c, col_d = st.columns([3, 1, 1, 2])
-        with col_a:
-            ctx_col, att_col = st.columns(2)
-            with ctx_col:
-                s["ev_context"] = st.text_area(
-                    "Additional context (optional)",
-                    value=s["ev_context"],
-                    height=95,
-                    key="ev_ctx",
-                    placeholder="e.g. Visitor arriving 20–22 June. Focus on logistics and data centres…",
-                )
-            with att_col:
-                s["ev_attendees"] = st.text_area(
-                    "Recommended Ministry Attendees",
-                    value=s["ev_attendees"],
-                    height=95,
-                    key="ev_att",
-                    placeholder="H.E. Fahad Al-Saif, Minister\nH.E. Ibrahim Al-Rashed, Asst. Minister\n…",
-                )
+
+        # ── Row A: Company contact details ────────────────────────────────────
+        st.markdown("**Company Contact Details** — used to auto-fetch logo and enrich the document")
+        cw, ce, cp = st.columns(3)
+        s["ev_website"] = cw.text_input(
+            "Company Website",
+            value=s.get("ev_website", ""),
+            key="ev_web",
+            placeholder="e.g. blackrock.com  (no https://)",
+        )
+        s["ev_email"] = ce.text_input(
+            "Contact Email",
+            value=s.get("ev_email", ""),
+            key="ev_email_inp",
+            placeholder="e.g. name@company.com",
+        )
+        s["ev_phone"] = cp.text_input(
+            "Contact Phone",
+            value=s.get("ev_phone", ""),
+            key="ev_phone_inp",
+            placeholder="e.g. +966 11 000 0000",
+        )
+
+        st.markdown("---")
+
+        # ── Row B: Context + Ministry Attendees ───────────────────────────────
+        ctx_col, att_col = st.columns(2)
+        with ctx_col:
+            s["ev_context"] = st.text_area(
+                "Additional context (optional)",
+                value=s["ev_context"],
+                height=110,
+                key="ev_ctx",
+                placeholder="e.g. Visitor arriving 20–22 June. Focus on logistics and data centres. Escalate if CEO of Fortune 100…",
+            )
+        with att_col:
+            st.markdown("**Recommended Ministry Attendees** — will appear as a named box in the document")
+            s["ev_attendees"] = st.text_area(
+                "One name per line",
+                value=s["ev_attendees"],
+                height=90,
+                key="ev_att",
+                label_visibility="collapsed",
+                placeholder="H.E. Fahad Al-Saif, Minister of Investment\nH.E. Ibrahim Al-Rashed, Asst. Minister\nDr. Khalid Al-Falih, Adviser\n…",
+            )
+
+        st.markdown("---")
+
+        # ── Row C: Visitor photo, company logo, API key ───────────────────────
+        col_b, col_c, col_d = st.columns([1, 1, 2])
         with col_b:
-            st.markdown("**Visitor photo**")
-            st.caption("Optional — PNG/JPG")
+            st.markdown("**Visitor photo** *(optional)*")
+            st.caption("Upload manually, or auto-extracted from bio")
             photo_up = st.file_uploader("photo", type=["png","jpg","jpeg"],
                                         key="ev_photo_up", label_visibility="collapsed")
             if photo_up is not None:
@@ -1395,10 +1434,14 @@ def render():
                 if _pk != s.get("ev_photo_key", ""):
                     s["ev_photo_key"]   = _pk
                     s["ev_photo_bytes"] = photo_up.read()
+                    s["ev_auto_photo"]  = False
                 st.image(s["ev_photo_bytes"], width=80)
+            elif s.get("ev_photo_bytes") and s.get("ev_auto_photo"):
+                st.image(s["ev_photo_bytes"], width=80)
+                st.caption("📸 Auto-extracted from bio")
         with col_c:
-            st.markdown("**Company logo**")
-            st.caption("Optional — PNG/JPG")
+            st.markdown("**Company logo** *(optional)*")
+            st.caption("Upload manually, or auto-fetched from website")
             logo_up = st.file_uploader("logo", type=["png","jpg","jpeg"],
                                        key="ev_logo_up", label_visibility="collapsed")
             if logo_up is not None:
@@ -1407,8 +1450,9 @@ def render():
                     s["ev_logo_key"]   = _lk
                     s["ev_logo_bytes"] = logo_up.read()
                 st.image(s["ev_logo_bytes"], width=80)
+            elif s.get("ev_website") and not s.get("ev_logo_bytes"):
+                st.caption("Logo will be auto-fetched on Generate")
         with col_d:
-            # Resolve key: session state → Report Builder key → env var
             _resolved_key = (
                 s.get("ev_api_key")
                 or s.get("rb_ar_api_key")
@@ -1464,11 +1508,15 @@ def render():
                 brief = _call_claude(files, s.get("ev_context", ""), api_key)
                 prog.progress(60)
 
+                # Domain: prefer manually entered website, fallback to Claude's extraction
+                manual_domain = (s.get("ev_website") or "").strip().lower()
+                manual_domain = manual_domain.replace("https://", "").replace("http://", "").split("/")[0]
+                domain = manual_domain or brief.get("companyDomain", "")
+
                 # Auto-fetch logo from Clearbit if not manually uploaded
                 logo_bytes = s.get("ev_logo_bytes")
-                domain = brief.get("companyDomain", "")
                 if not logo_bytes and domain:
-                    status.markdown(f"→ Fetching {brief.get('company','')} logo…")
+                    status.markdown(f"→ Fetching {brief.get('company','')} logo from {domain}…")
                     logo_bytes = _fetch_logo(domain)
                     if logo_bytes:
                         s["ev_logo_bytes"] = logo_bytes
@@ -1489,6 +1537,8 @@ def render():
                     logo_bytes=logo_bytes,
                     attendees=s.get("ev_attendees", ""),
                     news=news_items,
+                    contact_email=s.get("ev_email", ""),
+                    contact_phone=s.get("ev_phone", ""),
                 )
                 prog.progress(100)
 
