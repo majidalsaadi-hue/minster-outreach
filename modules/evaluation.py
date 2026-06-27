@@ -372,8 +372,8 @@ def _add_run(para, text, bold=False, italic=False, size=11,
 
 def _section_head(doc, text: str):
     p = doc.add_paragraph()
-    p.paragraph_format.space_before = Pt(6)
-    p.paragraph_format.space_after  = Pt(3)
+    p.paragraph_format.space_before = Pt(4)
+    p.paragraph_format.space_after  = Pt(2)
     pPr = p._p.get_or_add_pPr()
     pBdr = OxmlElement("w:pBdr")
     bot  = OxmlElement("w:bottom")
@@ -528,9 +528,9 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
     pt = doc.add_table(rows=n_rows, cols=3)
     pt.style = "Table Grid"
     pt.autofit = False
-    pt.columns[0].width = Cm(4.0)
-    pt.columns[1].width = Cm(9.8)
-    pt.columns[2].width = Cm(3.7)
+    pt.columns[0].width = Cm(3.2)
+    pt.columns[1].width = Cm(10.5)
+    pt.columns[2].width = Cm(4.3)
     for i, (lbl, val) in enumerate(profile_rows):
         lc, vc, nc = pt.rows[i].cells
         fill = _LGREEN if i % 2 == 0 else "FFFFFF"
@@ -539,12 +539,12 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
         lc.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         vc.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         pl = lc.add_paragraph()
-        pl.paragraph_format.space_before = Pt(3)
-        pl.paragraph_format.space_after  = Pt(3)
+        pl.paragraph_format.space_before = Pt(2)
+        pl.paragraph_format.space_after  = Pt(2)
         _add_run(pl, lbl, bold=True, size=10, color=_GREEN)
         pv = vc.add_paragraph()
-        pv.paragraph_format.space_before = Pt(3)
-        pv.paragraph_format.space_after  = Pt(3)
+        pv.paragraph_format.space_before = Pt(2)
+        pv.paragraph_format.space_after  = Pt(2)
         _add_run(pv, val or "—", size=10, color=_DARK)
         # Right column: photo (all rows merged visually) or name/title placeholder
         _cell_shading(nc, "F0F7F3")
@@ -556,7 +556,7 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
                     pp_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     pp_img.paragraph_format.space_before = Pt(4)
                     pp_img.paragraph_format.space_after  = Pt(2)
-                    pp_img.add_run().add_picture(io.BytesIO(photo_bytes), width=Cm(3.0))
+                    pp_img.add_run().add_picture(io.BytesIO(photo_bytes), width=Cm(3.8))
                 except Exception:
                     pn = nc.add_paragraph()
                     pn.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -607,7 +607,7 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
             _add_run(pb, f"• {sec.get('title','')}", bold=True, size=11)
             ps = cell.add_paragraph()
             ps.paragraph_format.space_before = Pt(0)
-            ps.paragraph_format.space_after  = Pt(4)
+            ps.paragraph_format.space_after  = Pt(2)
             ps.paragraph_format.left_indent  = Cm(0.8)
             _add_run(ps, f"– {sec.get('subbullet','')}", size=11, color=_MED)
 
@@ -689,8 +689,8 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
     for cell, arr in ((lc_d, left_d), (rc_d, right_d)):
         for dp in arr:
             pp = cell.add_paragraph()
-            pp.paragraph_format.space_before = Pt(3)
-            pp.paragraph_format.space_after  = Pt(3)
+            pp.paragraph_format.space_before = Pt(2)
+            pp.paragraph_format.space_after  = Pt(2)
             pp.paragraph_format.left_indent  = Cm(0.4)
             _add_run(pp, f"• {dp}", size=11)
 
@@ -732,8 +732,8 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
     p2_hdr = doc.add_table(rows=1, cols=2)
     p2_hdr.style = "Table Grid"
     p2_hdr.autofit = False
-    p2_hdr.columns[0].width = Cm(13.0)
-    p2_hdr.columns[1].width = Cm(5.0)
+    p2_hdr.columns[0].width = Cm(10.7)
+    p2_hdr.columns[1].width = Cm(7.3)
     p2h_l, p2h_r = p2_hdr.rows[0].cells
     _cell_shading(p2h_l, _GREEN); _cell_shading(p2h_r, _GREEN)
     _no_borders(p2h_l); _no_borders(p2h_r)
@@ -871,8 +871,8 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
         news_tbl = doc.add_table(rows=len(news_items), cols=2)
         news_tbl.style = "Table Grid"
         news_tbl.autofit = False
-        news_tbl.columns[0].width = Cm(3.5)
-        news_tbl.columns[1].width = Cm(14.5)
+        news_tbl.columns[0].width = Cm(2.1)
+        news_tbl.columns[1].width = Cm(15.9)
         for ni, nitem in enumerate(news_items):
             nd_c, nt_c = news_tbl.rows[ni].cells
             fill = _LGREEN if ni % 2 == 0 else "FFFFFF"
