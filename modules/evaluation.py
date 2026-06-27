@@ -7,6 +7,8 @@ import os
 import base64
 import json
 import re
+import zipfile
+import urllib.parse
 from datetime import date, datetime
 
 import streamlit as st
@@ -34,15 +36,18 @@ _MODEL  = "claude-sonnet-4-6"
 
 def _init():
     defaults = {
-        "ev_api_key":   "",
-        "ev_brief":     None,
-        "ev_docx":      None,
-        "ev_context":   "",
-        "ev_file_key":  "",
-        "ev_photo_key": "",
+        "ev_api_key":    "",
+        "ev_brief":      None,
+        "ev_docx":       None,
+        "ev_context":    "",
+        "ev_file_key":   "",
+        "ev_photo_key":  "",
         "ev_photo_bytes": None,
-        "ev_logo_key":  "",
+        "ev_logo_key":   "",
         "ev_logo_bytes": None,
+        "ev_attendees":  "",
+        "ev_news":       [],
+        "ev_auto_photo": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -133,6 +138,57 @@ def _extract_text_from_docx(raw: bytes) -> str:
         return raw.decode("utf-8", errors="ignore")
 
 
+def _extract_photo_from_file(file_bytes: bytes, media_type: str) -> bytes | None:
+    """Try to pull a person photo out of a bio PDF or DOCX without extra libraries."""
+    try:
+        if "pdf" in media_type:
+            # Scan raw bytes for an embedded JPEG (most bio PDFs embed one)
+            start = file_bytes.find(b'\xff\xd8\xff')
+            end   = file_bytes.rfind(b'\xff\xd9')
+            if start != -1 and end > start and (end - start) > 8000:
+                return file_bytes[start:end + 2]
+        elif "docx" in media_type or "word" in media_type:
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+                imgs = sorted(
+                    [n for n in z.namelist()
+                     if n.startswith("word/media/") and
+                     n.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png")],
+                    key=lambda n: z.getinfo(n).file_size, reverse=True,
+                )
+                if imgs:
+                    return z.read(imgs[0])
+    except Exception:
+        pass
+    return None
+
+
+def _fetch_news_for_company(company_name: str, domain: str = "") -> list:
+    """Fetch latest company news via Google News RSS. Returns list of {title, date}."""
+    import urllib.request
+    import xml.etree.ElementTree as ET
+    query = urllib.parse.quote(f'"{company_name}"' if company_name else domain.split(".")[0])
+    url = f"https://news.google.com/rss/search?q={query}&hl=en&gl=US&ceid=US:en"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            tree = ET.parse(resp)
+        items = []
+        for item in tree.getroot().iter("item"):
+            title   = (item.findtext("title") or "").split(" - ")[0].strip()
+            pubdate = (item.findtext("pubDate") or "")[:16].strip()
+            source  = ""
+            src_el  = item.find("{https://news.google.com/rss}source")
+            if src_el is not None:
+                source = src_el.text or ""
+            if title and len(title) > 10:
+                items.append({"title": title, "date": pubdate, "source": source})
+            if len(items) >= 4:
+                break
+        return items
+    except Exception:
+        return []
+
+
 def _fetch_logo(domain: str) -> bytes | None:
     """Try to fetch company logo from Clearbit. Returns bytes or None."""
     if not domain:
@@ -207,16 +263,33 @@ Required JSON structure:
     "delegateTo": "string (name and title of recommended delegate)",
     "rationale": ["string", "string", "string"]
   }},
-  "discussionPoints": ["string", "string", "string", "string"]
+  "discussionPoints": ["string", "string", "string", "string"],
+  "investmentRegions": [
+    {{
+      "region": "string (e.g. Southeast Asia, Europe, GCC)",
+      "focus": "string (key sectors or themes in that region, one line)"
+    }}
+  ],
+  "globalSubsidiaries": ["string (subsidiary name — country, e.g. Acme Capital — UK)"],
+  "saudiPresence": {{
+    "investments": "string (current/planned investments in Saudi Arabia; 'No known current investments' if none)",
+    "jvPartners": ["string (Saudi local JV partner or government entity name)"],
+    "majorProjects": ["string (project name — brief description)"]
+  }}
 }}
 
 Rules:
 - sectors: extract from any images/screenshots showing sector bullets; otherwise derive from company portfolio; include 4-6 sectors
-- recommendation.delegateTo: default "Assistant Minister H.E. Ibrahim" unless visitor is CEO of Fortune 100 or top sovereign fund, then suggest Minister directly
+- recommendation.delegateTo: default "Assistant Minister H.E. Ibrahim Al-Rashed" unless visitor is CEO of Fortune 100 or top sovereign fund, then suggest "H.E. Minister Fahad Al-Saif" directly
 - always map sectors to Vision 2030 pillars in strategicContext
-- revenue/employees/aum: if not in documents, estimate from company's known profile and mark as "approx."
+- revenue/employees/aum: if not in documents, estimate from company's known profile and mark as "est."
 - discussionPoints: exactly 4 points
 - aum: empty string if not applicable
+- investmentRegions: 3-6 regions where the company actively deploys capital or operates; omit if company is purely domestic
+- globalSubsidiaries: up to 8 major subsidiaries, JV vehicles, or related entities with their country; empty array if not applicable
+- saudiPresence.investments: describe any Saudi investment, commitment, or MOU; if none write "No known current investments in Saudi Arabia"
+- saudiPresence.jvPartners: Saudi counterparties (ARAMCO, PIF entities, local developers, etc.); empty array if none
+- saudiPresence.majorProjects: named projects, NEOM involvement, data centres, manufacturing plants, etc.; empty array if none
 """
     content.append({"type": "text", "text": prompt})
     return content
@@ -230,7 +303,7 @@ def _call_claude(files: list, context: str, api_key: str) -> dict:
     content = _build_content_blocks(files, context)
     response = client.messages.create(
         model=_MODEL,
-        max_tokens=2000,
+        max_tokens=4000,
         messages=[{"role": "user", "content": content}],
     )
     raw = "".join(b.text for b in response.content if hasattr(b, "text"))
@@ -331,7 +404,8 @@ def _bullet_para(doc_or_cell, text: str, sub=False, bold=False, font_size=9):
     return p
 
 
-def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None) -> bytes:
+def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
+                attendees: str = "", news: list = None) -> bytes:
     doc = Document()
 
     # ── Page setup (A4, tighter margins to fit one page) ─────────────────────
@@ -563,6 +637,30 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None) ->
         rp.paragraph_format.left_indent  = Cm(0.4)
         _add_run(rp, f"• {r_item}", size=11)
 
+    # ── Ministry Recommended Attendees ────────────────────────────────────────
+    if attendees and attendees.strip():
+        att_tbl = doc.add_table(rows=1, cols=1)
+        att_tbl.style = "Table Grid"
+        att_tbl.autofit = False
+        att_tbl.columns[0].width = Cm(18.0)
+        ac = att_tbl.rows[0].cells[0]
+        _cell_shading(ac, "FFF8EC")
+        s_g = {"val": "single", "sz": 8, "color": _GOLD}
+        _cell_borders(ac, top=s_g, bottom=s_g, left=s_g, right=s_g)
+        ac.vertical_alignment = WD_ALIGN_VERTICAL.TOP
+        ah = ac.add_paragraph()
+        ah.paragraph_format.space_before = Pt(2)
+        ah.paragraph_format.space_after  = Pt(4)
+        _add_run(ah, "RECOMMENDED MINISTRY ATTENDEES", bold=True, size=12, color=_GOLD)
+        for name_line in attendees.strip().splitlines():
+            name_line = name_line.strip().lstrip("•-").strip()
+            if name_line:
+                ap = ac.add_paragraph()
+                ap.paragraph_format.space_before = Pt(2)
+                ap.paragraph_format.space_after  = Pt(2)
+                ap.paragraph_format.left_indent  = Cm(0.4)
+                _add_run(ap, f"• {name_line}", size=11)
+
     # ── Discussion Points (2-column) ──────────────────────────────────────────
     _section_head(doc, "Suggested Discussion Points")
 
@@ -612,6 +710,201 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None) ->
     pfr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     _add_run(pfr, "For internal use only – Ministry of Investment of Saudi Arabia", size=8, color=_GREY)
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # PAGE 2 — Investment Intelligence Brief
+    # ══════════════════════════════════════════════════════════════════════════
+    from docx.enum.text import WD_BREAK
+
+    pb = doc.add_paragraph()
+    pb.paragraph_format.space_before = Pt(0)
+    pb.paragraph_format.space_after  = Pt(0)
+    pb.add_run().add_break(WD_BREAK.PAGE)
+
+    # ── Page 2 header ─────────────────────────────────────────────────────────
+    p2_hdr = doc.add_table(rows=1, cols=2)
+    p2_hdr.style = "Table Grid"
+    p2_hdr.autofit = False
+    p2_hdr.columns[0].width = Cm(13.0)
+    p2_hdr.columns[1].width = Cm(5.0)
+    p2h_l, p2h_r = p2_hdr.rows[0].cells
+    _cell_shading(p2h_l, _GREEN); _cell_shading(p2h_r, _GREEN)
+    _no_borders(p2h_l); _no_borders(p2h_r)
+    p2h_l.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+    ph2_title = p2h_l.add_paragraph()
+    ph2_title.paragraph_format.space_before = Pt(4)
+    ph2_title.paragraph_format.space_after  = Pt(2)
+    _add_run(ph2_title, f"{d.get('company','')} — Investment Intelligence Brief",
+             bold=True, size=12, color="FFFFFF")
+    ph2_sub = p2h_l.add_paragraph()
+    ph2_sub.paragraph_format.space_before = Pt(0)
+    ph2_sub.paragraph_format.space_after  = Pt(4)
+    _add_run(ph2_sub, "Global Presence · Saudi Contribution · Market Intelligence",
+             size=9, color="C8E6D4")
+    p2h_r.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+    ph2_r = p2h_r.add_paragraph()
+    ph2_r.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    ph2_r.paragraph_format.space_before = Pt(4)
+    _add_run(ph2_r, "CONFIDENTIAL", bold=True, size=9, color="FFD700")
+    ph2_r2 = p2h_r.add_paragraph()
+    ph2_r2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    ph2_r2.paragraph_format.space_after = Pt(4)
+    _add_run(ph2_r2, date.today().strftime("%d %B %Y").lstrip("0"), size=8, color="C8E6D4")
+
+    # ── Global Investment Regions + Subsidiaries ──────────────────────────────
+    _section_head(doc, "Global Investment Footprint")
+
+    inv_regions = d.get("investmentRegions", [])
+    subsidiaries = d.get("globalSubsidiaries", [])
+
+    gi_tbl = doc.add_table(rows=1, cols=2)
+    gi_tbl.style = "Table Grid"
+    gi_tbl.autofit = False
+    gi_tbl.columns[0].width = Cm(9.0)
+    gi_tbl.columns[1].width = Cm(9.0)
+    gi_l, gi_r = gi_tbl.rows[0].cells
+    _no_borders(gi_l); _no_borders(gi_r)
+    gi_l.vertical_alignment = WD_ALIGN_VERTICAL.TOP
+    gi_r.vertical_alignment = WD_ALIGN_VERTICAL.TOP
+
+    # Left col: Regions
+    gi_lh = gi_l.add_paragraph()
+    gi_lh.paragraph_format.space_before = Pt(4)
+    gi_lh.paragraph_format.space_after  = Pt(4)
+    _add_run(gi_lh, "Where They Invest", bold=True, size=10, color=_GREEN)
+    if inv_regions:
+        for reg in inv_regions:
+            rp2 = gi_l.add_paragraph()
+            rp2.paragraph_format.space_before = Pt(2)
+            rp2.paragraph_format.space_after  = Pt(1)
+            rp2.paragraph_format.left_indent  = Cm(0.3)
+            _add_run(rp2, f"• {reg.get('region','')}", bold=True, size=10)
+            rs = gi_l.add_paragraph()
+            rs.paragraph_format.space_before = Pt(0)
+            rs.paragraph_format.space_after  = Pt(3)
+            rs.paragraph_format.left_indent  = Cm(0.7)
+            _add_run(rs, f"– {reg.get('focus','')}", size=9, color=_MED)
+    else:
+        _add_run(gi_l.add_paragraph(), "Data not available", size=9, color=_GREY)
+
+    # Right col: Subsidiaries
+    gi_rh = gi_r.add_paragraph()
+    gi_rh.paragraph_format.space_before = Pt(4)
+    gi_rh.paragraph_format.space_after  = Pt(4)
+    _add_run(gi_rh, "Global Entities & Subsidiaries", bold=True, size=10, color=_GREEN)
+    if subsidiaries:
+        for sub in subsidiaries:
+            sp = gi_r.add_paragraph()
+            sp.paragraph_format.space_before = Pt(2)
+            sp.paragraph_format.space_after  = Pt(2)
+            sp.paragraph_format.left_indent  = Cm(0.3)
+            _add_run(sp, f"• {sub}", size=10)
+    else:
+        _add_run(gi_r.add_paragraph(), "Data not available", size=9, color=_GREY)
+
+    # ── Saudi Arabia Presence ─────────────────────────────────────────────────
+    _section_head(doc, "Saudi Arabia Presence & Contribution")
+
+    saudi = d.get("saudiPresence", {})
+    sa_tbl = doc.add_table(rows=1, cols=1)
+    sa_tbl.style = "Table Grid"
+    sa_tbl.autofit = False
+    sa_tbl.columns[0].width = Cm(18.0)
+    sa_c = sa_tbl.rows[0].cells[0]
+    _cell_shading(sa_c, _LGREEN)
+    _green_border(sa_c)
+    sa_c.vertical_alignment = WD_ALIGN_VERTICAL.TOP
+
+    # Investments row
+    sa_inv_h = sa_c.add_paragraph()
+    sa_inv_h.paragraph_format.space_before = Pt(4)
+    sa_inv_h.paragraph_format.space_after  = Pt(2)
+    _add_run(sa_inv_h, "Investments & Commitments in Saudi Arabia", bold=True, size=11, color=_GREEN)
+    sa_inv_p = sa_c.add_paragraph()
+    sa_inv_p.paragraph_format.space_before = Pt(0)
+    sa_inv_p.paragraph_format.space_after  = Pt(6)
+    sa_inv_p.paragraph_format.left_indent  = Cm(0.3)
+    _add_run(sa_inv_p, saudi.get("investments", "No known current investments in Saudi Arabia"),
+             size=10)
+
+    # JV Partners
+    jv_partners = saudi.get("jvPartners", [])
+    if jv_partners:
+        sa_jvh = sa_c.add_paragraph()
+        sa_jvh.paragraph_format.space_before = Pt(2)
+        sa_jvh.paragraph_format.space_after  = Pt(2)
+        _add_run(sa_jvh, "Joint Venture Partners (Saudi)", bold=True, size=11, color=_GREEN)
+        for jv in jv_partners:
+            jvp = sa_c.add_paragraph()
+            jvp.paragraph_format.space_before = Pt(1)
+            jvp.paragraph_format.space_after  = Pt(1)
+            jvp.paragraph_format.left_indent  = Cm(0.4)
+            _add_run(jvp, f"• {jv}", size=10)
+
+    # Major Projects
+    projects = saudi.get("majorProjects", [])
+    if projects:
+        sa_mph = sa_c.add_paragraph()
+        sa_mph.paragraph_format.space_before = Pt(6)
+        sa_mph.paragraph_format.space_after  = Pt(2)
+        _add_run(sa_mph, "Major Projects in Saudi Arabia", bold=True, size=11, color=_GREEN)
+        for proj in projects:
+            pp2 = sa_c.add_paragraph()
+            pp2.paragraph_format.space_before = Pt(1)
+            pp2.paragraph_format.space_after  = Pt(1)
+            pp2.paragraph_format.left_indent  = Cm(0.4)
+            _add_run(pp2, f"• {proj}", size=10)
+
+    sa_c.add_paragraph().paragraph_format.space_after = Pt(4)
+
+    # ── Latest News ───────────────────────────────────────────────────────────
+    news_items = news or []
+    if news_items:
+        _section_head(doc, "Latest Market & Company News")
+        news_tbl = doc.add_table(rows=len(news_items), cols=2)
+        news_tbl.style = "Table Grid"
+        news_tbl.autofit = False
+        news_tbl.columns[0].width = Cm(3.5)
+        news_tbl.columns[1].width = Cm(14.5)
+        for ni, nitem in enumerate(news_items):
+            nd_c, nt_c = news_tbl.rows[ni].cells
+            fill = _LGREEN if ni % 2 == 0 else "FFFFFF"
+            _cell_shading(nd_c, fill); _cell_shading(nt_c, fill)
+            _no_borders(nd_c); _no_borders(nt_c)
+            nd_c.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            nt_c.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            date_p = nd_c.add_paragraph()
+            date_p.paragraph_format.space_before = Pt(3)
+            date_p.paragraph_format.space_after  = Pt(3)
+            _add_run(date_p, nitem.get("date", "")[:11], size=8, color=_GREY)
+            title_p = nt_c.add_paragraph()
+            title_p.paragraph_format.space_before = Pt(3)
+            title_p.paragraph_format.space_after  = Pt(3)
+            _add_run(title_p, nitem.get("title", ""), size=9)
+
+    # ── Page 2 Footer ─────────────────────────────────────────────────────────
+    div_p2 = doc.add_paragraph()
+    div_p2.paragraph_format.space_before = Pt(8)
+    div_p2.paragraph_format.space_after  = Pt(2)
+    pPr_p2 = div_p2._p.get_or_add_pPr()
+    pBdr_p2 = OxmlElement("w:pBdr")
+    top_p2  = OxmlElement("w:top")
+    top_p2.set(qn("w:val"),   "single"); top_p2.set(qn("w:sz"), "4")
+    top_p2.set(qn("w:space"), "4");      top_p2.set(qn("w:color"), _MGREEN)
+    pBdr_p2.append(top_p2); pPr_p2.append(pBdr_p2)
+
+    ft2 = doc.add_table(rows=1, cols=2)
+    ft2.style = "Table Grid"
+    ft2.autofit = False
+    ft2.columns[0].width = Cm(9.0)
+    ft2.columns[1].width = Cm(9.0)
+    f2l, f2r = ft2.rows[0].cells
+    _no_borders(f2l); _no_borders(f2r)
+    pf2l = f2l.add_paragraph()
+    _add_run(pf2l, "Prepared by: Minister Outreach Office, MISA", size=8, color=_GREY)
+    pf2r = f2r.add_paragraph()
+    pf2r.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    _add_run(pf2r, "For internal use only – Ministry of Investment of Saudi Arabia", size=8, color=_GREY)
+
     # ── Save to bytes ─────────────────────────────────────────────────────────
     buf = io.BytesIO()
     doc.save(buf)
@@ -658,6 +951,23 @@ def _render_preview(d: dict):
     left_d  = "".join(f'<div class="ev-bul">{p}</div>' for p in dps[:mid2])
     right_d = "".join(f'<div class="ev-bul">{p}</div>' for p in dps[mid2:])
 
+    inv_regions  = d.get("investmentRegions", [])
+    subsidiaries = d.get("globalSubsidiaries", [])
+    saudi        = d.get("saudiPresence", {})
+
+    reg_html = "".join(
+        f'<div class="ev-bul"><strong>{r["region"]}</strong></div>'
+        f'<div class="ev-sub">{r["focus"]}</div>'
+        for r in inv_regions
+    ) or "<div style='color:#999;font-size:11px'>Data not available</div>"
+
+    sub_html = "".join(
+        f'<div class="ev-bul">{s}</div>' for s in subsidiaries
+    ) or "<div style='color:#999;font-size:11px'>Data not available</div>"
+
+    jv_html  = "".join(f'<div class="ev-bul">{jv}</div>' for jv in saudi.get("jvPartners", []))
+    prj_html = "".join(f'<div class="ev-bul">{p}</div>' for p in saudi.get("majorProjects", []))
+
     html = f"""
     <div class="ev-brief-wrap">
       <div class="ev-brief-hdr">
@@ -702,6 +1012,44 @@ def _render_preview(d: dict):
         <div class="ev-cols">
           <div>{left_d}</div>
           <div>{right_d}</div>
+        </div>
+      </div>
+      <div class="ev-footer">
+        <span>Prepared by: Minister Outreach Office, MISA</span>
+        <span>For internal use only – Ministry of Investment of Saudi Arabia</span>
+      </div>
+    </div>
+
+    <div class="ev-brief-wrap" style="margin-top:16px">
+      <div class="ev-brief-hdr">
+        <div>
+          <h2>{d.get("company","")} — Investment Intelligence Brief</h2>
+          <p>Global Presence · Saudi Contribution · Market Intelligence</p>
+        </div>
+        <div style="text-align:right">
+          <div class="ev-conf">CONFIDENTIAL</div>
+          <div style="color:#C8E6D4;font-size:11px;margin-top:4px">{today}</div>
+        </div>
+      </div>
+      <div class="ev-brief-body">
+        <div class="ev-shead">Global Investment Footprint</div>
+        <div class="ev-cols">
+          <div>
+            <div style="font-weight:700;font-size:11px;color:#1B5C3F;margin-bottom:6px">Where They Invest</div>
+            {reg_html}
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:11px;color:#1B5C3F;margin-bottom:6px">Global Entities &amp; Subsidiaries</div>
+            {sub_html}
+          </div>
+        </div>
+
+        <div class="ev-shead">Saudi Arabia Presence &amp; Contribution</div>
+        <div class="ev-recbox">
+          <h4>Investments &amp; Commitments</h4>
+          <p style="font-size:11px;margin:4px 0 8px">{saudi.get("investments","No known current investments in Saudi Arabia")}</p>
+          {"<h4 style='margin-top:10px'>Joint Venture Partners (Saudi)</h4>" + jv_html if jv_html else ""}
+          {"<h4 style='margin-top:10px'>Major Projects in Saudi Arabia</h4>" + prj_html if prj_html else ""}
         </div>
       </div>
       <div class="ev-footer">
@@ -996,17 +1344,23 @@ def render():
             file_key = "_".join(f"{f.name}_{f.size}" for f in uploaded)
             if file_key != s.get("ev_file_key", ""):
                 s["ev_file_key"] = file_key
-                s["ev_loaded_files"] = [
-                    {
-                        "name":       f.name,
-                        "bytes":      f.read(),
-                        "media_type": _media_type(f.name, f.type),
-                    }
-                    for f in uploaded
-                ]
+                loaded = []
+                for f in uploaded:
+                    fb = f.read()
+                    mt = _media_type(f.name, f.type)
+                    loaded.append({"name": f.name, "bytes": fb, "media_type": mt})
+                    # Auto-extract photo from bio if none uploaded yet
+                    if not s.get("ev_photo_bytes") and not s.get("ev_auto_photo"):
+                        extracted = _extract_photo_from_file(fb, mt)
+                        if extracted:
+                            s["ev_photo_bytes"] = extracted
+                            s["ev_auto_photo"]  = True
+                s["ev_loaded_files"] = loaded
             cols = st.columns(min(len(uploaded), 4))
             for i, f in enumerate(uploaded):
                 cols[i % 4].success(f"📄 {f.name}")
+            if s.get("ev_auto_photo"):
+                st.caption("📸 Person photo auto-extracted from uploaded bio")
 
     # ── Step 2: Context + images + API key ───────────────────────────────────
     with st.container(border=True):
@@ -1014,13 +1368,23 @@ def render():
                     unsafe_allow_html=True)
         col_a, col_b, col_c, col_d = st.columns([3, 1, 1, 2])
         with col_a:
-            s["ev_context"] = st.text_area(
-                "Additional context (optional)",
-                value=s["ev_context"],
-                height=100,
-                key="ev_ctx",
-                placeholder="e.g. Visitor arriving 20–22 June. Focus on logistics and data centres. Recommend delegating to HE Ibrahim…",
-            )
+            ctx_col, att_col = st.columns(2)
+            with ctx_col:
+                s["ev_context"] = st.text_area(
+                    "Additional context (optional)",
+                    value=s["ev_context"],
+                    height=95,
+                    key="ev_ctx",
+                    placeholder="e.g. Visitor arriving 20–22 June. Focus on logistics and data centres…",
+                )
+            with att_col:
+                s["ev_attendees"] = st.text_area(
+                    "Recommended Ministry Attendees",
+                    value=s["ev_attendees"],
+                    height=95,
+                    key="ev_att",
+                    placeholder="H.E. Fahad Al-Saif, Minister\nH.E. Ibrahim Al-Rashed, Asst. Minister\n…",
+                )
         with col_b:
             st.markdown("**Visitor photo**")
             st.caption("Optional — PNG/JPG")
@@ -1102,21 +1466,29 @@ def render():
 
                 # Auto-fetch logo from Clearbit if not manually uploaded
                 logo_bytes = s.get("ev_logo_bytes")
-                if not logo_bytes:
-                    domain = brief.get("companyDomain", "")
-                    if domain:
-                        status.markdown(f"→ Fetching {brief.get('company','')} logo…")
-                        logo_bytes = _fetch_logo(domain)
-                        if logo_bytes:
-                            s["ev_logo_bytes"] = logo_bytes
+                domain = brief.get("companyDomain", "")
+                if not logo_bytes and domain:
+                    status.markdown(f"→ Fetching {brief.get('company','')} logo…")
+                    logo_bytes = _fetch_logo(domain)
+                    if logo_bytes:
+                        s["ev_logo_bytes"] = logo_bytes
 
-                prog.progress(75)
+                prog.progress(65)
 
-                status.markdown("→ Generating briefing document…")
+                # Fetch latest news
+                status.markdown("→ Fetching latest news…")
+                news_items = _fetch_news_for_company(brief.get("company", ""), domain)
+                s["ev_news"] = news_items
+
+                prog.progress(80)
+
+                status.markdown("→ Building 2-page briefing document…")
                 docx_bytes = _build_docx(
                     brief,
                     photo_bytes=s.get("ev_photo_bytes"),
                     logo_bytes=logo_bytes,
+                    attendees=s.get("ev_attendees", ""),
+                    news=news_items,
                 )
                 prog.progress(100)
 

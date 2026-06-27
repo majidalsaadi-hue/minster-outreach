@@ -569,6 +569,11 @@ def _add_investor_form(dfs: dict, lang: str):
         contact_name  = c7.text_input("Key Contact Name")
         contact_title = c8.text_input("Key Contact Title / Position")
 
+        c_web, c_email, c_phone = st.columns(3)
+        website     = c_web.text_input("Company Website", placeholder="e.g. blackrock.com")
+        rep_email   = c_email.text_input("Contact Email", placeholder="e.g. name@company.com")
+        rep_phone   = c_phone.text_input("Contact Phone", placeholder="e.g. +966 11 000 0000")
+
         c9, c10 = st.columns(2)
         size_global = c9.text_input("Company Size (Global)", placeholder="e.g. 50,000 employees")
         size_ksa    = c10.text_input("Company Size (KSA)",    placeholder="e.g. 2,000 employees")
@@ -595,6 +600,9 @@ def _add_investor_form(dfs: dict, lang: str):
                 "Journey Stage":              stage,
                 "Key Contact Name":           contact_name,
                 "Key Contact Title":          contact_title,
+                "Website":                    website,
+                "Rep Email":                  rep_email,
+                "Rep Phone":                  rep_phone,
                 "Company Size (Global)":      size_global,
                 "Company Size (KSA)":         size_ksa,
                 "Est. Investment Value (SAR)": est_val if est_val > 0 else None,
