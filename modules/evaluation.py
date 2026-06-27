@@ -1268,8 +1268,9 @@ def _render_recommendation_mode(brief: dict):
 
         # Rebuild the docx with the selected delegate so the download button is up to date
         _s = st.session_state
-        if _s.get("ev_brief") and _s.get("_last_delegate") != dg["name"]:
-            _s["_last_delegate"] = dg["name"]
+        _rec_key = f"{dg['name']}|{_s.get('ev_attendees','')}"
+        if _s.get("ev_brief") and _s.get("_last_delegate") != _rec_key:
+            _s["_last_delegate"] = _rec_key
             _brief_upd = dict(_s["ev_brief"])
             _brief_upd["recommendation"] = dict(_s["ev_brief"].get("recommendation", {}))
             _brief_upd["recommendation"]["delegateTo"] = dg["name"]
@@ -1352,7 +1353,7 @@ def _render_direction_mode(brief: dict):
 
         # Rebuild docx with Direction Mode content whenever host or date changes
         _s = st.session_state
-        _dir_key = f"{assigned}|{meeting_date}"
+        _dir_key = f"{assigned}|{meeting_date}|{_s.get('ev_attendees','')}"
         if _s.get("ev_brief") and _s.get("_last_direction_key") != _dir_key:
             _s["_last_direction_key"] = _dir_key
             _s["ev_docx"] = _build_docx(
