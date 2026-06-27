@@ -409,7 +409,8 @@ def _bullet_para(doc_or_cell, text: str, sub=False, bold=False, font_size=9):
 
 def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
                 attendees: str = "", news: list = None,
-                contact_email: str = "", contact_phone: str = "") -> bytes:
+                contact_email: str = "", contact_phone: str = "",
+                meeting_mode: str = "recommendation", direction_host: str = "") -> bytes:
     doc = Document()
 
     # ── Page setup (A4, tighter margins to fit one page) ─────────────────────
@@ -611,39 +612,51 @@ def _build_docx(d: dict, photo_bytes: bytes = None, logo_bytes: bytes = None,
             ps.paragraph_format.left_indent  = Cm(0.8)
             _add_run(ps, f"– {sec.get('subbullet','')}", size=11, color=_MED)
 
-    # ── Recommendation box ────────────────────────────────────────────────────
+    # ── Decision box (Direction or Recommendation) ────────────────────────────
     rec_tbl = doc.add_table(rows=1, cols=1)
     rec_tbl.style = "Table Grid"
     rec_tbl.autofit = False
     rec_tbl.columns[0].width = Cm(18.0)
     rc = rec_tbl.rows[0].cells[0]
-    _cell_shading(rc, _LGREEN)
-    _green_border(rc)
     rc.vertical_alignment = WD_ALIGN_VERTICAL.TOP
 
-    rh = rc.add_paragraph()
-    rh.paragraph_format.space_before = Pt(2)
-    rh.paragraph_format.space_after  = Pt(2)
-    _add_run(rh, "RECOMMENDATION", bold=True, size=13, color=_GREEN)
-
-    rec = d.get("recommendation", {})
-    _sel_delegate = _get_selected_delegate_name()
-    _delegate_display = _sel_delegate if _sel_delegate else rec.get("delegateTo", "")
-    rd = rc.add_paragraph()
-    rd.paragraph_format.space_after = Pt(2)
-    if _delegate_display:
-        _add_run(rd, "Delegate this meeting to ", size=11)
-        _add_run(rd, _delegate_display, bold=True, size=11)
-        _add_run(rd, ", given:", size=11)
+    if meeting_mode == "direction":
+        _cell_shading(rc, "EAF4EE")
+        _green_border(rc)
+        rh = rc.add_paragraph()
+        rh.paragraph_format.space_before = Pt(2)
+        rh.paragraph_format.space_after  = Pt(2)
+        _add_run(rh, "DIRECTION", bold=True, size=13, color=_GREEN)
+        host = direction_host or "H.E. Fahad Al-Saif, Minister of Investment"
+        rd = rc.add_paragraph()
+        rd.paragraph_format.space_after = Pt(4)
+        _add_run(rd, "This meeting has been approved. ", size=11)
+        _add_run(rd, host, bold=True, size=11)
+        _add_run(rd, " will host this meeting directly.", size=11)
     else:
-        _add_run(rd, "Select meeting nature in Decision & Direction to confirm the recommended delegate.", size=11, color=_MED)
-
-    for r_item in rec.get("rationale", []):
-        rp = rc.add_paragraph()
-        rp.paragraph_format.space_before = Pt(2)
-        rp.paragraph_format.space_after  = Pt(2)
-        rp.paragraph_format.left_indent  = Cm(0.4)
-        _add_run(rp, f"• {r_item}", size=11)
+        _cell_shading(rc, _LGREEN)
+        _green_border(rc)
+        rh = rc.add_paragraph()
+        rh.paragraph_format.space_before = Pt(2)
+        rh.paragraph_format.space_after  = Pt(2)
+        _add_run(rh, "RECOMMENDATION", bold=True, size=13, color=_GREEN)
+        rec = d.get("recommendation", {})
+        _sel_delegate = _get_selected_delegate_name()
+        _delegate_display = _sel_delegate if _sel_delegate else rec.get("delegateTo", "")
+        rd = rc.add_paragraph()
+        rd.paragraph_format.space_after = Pt(2)
+        if _delegate_display:
+            _add_run(rd, "Delegate this meeting to ", size=11)
+            _add_run(rd, _delegate_display, bold=True, size=11)
+            _add_run(rd, ", given:", size=11)
+        else:
+            _add_run(rd, "Select meeting nature in Decision & Direction to confirm the recommended delegate.", size=11, color=_MED)
+        for r_item in rec.get("rationale", []):
+            rp = rc.add_paragraph()
+            rp.paragraph_format.space_before = Pt(2)
+            rp.paragraph_format.space_after  = Pt(2)
+            rp.paragraph_format.left_indent  = Cm(0.4)
+            _add_run(rp, f"• {r_item}", size=11)
 
     # ── Ministry Recommended Attendees ────────────────────────────────────────
     if attendees and attendees.strip():
@@ -1222,6 +1235,7 @@ def _get_selected_delegate_name() -> str:
 
 def _render_recommendation_mode(brief: dict):
     """Step 4 Option 1 — Recommendation Mode: suggest leadership level to delegate to."""
+    st.session_state.pop("_last_direction_key", None)
     rec = brief.get("recommendation", {})
 
     st.markdown("**Select meeting nature to determine the appropriate leadership level:**")
@@ -1293,6 +1307,7 @@ def _render_recommendation_mode(brief: dict):
 
 def _render_direction_mode(brief: dict):
     """Step 4 Option 2 — Direction Mode: minister has approved, assign stakeholder + talking points."""
+    st.session_state.pop("_last_delegate", None)
     sector   = brief.get("sectors", [{}])[0].get("title", "") if brief.get("sectors") else ""
     company  = brief.get("company", "")
     subject  = brief.get("subject", "")
@@ -1333,6 +1348,23 @@ def _render_direction_mode(brief: dict):
     if assigned:
         st.success(f"✅ Direction confirmed: **{assigned}** will host this meeting"
                    + (f" on **{meeting_date}**" if meeting_date else "") + ".")
+
+        # Rebuild docx with Direction Mode content whenever host or date changes
+        _s = st.session_state
+        _dir_key = f"{assigned}|{meeting_date}"
+        if _s.get("ev_brief") and _s.get("_last_direction_key") != _dir_key:
+            _s["_last_direction_key"] = _dir_key
+            _s["ev_docx"] = _build_docx(
+                _s["ev_brief"],
+                photo_bytes=_s.get("ev_photo_bytes"),
+                logo_bytes=_s.get("ev_logo_bytes"),
+                attendees=_s.get("ev_attendees", ""),
+                news=_s.get("ev_news", []),
+                contact_email=_s.get("ev_email", ""),
+                contact_phone=_s.get("ev_phone", ""),
+                meeting_mode="direction",
+                direction_host=assigned,
+            )
 
 
 # ─── Main render ───────────────────────────────────────────────────────────────
