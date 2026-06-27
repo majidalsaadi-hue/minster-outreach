@@ -1281,15 +1281,14 @@ def _render_direction_mode(brief: dict):
     subject  = brief.get("subject", "")
     dps      = brief.get("discussionPoints", [])
 
-    st.markdown("**The Minister has approved this meeting. Proceed directly with the assigned stakeholder.**")
+    st.markdown("**H.E. Minister Fahad Al-Saif has approved this meeting and will attend directly.**")
 
     a1, a2 = st.columns(2)
     with a1:
         assigned = st.text_input(
-            "Assigned Stakeholder",
-            value=brief.get("recommendation", {}).get("delegateTo", ""),
+            "Meeting Host",
+            value="H.E. Fahad Al-Saif, Minister of Investment",
             key="ev_dir_stakeholder",
-            placeholder="e.g. HE Ibrahim / Dr. Arwa Alrawais",
         )
     with a2:
         meeting_date = st.text_input(
@@ -1315,8 +1314,8 @@ def _render_direction_mode(brief: dict):
             st.markdown(f"- {pt}")
 
     if assigned:
-        st.success(f"Direction confirmed: meeting proceeds with **{assigned}**"
-                   + (f" on {meeting_date}" if meeting_date else "") + ".")
+        st.success(f"✅ Direction confirmed: **{assigned}** will host this meeting"
+                   + (f" on **{meeting_date}**" if meeting_date else "") + ".")
 
 
 # ─── Main render ───────────────────────────────────────────────────────────────
