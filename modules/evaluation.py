@@ -1252,6 +1252,23 @@ def _render_recommendation_mode(brief: dict):
         """, unsafe_allow_html=True)
         st.caption(dg["desc"])
 
+        # Rebuild the docx with the selected delegate so the download button is up to date
+        _s = st.session_state
+        if _s.get("ev_brief") and _s.get("_last_delegate") != dg["name"]:
+            _s["_last_delegate"] = dg["name"]
+            _brief_upd = dict(_s["ev_brief"])
+            _brief_upd["recommendation"] = dict(_s["ev_brief"].get("recommendation", {}))
+            _brief_upd["recommendation"]["delegateTo"] = dg["name"]
+            _s["ev_docx"] = _build_docx(
+                _brief_upd,
+                photo_bytes=_s.get("ev_photo_bytes"),
+                logo_bytes=_s.get("ev_logo_bytes"),
+                attendees=_s.get("ev_attendees", ""),
+                news=_s.get("ev_news", []),
+                contact_email=_s.get("ev_email", ""),
+                contact_phone=_s.get("ev_phone", ""),
+            )
+
     with col_rat:
         if dg.get("minister_criteria"):
             criteria_rows = "".join(
@@ -1410,11 +1427,10 @@ def render():
             )
         with att_col:
             st.markdown("**Recommended Ministry Attendees** — will appear as a named box in the document")
-            s["ev_attendees"] = st.text_area(
+            st.text_area(
                 "One name per line",
-                value=s["ev_attendees"],
                 height=90,
-                key="ev_att",
+                key="ev_attendees",
                 label_visibility="collapsed",
                 placeholder="H.E. Fahad Al-Saif, Minister of Investment\nH.E. Ibrahim Al-Rashed, Asst. Minister\nDr. Khalid Al-Falih, Adviser\n…",
             )
