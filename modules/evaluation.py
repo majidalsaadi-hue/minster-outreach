@@ -283,7 +283,7 @@ Required JSON structure:
 
 Rules:
 - sectors: extract from any images/screenshots showing sector bullets; otherwise derive from company portfolio; include 4-6 sectors
-- recommendation.delegateTo: default "Assistant Minister H.E. Ibrahim Al-Rashed" unless visitor is CEO of Fortune 100 or top sovereign fund, then suggest "H.E. Minister Fahad Al-Saif" directly
+- recommendation.delegateTo: default "H.E. Assistant Minister Ibrahim Al-Mubarak" unless visitor is CEO of Fortune 100 or top sovereign fund, then suggest "H.E. Minister Fahad Al-Saif" directly
 - always map sectors to Vision 2030 pillars in strategicContext
 - revenue/employees/aum: if not in documents, estimate from company's known profile and mark as "est."
 - discussionPoints: exactly 4 points
@@ -1466,7 +1466,7 @@ def render():
                 height=90,
                 key="ev_attendees",
                 label_visibility="collapsed",
-                placeholder="H.E. Fahad Al-Saif, Minister of Investment\nH.E. Ibrahim Al-Rashed, Asst. Minister\nDr. Khalid Al-Falih, Adviser\n…",
+                placeholder="H.E. Fahad Al-Saif, Minister of Investment\nH.E. Ibrahim Al-Mubarak, Asst. Minister\nDr. Khalid Al-Falih, Adviser\n…",
             )
 
         st.markdown("---")
