@@ -432,14 +432,13 @@ def _merge_edits_back(dfs: dict, edited: pd.DataFrame, original: pd.DataFrame) -
             for c in check_cols:
                 if c in full.columns:
                     val = edit_row.get(c)
-                    if pd.api.types.is_datetime64_any_dtype(full[c]):
-                        try:
-                            s = str(val)[:10] if val is not None and str(val) not in ("NaT", "None", "nan", "") else None
-                            val = np.datetime64(s, "us") if s else pd.NaT
-                        except Exception:
-                            val = pd.NaT
-                    full.loc[mask, c] = val
-            full.loc[mask, "Last Updated"] = np.datetime64(datetime.now(), "us")
+                    if "datetime" in str(full[c].dtype):
+                        ts = pd.to_datetime(val, errors="coerce")
+                        full[c] = full[c].mask(mask, ts)
+                    else:
+                        full.loc[mask, c] = val
+            now_ts = pd.to_datetime(datetime.now())
+            full["Last Updated"] = full["Last Updated"].mask(mask, now_ts)
             n_changed += 1
 
     if n_changed:
