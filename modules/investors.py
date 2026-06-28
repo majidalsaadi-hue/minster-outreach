@@ -607,7 +607,7 @@ def _add_investor_form(dfs: dict, lang: str):
                 "Company Size (KSA)":         size_ksa,
                 "Est. Investment Value (SAR)": est_val if est_val > 0 else None,
                 "Next Meeting Date":           next_mtg,
-                "Last Updated":               date.today(),
+                "Last Updated":               pd.Timestamp.today().normalize(),
                 "Escalation Flag":            "None",
                 "Notes":                      notes,
             }

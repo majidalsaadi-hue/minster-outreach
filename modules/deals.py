@@ -192,7 +192,7 @@ def _import_actions_tab(dfs: dict, investors: pd.DataFrame, lang: str):
                 "Progress":           _coerce_progress(row.get("Progress")),
                 "Status":             str(row.get("Status", "Not Started") or "Not Started"),
                 "Remarks":            str(row.get("Remarks", "") or ""),
-                "Last Updated":       date.today(),
+                "Last Updated":       pd.Timestamp.today().normalize(),
             })
 
         dfs["Action Items"] = pd.concat(

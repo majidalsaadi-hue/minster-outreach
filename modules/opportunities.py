@@ -612,7 +612,7 @@ def _bulk_add_to_pipeline(approved: list[dict], dfs: dict):
             "Opportunity Source": f"Excel Import — {cand['source']}",
             "Confidence Level":   conf_map.get(cand["confidence"], "Medium"),
             "Est. Value (SAR)":   cand.get("est_val") or None,
-            "Last Updated":       date.today(),
+            "Last Updated":       pd.Timestamp.today().normalize(),
         })
 
     if new_rows:
@@ -851,7 +851,7 @@ def _add_form(dfs: dict, investors: pd.DataFrame, lang: str):
                 "Target Closure Date":target_d,
                 "Blockers":           blockers,
                 "Escalation Required":escalate,
-                "Last Updated":       date.today(),
+                "Last Updated":       pd.Timestamp.today().normalize(),
             }
             dfs["Opportunity Pipeline"] = pd.concat(
                 [opps, pd.DataFrame([new_row])], ignore_index=True

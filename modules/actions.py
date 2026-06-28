@@ -431,7 +431,7 @@ def _merge_edits_back(dfs: dict, edited: pd.DataFrame, original: pd.DataFrame) -
             for c in check_cols:
                 if c in full.columns:
                     full.loc[mask, c] = edit_row.get(c)
-            full.loc[mask, "Last Updated"] = date.today()
+            full.loc[mask, "Last Updated"] = pd.Timestamp.today().normalize()
             n_changed += 1
 
     if n_changed:
@@ -682,7 +682,7 @@ def _add_action_form(dfs: dict, investors: pd.DataFrame, lang: str):
                 "Status":             status,
                 "Escalation Flag":    escalation,
                 "Remarks":            remarks,
-                "Last Updated":       date.today(),
+                "Last Updated":       pd.Timestamp.today().normalize(),
             }
             dfs["Action Items"] = pd.concat(
                 [actions, pd.DataFrame([new_row])], ignore_index=True

@@ -245,7 +245,7 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
                 "Opportunity Status": "Active",
                 "Opportunity Type":   "Opportunity",
                 "Opportunity Source": "Excel Tracker Import",
-                "Last Updated":       date.today(),
+                "Last Updated":       pd.Timestamp.today().normalize(),
             })
             opp_id_counter += 1
 
