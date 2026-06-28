@@ -431,7 +431,10 @@ def _merge_edits_back(dfs: dict, edited: pd.DataFrame, original: pd.DataFrame) -
             mask = full["Action ID"] == act_id
             for c in check_cols:
                 if c in full.columns:
-                    full.loc[mask, c] = edit_row.get(c)
+                    val = edit_row.get(c)
+                    if pd.api.types.is_datetime64_any_dtype(full[c]) and val is not None:
+                        val = pd.to_datetime(val, errors="coerce")
+                    full.loc[mask, c] = val
             full.loc[mask, "Last Updated"] = np.datetime64(datetime.now())
             n_changed += 1
 
