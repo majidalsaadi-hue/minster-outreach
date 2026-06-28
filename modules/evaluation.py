@@ -1235,7 +1235,6 @@ def _get_selected_delegate_name() -> str:
 
 def _render_recommendation_mode(brief: dict):
     """Step 4 Option 1 — Recommendation Mode: suggest leadership level to delegate to."""
-    st.session_state.pop("_last_direction_key", None)
     rec = brief.get("recommendation", {})
 
     st.markdown("**Select meeting nature to determine the appropriate leadership level:**")
@@ -1268,9 +1267,9 @@ def _render_recommendation_mode(brief: dict):
 
         # Rebuild the docx with the selected delegate so the download button is up to date
         _s = st.session_state
-        _rec_key = f"{dg['name']}|{_s.get('ev_attendees','')}"
-        if _s.get("ev_brief") and _s.get("_last_delegate") != _rec_key:
-            _s["_last_delegate"] = _rec_key
+        _rec_key = f"rec|{dg['name']}|{_s.get('ev_attendees','')}"
+        if _s.get("ev_brief") and _s.get("_doc_key") != _rec_key:
+            _s["_doc_key"] = _rec_key
             _brief_upd = dict(_s["ev_brief"])
             _brief_upd["recommendation"] = dict(_s["ev_brief"].get("recommendation", {}))
             _brief_upd["recommendation"]["delegateTo"] = dg["name"]
@@ -1309,7 +1308,6 @@ def _render_recommendation_mode(brief: dict):
 
 def _render_direction_mode(brief: dict):
     """Step 4 Option 2 — Direction Mode: minister has approved, assign stakeholder + talking points."""
-    st.session_state.pop("_last_delegate", None)
     sector   = brief.get("sectors", [{}])[0].get("title", "") if brief.get("sectors") else ""
     company  = brief.get("company", "")
     subject  = brief.get("subject", "")
@@ -1351,11 +1349,11 @@ def _render_direction_mode(brief: dict):
         st.success(f"✅ Direction confirmed: **{assigned}** will host this meeting"
                    + (f" on **{meeting_date}**" if meeting_date else "") + ".")
 
-        # Rebuild docx with Direction Mode content whenever host or date changes
+        # Rebuild docx with Direction Mode content whenever host, date or attendees changes
         _s = st.session_state
-        _dir_key = f"{assigned}|{meeting_date}|{_s.get('ev_attendees','')}"
-        if _s.get("ev_brief") and _s.get("_last_direction_key") != _dir_key:
-            _s["_last_direction_key"] = _dir_key
+        _dir_key = f"dir|{assigned}|{meeting_date}|{_s.get('ev_attendees','')}"
+        if _s.get("ev_brief") and _s.get("_doc_key") != _dir_key:
+            _s["_doc_key"] = _dir_key
             _s["ev_docx"] = _build_docx(
                 _s["ev_brief"],
                 photo_bytes=_s.get("ev_photo_bytes"),
