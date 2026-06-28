@@ -3,6 +3,7 @@
 # Handles both the new enhanced schema and legacy per-investor sheets.
 
 import io
+import numpy as np
 import pandas as pd
 import streamlit as st
 from datetime import datetime, date
@@ -245,7 +246,7 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
                 "Opportunity Status": "Active",
                 "Opportunity Type":   "Opportunity",
                 "Opportunity Source": "Excel Tracker Import",
-                "Last Updated":       pd.Timestamp.today().normalize(),
+                "Last Updated":       np.datetime64(datetime.now()),
             })
             opp_id_counter += 1
 

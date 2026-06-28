@@ -4,6 +4,7 @@
 
 import io
 import re
+import numpy as np
 import pandas as pd
 import streamlit as st
 from datetime import date, datetime
@@ -1903,7 +1904,7 @@ def _sync_opps_to_crm(dfs: dict, opp_items: list, default_company: str):
             "Opportunity Status": "Active",
             "Opportunity Type":   "Opportunity",
             "Opportunity Source": "Excel Tracker Import",
-            "Last Updated":       pd.Timestamp.today().normalize(),
+            "Last Updated":       np.datetime64(datetime.now()),
         }
         new_rows.append(new_row)
         existing = pd.concat([existing, pd.DataFrame([new_row])], ignore_index=True)
@@ -1947,7 +1948,7 @@ def _sync_actions_to_crm(dfs: dict, actions: pd.DataFrame, company: str):
             "Status":             "Not Started",
             "Escalation Flag":    "None",
             "Remarks":            str(row.get("Remarks", "") or ""),
-            "Last Updated":       pd.Timestamp.today().normalize(),
+            "Last Updated":       np.datetime64(datetime.now()),
         })
         existing = pd.concat([existing, pd.DataFrame([new_rows[-1]])], ignore_index=True)
 

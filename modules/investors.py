@@ -7,9 +7,10 @@ import json
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+import numpy as np
 import pandas as pd
 import streamlit as st
-from datetime import date
+from datetime import date, datetime
 
 from config.settings import (
     SECTORS, COUNTRIES, JOURNEY_STAGES, ESCALATION_FLAGS,
@@ -607,7 +608,7 @@ def _add_investor_form(dfs: dict, lang: str):
                 "Company Size (KSA)":         size_ksa,
                 "Est. Investment Value (SAR)": est_val if est_val > 0 else None,
                 "Next Meeting Date":           next_mtg,
-                "Last Updated":               pd.Timestamp.today().normalize(),
+                "Last Updated":               np.datetime64(datetime.now()),
                 "Escalation Flag":            "None",
                 "Notes":                      notes,
             }

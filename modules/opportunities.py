@@ -3,10 +3,11 @@
 
 import hashlib
 import io as _io
+import numpy as np
 import pandas as pd
 import streamlit as st
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 
 from config.settings import (
     SECTORS, OPPORTUNITY_TYPES, OPPORTUNITY_SOURCES, OPPORTUNITY_STAGES,
@@ -612,7 +613,7 @@ def _bulk_add_to_pipeline(approved: list[dict], dfs: dict):
             "Opportunity Source": f"Excel Import — {cand['source']}",
             "Confidence Level":   conf_map.get(cand["confidence"], "Medium"),
             "Est. Value (SAR)":   cand.get("est_val") or None,
-            "Last Updated":       pd.Timestamp.today().normalize(),
+            "Last Updated":       np.datetime64(datetime.now()),
         })
 
     if new_rows:
@@ -851,7 +852,7 @@ def _add_form(dfs: dict, investors: pd.DataFrame, lang: str):
                 "Target Closure Date":target_d,
                 "Blockers":           blockers,
                 "Escalation Required":escalate,
-                "Last Updated":       pd.Timestamp.today().normalize(),
+                "Last Updated":       np.datetime64(datetime.now()),
             }
             dfs["Opportunity Pipeline"] = pd.concat(
                 [opps, pd.DataFrame([new_row])], ignore_index=True

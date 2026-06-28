@@ -2,9 +2,10 @@
 # Action Items — editable tracker with priority briefing and Action Tracker export.
 
 import io
+import numpy as np
 import pandas as pd
 import streamlit as st
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
@@ -431,7 +432,7 @@ def _merge_edits_back(dfs: dict, edited: pd.DataFrame, original: pd.DataFrame) -
             for c in check_cols:
                 if c in full.columns:
                     full.loc[mask, c] = edit_row.get(c)
-            full.loc[mask, "Last Updated"] = pd.Timestamp.today().normalize()
+            full.loc[mask, "Last Updated"] = np.datetime64(datetime.now())
             n_changed += 1
 
     if n_changed:
@@ -682,7 +683,7 @@ def _add_action_form(dfs: dict, investors: pd.DataFrame, lang: str):
                 "Status":             status,
                 "Escalation Flag":    escalation,
                 "Remarks":            remarks,
-                "Last Updated":       pd.Timestamp.today().normalize(),
+                "Last Updated":       np.datetime64(datetime.now()),
             }
             dfs["Action Items"] = pd.concat(
                 [actions, pd.DataFrame([new_row])], ignore_index=True

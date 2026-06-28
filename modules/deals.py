@@ -2,10 +2,11 @@
 # Deal Progress — track active deals, challenges, and escalations.
 
 import io
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from datetime import date
+from datetime import date, datetime
 
 import openpyxl
 
@@ -192,7 +193,7 @@ def _import_actions_tab(dfs: dict, investors: pd.DataFrame, lang: str):
                 "Progress":           _coerce_progress(row.get("Progress")),
                 "Status":             str(row.get("Status", "Not Started") or "Not Started"),
                 "Remarks":            str(row.get("Remarks", "") or ""),
-                "Last Updated":       pd.Timestamp.today().normalize(),
+                "Last Updated":       np.datetime64(datetime.now()),
             })
 
         dfs["Action Items"] = pd.concat(
