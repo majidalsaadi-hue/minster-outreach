@@ -151,16 +151,17 @@ def render_action_advisor(dfs: dict, lang: str):
                 update_txt = " · ".join(parts)
             days_late = (today - d).days
             if days_late > 0:
+                late_label = f"{days_late}d overdue" if days_late <= 60 else f"{days_late // 30}mo overdue"
                 items.append({
                     "score":    120 + days_late * 3,
                     "urgency":  "critical",
-                    "tag":      f"DUE {d.strftime('%d %b').upper()}",
-                    "tag_color":"#D97706",
+                    "tag":      f"OVERDUE · {late_label.upper()}",
+                    "tag_color":"#C0392B",
                     "company":  company,
                     "action":   desc or "Complete pending action",
-                    "detail":   f"Due {d.strftime('%d %b %Y')} · {owner}",
+                    "detail":   f"Was due {d.strftime('%d %b %Y')} · {owner}",
                     "update":   update_txt,
-                    "icon":     "🟠",
+                    "icon":     "🔴",
                 })
             elif (d - today).days == 0:
                 items.append({
@@ -1196,7 +1197,7 @@ def _compute_alerts(actions, investors, meetings, today):
             d = _safe_date(due_dates.iloc[idx] if idx < len(due_dates) else None)
             label = f"{row.get('Company Name','?')} — {str(row.get('Action Description',''))[:50]}"
             if d and d < today:
-                overdue.append(f"🔴 {label} (due {d})")
+                overdue.append(f"🔴 {label} (was due {d.strftime('%d %b %Y')})")
             elif d and d <= today + timedelta(days=DUE_SOON_DAYS):
                 due_soon.append(f"🟡 {label} (due {d})")
 
