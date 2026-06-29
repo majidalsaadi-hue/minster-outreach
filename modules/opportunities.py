@@ -72,6 +72,21 @@ def render(dfs: dict, lang: str):
     investors = dfs.get("Investor Master",      pd.DataFrame())
     actions   = dfs.get("Action Items",         pd.DataFrame())
 
+    # Fallback: synthesise from action items when the pipeline is empty
+    if opps.empty and not actions.empty and "Type of Engagement" in actions.columns:
+        opp_acts = actions[
+            actions["Type of Engagement"].str.strip().str.lower() == "opportunity"
+        ].copy()
+        if not opp_acts.empty:
+            opp_acts = opp_acts.rename(columns={"Action Description": "Opportunity Name"})
+            opp_acts["Opportunity Status"] = "Active"
+            opp_acts["Opportunity Stage"]  = "Exploration"
+            opp_acts["Confidence Level"]   = "Suggested"
+            if "Opportunity ID" not in opp_acts.columns:
+                opp_acts.insert(0, "Opportunity ID",
+                                [f"ACT-{i+1:03d}" for i in range(len(opp_acts))])
+            opps = opp_acts
+
     st.markdown(
         f"<h2 style='color:{_GREEN};margin-bottom:2px;'>Opportunity Pipeline</h2>"
         f"<p style='color:#6b7280;font-size:13px;margin-top:0;'>"
