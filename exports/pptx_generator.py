@@ -1025,7 +1025,7 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
                       Inches(0.3), Inches(2.5), Inches(12.73), Inches(0.5),
                       font_size=13, color=MGRAY, align=PP_ALIGN.CENTER)
 
-    elif use_act_cards:
+    elif False:  # legacy act_cards path — kept for structure
         # ── Action items rendered as engagement cards ──────────────────────────
         _ACT_DOT = {
             "Completed":   MISA_GREEN, "Inprogress":  MISA_GOLD,
