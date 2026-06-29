@@ -47,6 +47,8 @@ _OPP_PRIORITY_MAP = {
     "منخفضة":     "Low",
 }
 
+_OPP_PRIORITY_REVERSE = {v: k for k, v in _OPP_PRIORITY_MAP.items()}
+
 _COL_MAP = {
     0:  "Seq",
     1:  "Company Name",
@@ -79,7 +81,7 @@ _COL_MAP = {
     28: "Previous Minister Meeting",
 }
 
-_ARABIC_HEADERS = [
+_ARABIC_COL_HEADERS = [
     "#", "اسم الشركة", "القطاع", "الدولة/المدينة", "الحجم",
     "نوع التصنيف", "م١", "م٢", "م٣", "م٤", "م٥", "م٦",
     "الدرجة الكلية ٪", "الأولوية", "القناة المقترحة", "مسار العمل",
@@ -88,6 +90,9 @@ _ARABIC_HEADERS = [
     "الفرصة الاستثمارية", "الخطوة التالية", "ملاحظات التقييم",
     "مستوى النضوج L0→L5", "وصف النضوج والملاحظة",
     "أولوية الفرصة", "اجتماع سابق مع معاليه",
+    # Workflow tracking added by CRM
+    "هل عرض AM؟", "تاريخ العرض",
+    "اجتماع مع معاليه (CRM)", "تاريخ الاجتماع",
 ]
 
 _OUTPUT_COLS = [
@@ -181,11 +186,14 @@ def export_outreach_excel(dfs: dict) -> bytes:
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
 
-    for company_type, sheet_title in [("Foreign", "Foreign Companies"), ("Local", "Local Companies")]:
+    for company_type, sheet_name in [
+        ("Foreign", "الشركات الأجنبية"),
+        ("Local",   "الشركات المحلية"),
+    ]:
         subset = df[df["Company Type"] == company_type].reset_index(drop=True) \
                  if not df.empty and "Company Type" in df.columns else pd.DataFrame()
-        ws = wb.create_sheet(sheet_title)
-        _write_outreach_sheet(ws, subset)
+        ws = wb.create_sheet(sheet_name)
+        _write_outreach_sheet(ws, subset, company_type)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -241,9 +249,12 @@ def render(dfs: dict, lang: str):
         )
 
     if sync_clicked and not tracker.empty:
-        n_inv, n_opp = _sync_to_crm(dfs)
+        n_inv, n_opp, n_act = _sync_to_crm(dfs)
         save_session(dfs)
-        st.success(f"✅ Sync complete — {n_inv} investor records updated, {n_opp} opportunities created.")
+        st.success(
+            f"✅ Sync complete — {n_inv} investor records updated, "
+            f"{n_opp} opportunities created, {n_act} action items added from Next Steps."
+        )
 
     if tracker.empty:
         _render_import_prompt()
@@ -556,92 +567,123 @@ def _merge_edits_back(dfs: dict, edited: pd.DataFrame, original: pd.DataFrame,
 def _sync_to_crm(dfs: dict):
     tracker = dfs.get("Outreach Tracker", pd.DataFrame())
     if tracker.empty:
-        return 0, 0
+        return 0, 0, 0
 
-    investors = dfs.get("Investor Master", pd.DataFrame()).copy()
+    investors = dfs.get("Investor Master",      pd.DataFrame()).copy()
     opps      = dfs.get("Opportunity Pipeline", pd.DataFrame()).copy()
+    actions   = dfs.get("Action Items",         pd.DataFrame()).copy()
 
-    n_inv_updated = 0
-    n_opp_created = 0
+    n_inv = n_opp = n_act = 0
 
     for _, row in tracker.iterrows():
         company = str(row.get("Company Name", "")).strip()
         if not company:
             continue
 
-        am      = str(row.get("AM",             "") or "")
-        rm      = str(row.get("RM",             "") or "")
-        phone   = str(row.get("Phone",          "") or "")
-        email   = str(row.get("Email",          "") or "")
-        contact = str(row.get("Company Contact","") or "")
-        opp_text= str(row.get("Investment Opportunity","") or "").strip()
+        am      = str(row.get("AM",              "") or "").strip()
+        rm      = str(row.get("RM",              "") or "").strip()
+        phone   = str(row.get("Phone",           "") or "").strip()
+        email   = str(row.get("Email",           "") or "").strip()
+        contact = str(row.get("Company Contact", "") or "").strip()
+        sector  = str(row.get("Sector",          "") or "").strip()
+        country = str(row.get("Country",         "") or "").strip()
+        size    = str(row.get("Company Size",    "") or "").strip()
+        opp_text  = str(row.get("Investment Opportunity", "") or "").strip()
+        next_step = str(row.get("Next Step",              "") or "").strip()
+        mat_level = str(row.get("Maturity Level",         "") or "").strip()
+        opp_pri   = str(row.get("Opportunity Priority",   "") or "").strip()
 
+        # ── Investor Master ──────────────────────────────────────────────────
         if not investors.empty and "Company Name" in investors.columns:
-            match_mask = investors["Company Name"] == company
-            if match_mask.any():
-                if am:
-                    investors.loc[match_mask, "Account Manager"]     = am
-                if rm:
-                    investors.loc[match_mask, "Relationship Manager"]= rm
-                if phone:
-                    investors.loc[match_mask, "Rep Phone"]           = phone
-                if email:
-                    investors.loc[match_mask, "Rep Email"]           = email
-                if contact:
-                    investors.loc[match_mask, "Company Rep"]         = contact
-                n_inv_updated += 1
+            mask = investors["Company Name"] == company
+            if mask.any():
+                # Only overwrite if the new value is non-empty (never blank-out existing data)
+                if am:      investors.loc[mask, "Account Manager"]       = am
+                if rm:      investors.loc[mask, "Relationship Manager"]  = rm
+                if phone:   investors.loc[mask, "Rep Phone"]             = phone
+                if email:   investors.loc[mask, "Rep Email"]             = email
+                if contact: investors.loc[mask, "Company Rep"]           = contact
+                if size:    investors.loc[mask, "Company Size (Global)"] = size
             else:
-                new_inv = {
+                investors = pd.concat([investors, pd.DataFrame([{
                     "Investor ID":         _next_id(investors, "Investor ID", "INV"),
                     "Company Name":        company,
-                    "Country":             str(row.get("Country", "") or ""),
-                    "Sector":              str(row.get("Sector",  "") or ""),
+                    "Country":             country,
+                    "Sector":             sector,
                     "Relationship Manager":rm,
                     "Account Manager":     am,
                     "Rep Phone":           phone,
                     "Rep Email":           email,
                     "Company Rep":         contact,
                     "Journey Stage":       "Qualification",
-                }
-                investors = pd.concat(
-                    [investors, pd.DataFrame([new_inv])], ignore_index=True
-                )
-                n_inv_updated += 1
+                    "Relationship Status": "Active",
+                    "Investor Tier":       "Tier 2 — High Potential",
+                }])], ignore_index=True)
+            n_inv += 1
         else:
             investors = pd.DataFrame([{
-                "Investor ID":         "INV-001",
-                "Company Name":        company,
-                "Country":             str(row.get("Country", "") or ""),
-                "Sector":              str(row.get("Sector",  "") or ""),
-                "Relationship Manager":rm,
-                "Account Manager":     am,
-                "Journey Stage":       "Qualification",
+                "Investor ID": _next_id(investors, "Investor ID", "INV"),
+                "Company Name": company, "Country": country, "Sector": sector,
+                "Relationship Manager": rm, "Account Manager": am,
+                "Journey Stage": "Qualification",
             }])
-            n_inv_updated += 1
+            n_inv += 1
 
+        # ── Opportunity Pipeline ──────────────────────────────────────────────
         if opp_text:
-            existing_opps = opps[opps["Company Name"] == company] \
-                            if not opps.empty and "Company Name" in opps.columns \
-                            else pd.DataFrame()
-            if existing_opps.empty:
-                new_opp = {
+            co_opps = opps[opps["Company Name"] == company] \
+                      if not opps.empty and "Company Name" in opps.columns else pd.DataFrame()
+            # Keep both if text differs; skip only if exact same text already exists
+            already = (
+                not co_opps.empty and "Opportunity Name" in co_opps.columns and
+                co_opps["Opportunity Name"].str.strip().str[:80].isin([opp_text[:80]]).any()
+            )
+            if not already:
+                opps = pd.concat([opps, pd.DataFrame([{
                     "Opportunity ID":     _next_id(opps, "Opportunity ID", "OPP"),
                     "Company Name":       company,
                     "Investor ID":        "",
-                    "Opportunity Name":   opp_text[:120],
-                    "Sector":             str(row.get("Sector", "") or ""),
-                    "Opportunity Stage":  _maturity_to_stage(str(row.get("Maturity Level", "") or "")),
+                    "Opportunity Name":   opp_text[:200],
+                    "Sector":             sector,
+                    "Opportunity Stage":  _maturity_to_stage(mat_level),
                     "Opportunity Status": "Active",
+                    "Notes":              f"L-Level: {mat_level} | Priority: {opp_pri}",
                     "Last Updated":       date.today().isoformat(),
-                }
-                opps = pd.concat(
-                    [opps, pd.DataFrame([new_opp])], ignore_index=True
-                )
-                n_opp_created += 1
+                }])], ignore_index=True)
+                n_opp += 1
+
+        # ── Action Items (from Next Step) ─────────────────────────────────────
+        if next_step:
+            co_acts = actions[actions["Company Name"] == company] \
+                      if not actions.empty and "Company Name" in actions.columns else pd.DataFrame()
+            already_act = (
+                not co_acts.empty and "Action Description" in co_acts.columns and
+                co_acts["Action Description"].str.strip().str[:80].isin([next_step[:80]]).any()
+            )
+            if not already_act:
+                actions = pd.concat([actions, pd.DataFrame([{
+                    "Action ID":          _next_id(actions, "Action ID", "ACT"),
+                    "Company Name":       company,
+                    "Investor ID":        "",
+                    "Action Description": next_step[:200],
+                    "Assigned To":        am or rm,
+                    "Type of Engagement": "Outreach",
+                    "Priority":           _opp_priority_to_action_priority(opp_pri),
+                    "Status":             "Not Started",
+                    "AM Input":           "",
+                    "Remarks":            f"From Outreach — {mat_level}",
+                    "Last Updated":       date.today().isoformat(),
+                }])], ignore_index=True)
+                n_act += 1
 
     dfs["Investor Master"]      = investors
     dfs["Opportunity Pipeline"] = opps
-    return n_inv_updated, n_opp_created
+    dfs["Action Items"]         = actions
+    return n_inv, n_opp, n_act
+
+
+def _opp_priority_to_action_priority(opp_pri: str) -> str:
+    return {"Very High": "High", "High": "High", "Medium": "Medium", "Low": "Low"}.get(opp_pri, "Medium")
 
 
 def _maturity_to_stage(level: str) -> str:
@@ -654,75 +696,233 @@ def _maturity_to_stage(level: str) -> str:
 
 # ── Excel export helpers ───────────────────────────────────────────────────────
 
-def _write_outreach_sheet(ws, df: pd.DataFrame):
+def _write_outreach_sheet(ws, df: pd.DataFrame, company_type: str = "Foreign"):
+    """Write one company sheet in the original Arabic tracker template format."""
+    N_COLS = len(_ARABIC_COL_HEADERS)
+    last_col = get_column_letter(N_COLS)
+
     green_fill  = PatternFill("solid", fgColor="1B5C3F")
     gold_fill   = PatternFill("solid", fgColor="C9974A")
+    yellow_fill = PatternFill("solid", fgColor="FFF9C4")
     alt_fill    = PatternFill("solid", fgColor="F0F7F4")
     white_fill  = PatternFill("solid", fgColor="FFFFFF")
     white_font  = Font(color="FFFFFF", bold=True, size=9)
     dark_font   = Font(size=9)
+    thin        = Side(style="thin")
+    gold_side   = Side(style="medium", color="C9974A")
+    border      = Border(left=thin, right=thin, top=thin, bottom=thin)
+    gold_border = Border(left=gold_side, right=gold_side, top=gold_side, bottom=gold_side)
     center_al   = Alignment(horizontal="center", vertical="center", wrap_text=True)
     left_al     = Alignment(horizontal="left",   vertical="center", wrap_text=True)
-    thin        = Side(style="thin")
-    border      = Border(left=thin, right=thin, top=thin, bottom=thin)
+    right_al    = Alignment(horizontal="right",  vertical="center", wrap_text=True)
+    today       = date.today()
 
-    header_cols = [
-        "Outreach ID", "Company Name", "Sector", "Country", "Company Size",
-        "Priority", "Total Score", "Maturity Level",
-        "RM", "AM", "Company Contact", "Phone", "Email",
-        "Investment Opportunity", "Next Step",
-        "Opportunity Priority", "Previous Minister Meeting",
-        "AM Presented", "AM Presented Date",
-        "Minister Engaged", "Minister Engaged Date",
+    # ── Row 1: Title ──────────────────────────────────────────────────────────
+    ws.merge_cells(f"A1:{last_col}1")
+    c = ws["A1"]
+    c.value     = ("جدول التقييم الموحّد — الشركات الأجنبية المستهدفة"
+                   if company_type == "Foreign"
+                   else "جدول التقييم الموحّد — الشركات المحلية المستهدفة")
+    c.fill      = green_fill
+    c.font      = Font(color="FFFFFF", bold=True, size=14)
+    c.alignment = center_al
+    ws.row_dimensions[1].height = 28
+
+    # ── Row 2: Subtitle ───────────────────────────────────────────────────────
+    ws.merge_cells(f"A2:{last_col}2")
+    c = ws["A2"]
+    c.value     = (f"الشركاء الاستراتيجيون والمستثمرون الكبار  |  "
+                   f"إعداد: مكتب التواصل التنفيذي  |  {today.strftime('%B %Y')}")
+    c.fill      = green_fill
+    c.font      = Font(color="FFFFFF", size=10)
+    c.alignment = center_al
+    ws.row_dimensions[2].height = 18
+
+    # ── Row 3: Empty ──────────────────────────────────────────────────────────
+    ws.row_dimensions[3].height = 6
+
+    # ── Row 4: Group headers ──────────────────────────────────────────────────
+    groups = [
+        (1,  6,  "معلومات الشركة"),
+        (7,  12, "معايير التقييم — الدرجة من ٥"),
+        (13, 17, "نتيجة التقييم"),
+        (18, 18, "مدير العلاقة\n(مكتب معاليه)"),
+        (19, 20, "جهات التواصل"),
+        (21, 22, "بيانات الاتصال"),
+        (23, 29, "الفرصة والمتابعة ونضوج الصفقة"),
+        (30, N_COLS, "متابعة التواصل (CRM)"),
     ]
+    for sc, ec, label in groups:
+        if sc < ec:
+            ws.merge_cells(start_row=4, start_column=sc, end_row=4, end_column=ec)
+        cell = ws.cell(row=4, column=sc, value=label)
+        cell.fill      = green_fill
+        cell.font      = Font(color="FFFFFF", bold=True, size=9)
+        cell.alignment = center_al
+    ws.row_dimensions[4].height = 26
 
-    for col_idx, col_name in enumerate(header_cols, start=1):
-        cell = ws.cell(row=1, column=col_idx, value=col_name)
+    # ── Row 5: Weight note ────────────────────────────────────────────────────
+    ws.merge_cells(f"A5:{last_col}5")
+    c = ws["A5"]
+    c.value     = "أوزان معايير التقييم:  م1=25%  |  م2=20%  |  م3=20%  |  م4=20%  |  م5=10%  |  م6=5%"
+    c.fill      = PatternFill("solid", fgColor="EAF4EE")
+    c.font      = Font(color="1B5C3F", size=9, italic=True)
+    c.alignment = center_al
+    ws.row_dimensions[5].height = 16
+
+    # ── Row 6: Column headers ─────────────────────────────────────────────────
+    for ci, hdr in enumerate(_ARABIC_COL_HEADERS, start=1):
+        cell           = ws.cell(row=6, column=ci, value=hdr)
         cell.fill      = green_fill
         cell.font      = white_font
         cell.alignment = center_al
         cell.border    = border
+    ws.row_dimensions[6].height = 36
 
-    ws.row_dimensions[1].height = 22
+    # ── Row 7: Warning note ───────────────────────────────────────────────────
+    ws.merge_cells(f"A7:{last_col}7")
+    c = ws["A7"]
+    c.value     = "⚠ العمود R (مدير العلاقة من مكتب معاليه) فارغ بإطار ذهبي — يُعبَّأ يدوياً"
+    c.fill      = yellow_fill
+    c.font      = Font(color="996600", size=9, italic=True)
+    c.alignment = right_al
+    ws.row_dimensions[7].height = 16
+
+    # ── Row 8: Empty ──────────────────────────────────────────────────────────
+    ws.row_dimensions[8].height = 6
 
     if df.empty:
+        _set_col_widths(ws)
+        ws.sheet_view.rightToLeft = True
         return
 
-    for row_idx, (_, row) in enumerate(df.iterrows(), start=2):
-        row_fill = alt_fill if row_idx % 2 == 0 else white_fill
+    # Sort by priority (A→B→C→D→other) then company name
+    _prio_order = {"A": 0, "B": 1, "C": 2, "D": 3}
+    df = df.copy()
+    df["_ps"] = df["Priority"].map(_prio_order).fillna(9)
+    df = df.sort_values(["_ps", "Company Name"]).drop(columns=["_ps"])
+
+    current_row     = 9
+    current_priority = None
+    seq             = 1
+
+    _section_labels = {
+        "A": "► المستوى A — أساسي",
+        "B": "► المستوى B — مهم",
+        "C": "► المستوى C — استكشافي",
+        "D": "► المستوى D — منخفض",
+    }
+    _pri_cell_fills = {
+        "A": PatternFill("solid", fgColor="D9EAD3"),
+        "B": PatternFill("solid", fgColor="FCE5CD"),
+        "C": PatternFill("solid", fgColor="CFE2F3"),
+        "D": PatternFill("solid", fgColor="F4CCCC"),
+    }
+
+    for _, row in df.iterrows():
+        pri = str(row.get("Priority", "") or "").strip()
+
+        if pri != current_priority:
+            ws.merge_cells(f"A{current_row}:{last_col}{current_row}")
+            sec           = ws[f"A{current_row}"]
+            sec.value     = _section_labels.get(pri, f"► المستوى {pri}")
+            sec.fill      = PatternFill("solid", fgColor="D9EAD3")
+            sec.font      = Font(color="1B5C3F", bold=True, size=10)
+            sec.alignment = right_al
+            ws.row_dimensions[current_row].height = 18
+            current_priority = pri
+            current_row += 1
+
+        opp_pri_ar = _OPP_PRIORITY_REVERSE.get(
+            str(row.get("Opportunity Priority", "") or ""),
+            str(row.get("Opportunity Priority", "") or "")
+        )
         mat_level = str(row.get("Maturity Level", "") or "").strip()
+        rm_val    = str(row.get("RM", "") or "").strip()
 
-        for col_idx, col_name in enumerate(header_cols, start=1):
-            val = row.get(col_name, "")
-            if val in (None, "nan", "NaT"):
-                val = ""
-            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+        values = [
+            seq,
+            str(row.get("Company Name",          "") or ""),
+            str(row.get("Sector",                 "") or ""),
+            str(row.get("Country",                "") or ""),
+            str(row.get("Company Size",           "") or ""),
+            str(row.get("Classification",         "") or ""),
+            str(row.get("Score M1",               "") or ""),
+            str(row.get("Score M2",               "") or ""),
+            str(row.get("Score M3",               "") or ""),
+            str(row.get("Score M4",               "") or ""),
+            str(row.get("Score M5",               "") or ""),
+            str(row.get("Score M6",               "") or ""),
+            str(row.get("Total Score",            "") or ""),
+            pri,
+            str(row.get("Proposed Channel",       "") or ""),
+            str(row.get("Work Track",             "") or ""),
+            str(row.get("Batch",                  "") or ""),
+            rm_val,
+            str(row.get("AM",                     "") or ""),
+            str(row.get("Company Contact",        "") or ""),
+            str(row.get("Phone",                  "") or ""),
+            str(row.get("Email",                  "") or ""),
+            str(row.get("Investment Opportunity", "") or ""),
+            str(row.get("Next Step",              "") or ""),
+            str(row.get("Assessment Notes",       "") or ""),
+            mat_level,
+            str(row.get("Maturity Description",   "") or ""),
+            opp_pri_ar,
+            str(row.get("Previous Minister Meeting", "") or ""),
+            str(row.get("AM Presented",           "No") or "No"),
+            str(row.get("AM Presented Date",      "") or ""),
+            str(row.get("Minister Engaged",       "No") or "No"),
+            str(row.get("Minister Engaged Date",  "") or ""),
+        ]
+
+        row_fill = alt_fill if seq % 2 == 0 else white_fill
+
+        for ci, val in enumerate(values, start=1):
+            cell           = ws.cell(row=current_row, column=ci, value=val)
             cell.font      = dark_font
-            cell.alignment = center_al if col_idx <= 2 else left_al
             cell.border    = border
+            cell.alignment = center_al if ci in (1, 7, 8, 9, 10, 11, 12, 13, 14) else left_al
 
-            if col_name == "Maturity Level" and mat_level in _MATURITY_COLORS:
-                hex_color = _MATURITY_COLORS[mat_level].lstrip("#")
-                cell.fill = PatternFill("solid", fgColor=hex_color)
-                cell.font = Font(color="FFFFFF", bold=True, size=9)
-            elif col_name == "Priority":
-                pri = str(val).strip()
-                hex_c = {"A": "DC2626", "B": "D97706", "C": "1D4ED8"}.get(pri)
-                if hex_c:
-                    cell.fill = PatternFill("solid", fgColor=hex_c)
+            if ci == 14:                             # Priority
+                cell.fill = _pri_cell_fills.get(pri, row_fill)
+            elif ci == 26:                           # Maturity Level
+                if mat_level in _MATURITY_COLORS:
+                    cell.fill = PatternFill("solid", fgColor=_MATURITY_COLORS[mat_level].lstrip("#"))
                     cell.font = Font(color="FFFFFF", bold=True, size=9)
+                    cell.alignment = center_al
                 else:
                     cell.fill = row_fill
+            elif ci == 18:                           # RM — gold border when empty
+                cell.fill   = (yellow_fill if not rm_val else row_fill)
+                cell.border = (gold_border if not rm_val else border)
+            elif ci >= 30:                           # Workflow tracking cols
+                cell.fill      = PatternFill("solid", fgColor="EAF4EE")
+                cell.alignment = center_al
             else:
                 cell.fill = row_fill
 
-        ws.row_dimensions[row_idx].height = 18
+        ws.row_dimensions[current_row].height = 45
+        current_row += 1
+        seq += 1
 
-    col_widths = [10, 30, 18, 14, 12, 7, 10, 10, 16, 16, 20, 16, 24, 36, 26, 14, 22, 12, 16, 12, 16]
-    for i, w in enumerate(col_widths, start=1):
+    _set_col_widths(ws)
+    ws.sheet_view.rightToLeft = True
+    ws.freeze_panes = "C9"
+
+
+def _set_col_widths(ws):
+    widths = [
+        5, 28, 18, 16, 14, 16,          # #, Company, Sector, Country, Size, Classification
+        5, 5, 5, 5, 5, 5,               # M1-M6
+        9, 7, 16, 14, 12,               # Score, Priority, Channel, Track, Batch
+        18, 16, 20, 16, 24,             # RM, AM, Contact, Phone, Email
+        36, 26, 24,                     # Opportunity, Next Step, Notes
+        10, 22, 14, 22,                 # Maturity Level, Description, Opp Priority, Min Meeting
+        12, 14, 14, 14,                 # Workflow: AM Presented, Date, Min Engaged, Date
+    ]
+    for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
-
-    ws.freeze_panes = "C2"
 
 
 # ── Import prompt ──────────────────────────────────────────────────────────────

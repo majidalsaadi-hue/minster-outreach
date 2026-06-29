@@ -240,11 +240,59 @@ def render_sidebar():
 
 
 def _handle_upload(uploaded_file):
+    import io as _io
+
+    raw_bytes = uploaded_file.read()
+
+    try:
+        xl_peek   = pd.ExcelFile(_io.BytesIO(raw_bytes))
+        sheet_names = xl_peek.sheet_names
+    except Exception as e:
+        st.error(f"Cannot read Excel file: {e}")
+        return
+
+    _OUTREACH_SHEETS = {"الشركات الأجنبية", "الشركات المحلية"}
+    _CRM_SHEETS      = {"Investor Master", "Action Items", "Opportunity Pipeline"}
+    has_outreach = bool(_OUTREACH_SHEETS & set(sheet_names))
+    has_crm      = bool(_CRM_SHEETS & set(sheet_names))
+
+    # ── Pure outreach Excel (Arabic sheets only) ──────────────────────────
+    if has_outreach and not has_crm:
+        from modules.outreach import load_outreach_excel, _merge_outreach
+        outreach_df = load_outreach_excel(_io.BytesIO(raw_bytes))
+        if outreach_df is None or outreach_df.empty:
+            st.warning("No company data found in the Outreach Excel.")
+            return
+        if st.session_state["dfs"] is None:
+            st.session_state["dfs"] = {}
+        existing = st.session_state["dfs"].get("Outreach Tracker", pd.DataFrame())
+        merged   = _merge_outreach(existing, outreach_df) if not existing.empty else outreach_df
+        st.session_state["dfs"]["Outreach Tracker"] = merged
+        st.session_state["summary"]          = get_summary(st.session_state["dfs"])
+        st.session_state["last_upload_name"] = uploaded_file.name
+        st.session_state["last_upload_time"] = date.today().strftime("%d %b %Y")
+        save_session(st.session_state["dfs"])
+        n_f = len(merged[merged["Company Type"] == "Foreign"]) if "Company Type" in merged.columns else 0
+        n_l = len(merged[merged["Company Type"] == "Local"])   if "Company Type" in merged.columns else 0
+        st.success(f"✅ Outreach Excel loaded: **{len(merged)} companies** ({n_f} foreign, {n_l} local)")
+        return
+
+    # ── Standard CRM Excel (may also contain outreach sheets) ────────────
     with st.spinner(T("loading")):
-        dfs = load_excel(uploaded_file)
+        dfs = load_excel(_io.BytesIO(raw_bytes))
     if dfs is None:
         st.error(T("error_upload"))
         return
+
+    if has_outreach:
+        try:
+            from modules.outreach import load_outreach_excel, _merge_outreach
+            outreach_df = load_outreach_excel(_io.BytesIO(raw_bytes))
+            if outreach_df is not None and not outreach_df.empty:
+                existing = dfs.get("Outreach Tracker", pd.DataFrame())
+                dfs["Outreach Tracker"] = _merge_outreach(existing, outreach_df) if not existing.empty else outreach_df
+        except Exception:
+            pass
 
     warnings = validate_schema(dfs)
     if warnings:
