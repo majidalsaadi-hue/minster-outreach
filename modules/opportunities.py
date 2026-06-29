@@ -320,6 +320,31 @@ def _render_excel_import(dfs: dict, lang: str):
                 st.error(f"Failed to parse file: {e}")
                 return
 
+        # Also load full Action Items from the tracker so the synthesis
+        # (and rest of the CRM) can see them without a separate main-upload.
+        try:
+            from modules.data_loader import load_excel
+            _full = load_excel(_io.BytesIO(file_bytes))
+            if _full:
+                _new_acts = _full.get("Action Items", pd.DataFrame())
+                if not _new_acts.empty:
+                    _existing = dfs.get("Action Items", pd.DataFrame())
+                    if _existing.empty:
+                        dfs["Action Items"] = _new_acts
+                    else:
+                        dfs["Action Items"] = pd.concat(
+                            [_existing, _new_acts], ignore_index=True
+                        ).drop_duplicates(
+                            subset=["Company Name", "Action Description"],
+                            keep="first"
+                        ) if "Action Description" in _existing.columns else pd.concat(
+                            [_existing, _new_acts], ignore_index=True
+                        )
+                    from modules.persistence import save_session
+                    save_session(dfs)
+        except Exception:
+            pass
+
         if not candidates:
             st.warning("No opportunity candidates found in this file. Check that sheets start with 'Action Items'.")
             return
