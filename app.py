@@ -40,6 +40,7 @@ from modules.dashboard     import (
     render_progress_chart,
 )
 from modules.investors     import render as render_investors
+from modules.outreach      import render as render_outreach
 from modules.meetings      import render as render_meetings
 from modules.opportunities import render as render_opportunities
 from modules.actions       import render as render_actions, render_action_summary_widget
@@ -134,6 +135,7 @@ def render_sidebar():
         # Navigation
         nav_options = {
             T("nav_dashboard"):         "dashboard",
+            T("nav_outreach"):          "outreach",
             T("nav_investors"):         "investors",
             T("nav_opportunities"):     "opportunities",
             T("nav_report_builder"):    "report_builder",
@@ -568,6 +570,9 @@ def main():
 
     if page == "dashboard":
         render_dashboard()
+
+    elif page == "outreach":
+        render_outreach(dfs, lang())
 
     elif page == "investors":
         if dfs is None:

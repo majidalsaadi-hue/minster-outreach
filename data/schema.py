@@ -107,6 +107,27 @@ SCHEMA = {
         },
     },
 
+    "Outreach Tracker": {
+        "required": ["Outreach ID", "Company Name", "Company Type"],
+        "optional": [
+            "Sector", "Country", "Company Size", "Classification",
+            "Score M1", "Score M2", "Score M3", "Score M4", "Score M5", "Score M6",
+            "Total Score", "Priority", "Proposed Channel", "Work Track", "Batch",
+            "RM", "AM", "Company Contact", "Phone", "Email",
+            "Investment Opportunity", "Next Step", "Assessment Notes",
+            "Maturity Level", "Maturity Description", "Opportunity Priority",
+            "Previous Minister Meeting",
+            "AM Presented", "AM Presented Date", "Minister Engaged", "Minister Engaged Date",
+            "Last Updated",
+        ],
+        "dtypes": {
+            "AM Presented Date":   "date",
+            "Minister Engaged Date": "date",
+            "Last Updated":        "date",
+            "Total Score":         "float",
+        },
+    },
+
     "Deal Progress": {
         "required": [
             "Deal ID", "Investor ID", "Company Name",

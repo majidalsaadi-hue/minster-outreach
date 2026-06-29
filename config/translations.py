@@ -44,6 +44,7 @@ TRANSLATIONS = {
 
     # ── Navigation ──────────────────────────────────────────────────────────────
     "nav_dashboard":     {"en": "Dashboard", "ar": "لوحة التحكم"},
+    "nav_outreach":      {"en": "Outreach", "ar": "التواصل الاستباقي"},
     "nav_investors":     {"en": "Investors", "ar": "المستثمرون"},
     "nav_meetings":      {"en": "Meetings", "ar": "الاجتماعات"},
     "nav_opportunities": {"en": "Opportunities", "ar": "الفرص الاستثمارية"},
