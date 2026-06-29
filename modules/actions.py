@@ -548,7 +548,7 @@ def _write_tracker_sheet(ws, company: str, inv_row, actions: pd.DataFrame,
         if i < len(co_opps):
             orow     = co_opps.iloc[i]
             opp_name = str(orow.get("Opportunity Name", "") or "")
-            opp_val  = orow.get("Est. Investment Value (SAR)", None)
+            opp_val  = orow.get("Est. Value (SAR)", None)
             nc = ws.cell(row=r, column=8, value=opp_name)
             nc.font = dark_font; nc.alignment = left_al
             if opp_val is not None and str(opp_val) not in ("", "nan"):

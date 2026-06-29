@@ -949,16 +949,26 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
                   font_size=11, color=GOLD, align=PP_ALIGN.RIGHT)
 
     # ── Resolve what to show as cards ─────────────────────────────────────────
-    # Only show formal opportunities — never action items as opportunity cards
-    use_act_cards = False
-    # Exclude entries literally named "Action Item" — those are not formal opportunities
+    # Primary: formal Opportunity Pipeline entries for this company.
+    # Fallback: action items tagged Type of Engagement = "Opportunity" when pipeline is empty.
     if not opps.empty and "Opportunity Name" in opps.columns:
         card_source = opps[~opps["Opportunity Name"].fillna("").str.strip().str.lower().eq("action item")]
+    elif not acts.empty and "Type of Engagement" in acts.columns and "Action Description" in acts.columns:
+        opp_acts = acts[acts["Type of Engagement"].str.strip().str.lower() == "opportunity"].copy()
+        if not opp_acts.empty:
+            opp_acts = opp_acts.rename(columns={"Action Description": "Opportunity Name"})
+            opp_acts["Opportunity Status"] = "Active"
+            opp_acts["Opportunity Stage"]  = "Exploration"
+            opp_acts["Confidence Level"]   = "Suggested"
+            card_source = opp_acts
+            opps        = opp_acts
+        else:
+            card_source = opps
     else:
         card_source = opps
-    n_cards = len(card_source)
-    n_active    = int((opps["Opportunity Status"] == "Active").sum())    if not opps.empty and "Opportunity Status" in opps.columns else 0
-    n_done      = int((opps["Opportunity Stage"]  == "Committed").sum()) if not opps.empty and "Opportunity Stage"  in opps.columns else 0
+    n_cards  = len(card_source)
+    n_active = int((opps["Opportunity Status"] == "Active").sum())    if not opps.empty and "Opportunity Status" in opps.columns else 0
+    n_done   = int((opps["Opportunity Stage"]  == "Committed").sum()) if not opps.empty and "Opportunity Stage"  in opps.columns else 0
     total_val   = _sum_col(opps, "Est. Value (SAR)")
 
     # ── KPI strip (4 cards across full width)
