@@ -186,7 +186,7 @@ def render(dfs: dict, lang: str):
     edit_cols = [c for c in [
         "⚠", "Action ID", "Company Name", "Action Description",
         "Assigned To", "Type of Engagement", "Priority",
-        "Status", "Progress", "Due Date", "Escalation Flag", "Remarks",
+        "Status", "Progress", "Due Date", "Escalation Flag", "Remarks", "AM Input",
     ] if c in display.columns]
 
     col_cfg = {
@@ -202,6 +202,7 @@ def render(dfs: dict, lang: str):
         "Escalation Flag":    st.column_config.SelectboxColumn("Escalation", options=ESCALATION_FLAGS),
         "Type of Engagement": st.column_config.SelectboxColumn("Type",    options=ENGAGEMENT_TYPES),
         "Remarks":            st.column_config.TextColumn("Remarks"),
+        "AM Input":           st.column_config.TextColumn("AM Input"),
     }
 
     st.markdown(
@@ -403,7 +404,7 @@ def _merge_edits_back(dfs: dict, edited: pd.DataFrame, original: pd.DataFrame) -
     """Merge changed rows from `edited` back into dfs['Action Items']. Returns count changed."""
     editable_cols = [
         "Action Description", "Assigned To", "Type of Engagement",
-        "Priority", "Status", "Progress", "Due Date", "Escalation Flag", "Remarks",
+        "Priority", "Status", "Progress", "Due Date", "Escalation Flag", "Remarks", "AM Input",
     ]
     check_cols = [c for c in editable_cols if c in edited.columns and c in original.columns]
     if not check_cols:
@@ -453,10 +454,11 @@ def _export_tracker_excel(dfs: dict) -> bytes:
     """
     Build an Excel workbook in the Action Tracker format:
     one 'Action Items [Company]' sheet per company,
-    header block matching the original file, data table at row 20.
+    header block matching the master template, data table at row 20.
     """
-    actions   = dfs.get("Action Items",    pd.DataFrame())
-    investors = dfs.get("Investor Master", pd.DataFrame())
+    actions   = dfs.get("Action Items",        pd.DataFrame())
+    investors = dfs.get("Investor Master",      pd.DataFrame())
+    opps      = dfs.get("Opportunity Pipeline", pd.DataFrame())
 
     wb = openpyxl.Workbook()
     if "Sheet" in wb.sheetnames:
@@ -467,7 +469,7 @@ def _export_tracker_excel(dfs: dict) -> bytes:
 
     if not companies:
         ws = wb.create_sheet("Action Items")
-        ws["G20"] = "No action items found"
+        ws["G19"] = "No action items found"
         buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
 
     for company in companies:
@@ -478,29 +480,31 @@ def _export_tracker_excel(dfs: dict) -> bytes:
         inv_row = investors[investors["Company Name"] == company].iloc[0] \
                   if not investors.empty and "Company Name" in investors.columns \
                   and company in investors["Company Name"].values else pd.Series()
-        _write_tracker_sheet(ws, company, inv_row, co_acts)
+        _write_tracker_sheet(ws, company, inv_row, co_acts, opps)
 
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
 
 
-def _write_tracker_sheet(ws, company: str, inv_row, actions: pd.DataFrame):
-    """Write one company sheet in the Action Tracker format."""
-    green_fill = PatternFill("solid", fgColor="1B5C3F")
-    gold_fill  = PatternFill("solid", fgColor="C9974A")
-    gray_fill  = PatternFill("solid", fgColor="D9D9D9")
-    white_font = Font(color="FFFFFF", bold=True, size=10)
-    gold_font  = Font(color="FFFFFF", bold=True, size=10)
-    dark_font  = Font(size=10)
-    bold_font  = Font(bold=True, size=10)
-    center_al  = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    left_al    = Alignment(horizontal="left",   vertical="center", wrap_text=True)
-    thin       = Side(style="thin")
-    border     = Border(left=thin, right=thin, top=thin, bottom=thin)
-    today      = date.today()
+def _write_tracker_sheet(ws, company: str, inv_row, actions: pd.DataFrame,
+                         opps: pd.DataFrame = None):
+    """Write one company sheet matching the master ActionTracker template."""
+    green_fill  = PatternFill("solid", fgColor="1B5C3F")
+    gold_fill   = PatternFill("solid", fgColor="C9974A")
+    white_font  = Font(color="FFFFFF", bold=True, size=10)
+    gold_font   = Font(color="FFFFFF", size=10)
+    dark_font   = Font(size=10)
+    bold_font   = Font(bold=True, size=10)
+    center_al   = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    left_al     = Alignment(horizontal="left",   vertical="center", wrap_text=True)
+    thin        = Side(style="thin")
+    border      = Border(left=thin, right=thin, top=thin, bottom=thin)
+    today       = date.today()
 
-    # ── Company name banner (row 10, col G-P merged) ──────────────────────────
+    inv = inv_row if (hasattr(inv_row, "empty") and not inv_row.empty) else pd.Series()
+
+    # ── Company name banner (row 10, G-P merged) ──────────────────────────────
     ws.merge_cells("G10:P10")
     c = ws["G10"]
     c.value     = company.upper()
@@ -509,73 +513,87 @@ def _write_tracker_sheet(ws, company: str, inv_row, actions: pd.DataFrame):
     c.alignment = center_al
     ws.row_dimensions[10].height = 30
 
-    # ── Header block (rows 12-17) ─────────────────────────────────────────────
-    # Left block: Outreach / AM / RM (cols K-L, openpyxl 11-12)
-    am  = str(inv_row.get("Account Manager",      "") or "") if not inv_row.empty else ""
-    rm  = str(inv_row.get("Relationship Manager", "") or "") if not inv_row.empty else ""
+    # ── Company card rows 12-16 ───────────────────────────────────────────────
+    am  = str(inv.get("Account Manager",      "") or "")
+    rm  = str(inv.get("Relationship Manager", "") or "")
+    out = str(inv.get("Outreach Manager",     "") or "") or "Majed Alsaadi"
 
-    labels_left = {
-        12: ("Outreach", ""),
-        13: ("Outreach", "Majed Alsaadi"),   # Outreach manager default
-        14: ("AM",       am),
-        15: ("RM",       rm),
-    }
-    for r, (lbl, val) in labels_left.items():
-        lc = ws.cell(row=r, column=11, value=lbl)
-        lc.fill = green_fill; lc.font = white_font; lc.alignment = center_al
-        vc = ws.cell(row=r, column=12, value=val)
-        vc.font = bold_font; vc.alignment = left_al
-        ws.row_dimensions[r].height = 18
-
-    # Right block: type / Rep / Position / Email / Last Updated / Next Meeting
-    # (cols O-P, openpyxl 15-16)
-    rep_name  = str(inv_row.get("Key Contact Name",  "") or "") if not inv_row.empty else ""
-    rep_title = str(inv_row.get("Key Contact Title", "") or "") if not inv_row.empty else ""
+    rep_name  = str(inv.get("Company Rep",   "") or "")
+    rep_title = str(inv.get("Rep Position",  "") or "")
+    website   = str(inv.get("Website",       "") or "")
+    email     = str(inv.get("Rep Email",     "") or "")
+    phone     = str(inv.get("Rep Phone",     "") or "")
+    country   = str(inv.get("Country",       "") or "")
+    sector    = str(inv.get("Sector",        "") or "")
+    inv_type  = str(inv.get("Investor Tier", "") or "Investor")
     last_upd  = today.strftime("%d %b %Y")
-    next_mtg  = str(inv_row.get("Next Meeting Date", "TBD") or "TBD") if not inv_row.empty else "TBD"
 
-    labels_right = {
-        12: ("type",           "Opp"),
-        13: ("Rep",            rep_name),
-        14: ("Postion",        rep_title),
-        15: ("Email",          ""),
-        16: ("¦ Last Updated", last_upd),
-        17: ("¹ Next Meeting", next_mtg),
-    }
-    for r, (lbl, val) in labels_right.items():
-        lc = ws.cell(row=r, column=15, value=lbl)
-        lc.fill = green_fill; lc.font = white_font; lc.alignment = center_al
-        vc = ws.cell(row=r, column=16, value=val)
-        vc.fill = gold_fill; vc.font = gold_font; vc.alignment = center_al
+    for r in range(12, 17):
         ws.row_dimensions[r].height = 18
 
-    # Opportunity names from pipeline (col H rows 13-18)
-    opps_pipeline = []  # We'll fill this if called with dfs context; skip here
-    for r_offset, opp_name in enumerate(opps_pipeline[:6]):
-        ws.cell(row=13 + r_offset, column=8, value=opp_name)
+    # Left block: Outreach / AM / RM (cols K-L = 11-12)
+    left_items = [("Outreach", out), ("AM", am), ("RM", rm), ("", ""), ("", "")]
+    for i, (lbl, val) in enumerate(left_items):
+        lc = ws.cell(row=12 + i, column=11, value=lbl)
+        lc.fill = green_fill; lc.font = white_font; lc.alignment = center_al
+        vc = ws.cell(row=12 + i, column=12, value=val)
+        vc.font = bold_font; vc.alignment = left_al
 
-    # ── Column headers at row 20 ──────────────────────────────────────────────
+    # Opportunity block: up to 5 opps (cols H-I = 8-9), rows 12-16
+    co_opps = pd.DataFrame()
+    if opps is not None and not opps.empty and "Company Name" in opps.columns:
+        co_opps = opps[opps["Company Name"] == company]
+    for i in range(5):
+        r = 12 + i
+        if i < len(co_opps):
+            orow     = co_opps.iloc[i]
+            opp_name = str(orow.get("Opportunity Name", "") or "")
+            opp_val  = orow.get("Est. Investment Value (SAR)", None)
+            nc = ws.cell(row=r, column=8, value=opp_name)
+            nc.font = dark_font; nc.alignment = left_al
+            if opp_val is not None and str(opp_val) not in ("", "nan"):
+                vc2 = ws.cell(row=r, column=9, value=opp_val)
+                vc2.font = dark_font; vc2.alignment = center_al
+
+    # Right block 1: Type / Rep / Position / Website / Last Updated (cols M-N = 13-14)
+    right1 = [("Type", inv_type), ("Rep", rep_name), ("Position", rep_title),
+              ("Website", website), ("Last Updated", last_upd)]
+    for i, (lbl, val) in enumerate(right1):
+        lc = ws.cell(row=12 + i, column=13, value=lbl)
+        lc.fill = green_fill; lc.font = white_font; lc.alignment = center_al
+        vc = ws.cell(row=12 + i, column=14, value=val)
+        vc.fill = gold_fill; vc.font = gold_font; vc.alignment = left_al
+
+    # Right block 2: Company Name / Email / Phone / Country / Sector (cols O-P = 15-16)
+    right2 = [("Company Name", company), ("Email", email), ("Phone", phone),
+              ("Country", country), ("Sector", sector)]
+    for i, (lbl, val) in enumerate(right2):
+        lc = ws.cell(row=12 + i, column=15, value=lbl)
+        lc.fill = green_fill; lc.font = white_font; lc.alignment = center_al
+        vc = ws.cell(row=12 + i, column=16, value=val)
+        vc.fill = gold_fill; vc.font = gold_font; vc.alignment = left_al
+
+    # ── Column headers at row 19 ──────────────────────────────────────────────
     HEADERS = [
-        ("G", "ID"),  ("H", "Action Item"),  ("I", "Assigned to"),
-        ("J", "Type of Engagement"),  ("K", "Start Date"),  ("L", "Due Date"),
-        ("M", "Priority"),  ("N", "Progress"),  ("O", "Status"),  ("P", "Remarks"),
+        ("G", "ID"), ("H", "Action Item"), ("I", "Assigned to"),
+        ("J", "Type of Engagement"), ("K", "Start Date"), ("L", "Due Date"),
+        ("M", "Priority"), ("N", "Progress"), ("O", "Remarks"), ("P", "AM Input"),
     ]
     for col_letter, hdr_text in HEADERS:
-        cell = ws[f"{col_letter}20"]
+        cell = ws[f"{col_letter}19"]
         cell.value     = hdr_text
         cell.fill      = green_fill
         cell.font      = white_font
         cell.alignment = center_al
         cell.border    = border
-    ws.row_dimensions[20].height = 22
+    ws.row_dimensions[19].height = 22
 
-    # ── Data rows from row 21 ─────────────────────────────────────────────────
+    # ── Data rows from row 20 ─────────────────────────────────────────────────
     STATUS_FILLS_MAP = {
-        "Completed":   "E2EFDA", "In Progress":  "FFF2CC", "Inprogress": "FFF2CC",
-        "Not Started": "F2F2F2", "Blocked":      "FCE4D6", "Cancelled":  "EDEDED",
+        "Completed":   "E2EFDA", "In Progress": "FFF2CC", "Inprogress": "FFF2CC",
+        "Not Started": "F2F2F2", "Blocked":     "FCE4D6", "Cancelled":  "EDEDED",
     }
     if not actions.empty:
-        # Sort: pending by due first
         df = actions.copy()
         if "Due Date" in df.columns:
             df["_due"] = pd.to_datetime(df["Due Date"], errors="coerce")
@@ -584,9 +602,8 @@ def _write_tracker_sheet(ws, company: str, inv_row, actions: pd.DataFrame):
             df   = pd.concat([pend.sort_values("_due"), done], ignore_index=True).drop(columns=["_due"], errors="ignore")
 
         for seq, (_, row) in enumerate(df.iterrows(), start=1):
-            r       = 20 + seq
-            status  = str(row.get("Status", "Not Started") or "Not Started")
-            st_fill = PatternFill("solid", fgColor=STATUS_FILLS_MAP.get(status, "F2F2F2"))
+            r      = 19 + seq   # row 20, 21, …
+            status = str(row.get("Status", "Not Started") or "Not Started")
             due_raw = row.get("Due Date")
             due_val = None
             try:
@@ -595,12 +612,11 @@ def _write_tracker_sheet(ws, company: str, inv_row, actions: pd.DataFrame):
             except Exception:
                 pass
 
-            # Flag overdue
             is_overdue = due_val and due_val < today and status not in ("Completed", "Cancelled")
             row_fill   = PatternFill("solid", fgColor="FCE4D6") if is_overdue else \
                          PatternFill("solid", fgColor="FFFFFF" if seq % 2 == 0 else "F7F7F2")
 
-            prog_raw  = row.get("Progress", 0)
+            prog_raw = row.get("Progress", 0)
             try:
                 prog_pct = float(str(prog_raw).replace("%", "")) if prog_raw not in (None, "", "nan") else 0
                 if prog_pct > 1.0:
@@ -617,16 +633,16 @@ def _write_tracker_sheet(ws, company: str, inv_row, actions: pd.DataFrame):
                 "L": due_val,
                 "M": str(row.get("Priority", "") or ""),
                 "N": f"{int(prog_pct * 100)}%",
-                "O": status,
-                "P": str(row.get("Remarks", "") or ""),
+                "O": str(row.get("Remarks",  "") or ""),
+                "P": str(row.get("AM Input", "") or ""),
             }
             for col_letter, val in values.items():
                 cell = ws[f"{col_letter}{r}"]
                 cell.value     = val
-                cell.fill      = st_fill if col_letter == "O" else row_fill
+                cell.fill      = row_fill
                 cell.font      = dark_font
                 cell.border    = border
-                cell.alignment = center_al if col_letter in ("G", "M", "N", "O") else left_al
+                cell.alignment = center_al if col_letter in ("G", "M", "N") else left_al
             ws.row_dimensions[r].height = 40
 
     # ── Column widths ─────────────────────────────────────────────────────────
@@ -638,9 +654,9 @@ def _write_tracker_sheet(ws, company: str, inv_row, actions: pd.DataFrame):
     ws.column_dimensions["L"].width = 12
     ws.column_dimensions["M"].width = 11
     ws.column_dimensions["N"].width = 10
-    ws.column_dimensions["O"].width = 14
+    ws.column_dimensions["O"].width = 30
     ws.column_dimensions["P"].width = 30
-    ws.freeze_panes = "G21"
+    ws.freeze_panes = "G20"
 
 
 # ── Add action form ────────────────────────────────────────────────────────────
@@ -659,14 +675,14 @@ def _add_action_form(dfs: dict, investors: pd.DataFrame, lang: str):
         assigned  = c4.text_input(t("assigned_to", lang))
         c5, c6 = st.columns(2)
         priority  = c5.selectbox(t("priority", lang), ["High", "Medium", "Low"])
-        status    = c6.selectbox(t("status", lang), ACTION_STATUSES)
+        progress  = c6.selectbox(t("progress", lang), PROGRESS_OPTIONS)
         c7, c8 = st.columns(2)
         start_d   = c7.date_input(t("start_date", lang), value=date.today())
         due_d     = c8.date_input(t("due_date", lang), value=None)
         c9, c10 = st.columns(2)
         escalation = c9.selectbox(t("escalation_flag", lang), ESCALATION_FLAGS)
-        progress   = c10.selectbox(t("progress", lang), PROGRESS_OPTIONS)
-        remarks    = st.text_area(t("remarks", lang))
+        remarks    = c10.text_input(t("remarks", lang))
+        am_input   = st.text_area("AM Input")
 
         if st.form_submit_button(t("add_action", lang), use_container_width=True):
             if not company or not action:
@@ -686,9 +702,10 @@ def _add_action_form(dfs: dict, investors: pd.DataFrame, lang: str):
                 "Due Date":           due_d,
                 "Priority":           priority,
                 "Progress":           progress,
-                "Status":             status,
+                "Status":             "Not Started",
                 "Escalation Flag":    escalation,
                 "Remarks":            remarks,
+                "AM Input":           am_input,
                 "Last Updated":       np.datetime64(datetime.now()),
             }
             dfs["Action Items"] = pd.concat(

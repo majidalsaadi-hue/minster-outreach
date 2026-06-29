@@ -161,7 +161,9 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
     opp_rows      = []
     investor_counter = 1
     opp_id_counter   = 1
-    _OPP_SKIP = {"opportunity", "opportunities", "type", "n/a", "none", ""}
+    _OPP_SKIP = {"opportunity", "opportunities", "type", "n/a", "none", "",
+                 "action item", "id", "assigned to", "remarks", "am input",
+                 "priority", "progress", "start date", "due date", "type of engagement"}
 
     for sheet_name in sheet_names:
         if not any(sheet_name.startswith(p) for p in LEGACY_SHEET_PREFIXES):
