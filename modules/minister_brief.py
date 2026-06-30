@@ -96,7 +96,8 @@ def _css():
 # ── CRM pre-fill ──────────────────────────────────────────────────────────────
 def _prefill_from_crm(dfs: dict, company: str) -> tuple[dict, set]:
     data  = _empty()
-    found = set()
+    data["company_name"] = company   # always keep the typed name
+    found = {"company_name"}
     if not company:
         return data, found
 
