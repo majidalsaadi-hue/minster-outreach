@@ -572,19 +572,34 @@ def render(dfs: dict, lang: str):
     api_key = st.session_state["mb_api_key"]
 
     # ── Step 1: Company selection & CRM pre-fill ──────────────────────────────
-    st.markdown("### 1 — Select Company")
+    st.markdown("### 1 — Company Name")
     inv = dfs.get("Investor Master", pd.DataFrame())
     companies = sorted(inv["Company Name"].dropna().unique().tolist()) if not inv.empty and "Company Name" in inv.columns else []
 
-    col_sel, col_new = st.columns([3, 1])
-    with col_sel:
-        sel = st.selectbox("Select from CRM", ["— type or select —"] + companies,
-                           key="mb_company_sel", label_visibility="collapsed")
-    with col_new:
-        manual_co = st.text_input("Or type company name", key="mb_manual_co",
-                                  placeholder="New company…", label_visibility="collapsed")
+    company = st.text_input(
+        "Company name (type any name — select from suggestions if in CRM)",
+        value=st.session_state["mb_data"].get("company_name", ""),
+        placeholder="e.g. Barclays, CDJ Capital, Blackrock…",
+        key="mb_company_input",
+        label_visibility="collapsed",
+    )
 
-    company = manual_co.strip() if manual_co.strip() else (sel if sel != "— type or select —" else "")
+    # Show CRM matches as quick-pick chips
+    if company and companies:
+        matches = [c for c in companies if company.lower() in c.lower()][:5]
+        if matches and company not in matches:
+            st.markdown(
+                '<div style="font-size:11px;color:#6b7280;margin-bottom:4px;">CRM matches — click to use:</div>',
+                unsafe_allow_html=True,
+            )
+            chip_cols = st.columns(min(len(matches), 5))
+            for i, m in enumerate(matches):
+                if chip_cols[i].button(m, key=f"mb_chip_{i}"):
+                    st.session_state["mb_data"]["company_name"] = m
+                    data, found = _prefill_from_crm(dfs, m)
+                    st.session_state["mb_data"]  = data
+                    st.session_state["mb_found"] = found
+                    st.rerun()
 
     if company and company != st.session_state["mb_data"].get("company_name", ""):
         data, found = _prefill_from_crm(dfs, company)
@@ -596,7 +611,7 @@ def render(dfs: dict, lang: str):
     found = st.session_state["mb_found"]
 
     if not company:
-        st.info("Select or type a company name to begin.")
+        st.info("Type a company name above to begin. It does not need to be in the CRM.")
         return
 
     n_found   = sum(1 for k in _FIELD_KEYS if data.get(k))
