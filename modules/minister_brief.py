@@ -66,11 +66,12 @@ def _empty() -> dict:
 # ── Session state ─────────────────────────────────────────────────────────────
 def _init():
     defaults = {
-        "mb_api_key": "",
-        "mb_data":    _empty(),
-        "mb_found":   set(),
-        "mb_photo":   None,   # bytes
-        "mb_logo":    None,   # bytes
+        "mb_api_key":        "",
+        "mb_data":           _empty(),
+        "mb_found":          set(),
+        "mb_photo":          None,   # bytes
+        "mb_logo":           None,   # bytes
+        "mb_active_company": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -577,42 +578,47 @@ def render(dfs: dict, lang: str):
     inv = dfs.get("Investor Master", pd.DataFrame())
     companies = sorted(inv["Company Name"].dropna().unique().tolist()) if not inv.empty and "Company Name" in inv.columns else []
 
-    company = st.text_input(
-        "Company name (type any name — select from suggestions if in CRM)",
-        value=st.session_state["mb_data"].get("company_name", ""),
-        placeholder="e.g. Barclays, CDJ Capital, Blackrock…",
-        key="mb_company_input",
-        label_visibility="collapsed",
-    )
+    co_col, btn_col = st.columns([4, 1])
+    with co_col:
+        company_input = st.text_input(
+            "Company name",
+            placeholder="e.g. Barclays, CDJ Capital, Morgan Stanley…",
+            key="mb_co_input",
+            label_visibility="collapsed",
+        )
+    with btn_col:
+        load_clicked = st.button("Load →", key="mb_load_btn", type="primary", use_container_width=True)
 
-    # Show CRM matches as quick-pick chips
-    if company and companies:
-        matches = [c for c in companies if company.lower() in c.lower()][:5]
-        if matches and company not in matches:
+    # Show CRM matches as quick-pick chips (purely informational — clicking loads that company)
+    if company_input and companies:
+        matches = [c for c in companies if company_input.lower() in c.lower()][:5]
+        if matches:
             st.markdown(
-                '<div style="font-size:11px;color:#6b7280;margin-bottom:4px;">CRM matches — click to use:</div>',
+                '<div style="font-size:11px;color:#6b7280;margin-bottom:4px;">CRM matches — click to load:</div>',
                 unsafe_allow_html=True,
             )
             chip_cols = st.columns(min(len(matches), 5))
             for i, m in enumerate(matches):
                 if chip_cols[i].button(m, key=f"mb_chip_{i}"):
-                    st.session_state["mb_data"]["company_name"] = m
+                    st.session_state["mb_active_company"] = m
                     data, found = _prefill_from_crm(dfs, m)
                     st.session_state["mb_data"]  = data
                     st.session_state["mb_found"] = found
-                    st.rerun()
 
-    if company and company != st.session_state["mb_data"].get("company_name", ""):
-        data, found = _prefill_from_crm(dfs, company)
+    # Explicit Load button — no rerun needed, just update session state
+    if load_clicked and company_input.strip():
+        active = company_input.strip()
+        st.session_state["mb_active_company"] = active
+        data, found = _prefill_from_crm(dfs, active)
         st.session_state["mb_data"]  = data
         st.session_state["mb_found"] = found
-        st.rerun()
 
+    active_company = st.session_state.get("mb_active_company", "")
     data  = st.session_state["mb_data"]
     found = st.session_state["mb_found"]
 
-    if not company:
-        st.info("Type a company name above to begin. It does not need to be in the CRM.")
+    if not active_company:
+        st.info("Type a company name above and click **Load →** to begin. The company does not need to be in the CRM.")
         return
 
     n_found   = sum(1 for k in _FIELD_KEYS if data.get(k))
@@ -620,6 +626,7 @@ def render(dfs: dict, lang: str):
     st.markdown(
         f'<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;'
         f'padding:8px 14px;margin-bottom:12px;font-size:13px;">'
+        f'<strong>{active_company}</strong> — '
         f'CRM pre-fill: <strong style="color:{_GREEN}">{len(found)} fields found</strong> · '
         f'<strong style="color:{_RED}">{n_missing} fields missing</strong>'
         f'</div>',
@@ -685,7 +692,7 @@ def render(dfs: dict, lang: str):
             if st.button(f"🌐 Fill {len(missing_keys)} missing fields from internet", key="mb_web_btn"):
                 with st.spinner("Searching the internet…"):
                     new_data = _search_online(
-                        api_key, data.get("company_name", company),
+                        api_key, data.get("company_name", active_company),
                         data.get("full_name", ""), data.get("website", ""), data
                     )
                 new_found = found | {k for k in _FIELD_KEYS if new_data.get(k) and not data.get(k)}
