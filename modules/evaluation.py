@@ -14,6 +14,7 @@ from datetime import date, datetime
 import streamlit as st
 import docx
 from docx import Document
+from modules.minister_brief import render_embedded as _render_mb_embedded
 from docx.shared import Pt, Cm, RGBColor, Inches, Twips
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_ALIGN_VERTICAL
@@ -51,6 +52,7 @@ def _init():
         "ev_website":    "",
         "ev_email":      "",
         "ev_phone":      "",
+        "ev_page_mode":  "evaluation",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1370,7 +1372,7 @@ def _render_direction_mode(brief: dict):
 
 # ─── Main render ───────────────────────────────────────────────────────────────
 
-def render():
+def render(dfs=None, lang="en"):
     _init()
     _css()
 
@@ -1380,6 +1382,32 @@ def render():
                 unsafe_allow_html=True)
     st.markdown('<hr style="margin:.25rem 0 1.25rem;border:none;border-top:0.5px solid #e5e7eb">',
                 unsafe_allow_html=True)
+
+    # ── Mode selector ────────────────────────────────────────────────────────
+    _mode = st.session_state.get("ev_page_mode", "evaluation")
+    mc1, mc2 = st.columns(2)
+    if mc1.button(
+        "📋 Evaluation & Briefing",
+        use_container_width=True,
+        type="primary" if _mode == "evaluation" else "secondary",
+        key="ev_tab_ev_btn",
+    ):
+        st.session_state["ev_page_mode"] = "evaluation"
+        st.rerun()
+    if mc2.button(
+        "📊 Minister Meeting Brief",
+        use_container_width=True,
+        type="primary" if _mode == "minister_brief" else "secondary",
+        key="ev_tab_mb_btn",
+    ):
+        st.session_state["ev_page_mode"] = "minister_brief"
+        st.rerun()
+
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+    if _mode == "minister_brief":
+        _render_mb_embedded(dfs or {}, lang)
+        return
 
     s = st.session_state
 

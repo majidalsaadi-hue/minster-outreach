@@ -72,6 +72,7 @@ def _init():
         "mb_photo":          None,   # bytes
         "mb_logo":           None,   # bytes
         "mb_active_company": "",
+        "mb_ev_seeded_key":  "",     # tracks which ev_brief has been mapped → mb_data
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -739,6 +740,216 @@ def render(dfs: dict, lang: str):
                         file_name=fname,
                         mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                         key="mb_download",
+                    )
+                    st.success("✅ Brief ready — click Download above.")
+                except Exception as e:
+                    st.error(f"Failed to generate: {e}")
+
+
+# ── Embedded render (called from Evaluation & Briefing tab) ───────────────────
+
+def _ev_to_mb(ev_brief: dict) -> dict:
+    """Map Evaluation & Briefing extracted JSON to Minister Brief data format."""
+    data = _empty()
+    data["company_name"]   = ev_brief.get("company", "")
+    data["website"]        = ev_brief.get("companyDomain", "")
+    data["revenue"]        = ev_brief.get("revenue", "")
+    data["employee_count"] = ev_brief.get("employees", "")
+    data["description"]    = ev_brief.get("strategicContext", "")
+    data["full_name"]      = ev_brief.get("visitorName", "")
+    data["position"]       = ev_brief.get("visitorTitle", "")
+    data["meeting_reason"] = ev_brief.get("subject", "")
+    data["attendees"]      = ev_brief.get("accompaniedBy", "")
+    sectors = ev_brief.get("sectors", [])
+    data["sectors"]        = ", ".join(s.get("title", "") for s in sectors if s.get("title"))
+    saudi = ev_brief.get("saudiPresence", {})
+    data["ksa_presence"]   = saudi.get("investments", "")
+    projects               = saudi.get("majorProjects", [])
+    data["in_saudi"]       = "; ".join(projects) if projects else ""
+    return data
+
+
+def render_embedded(dfs: dict, lang: str):
+    """
+    Render Minister Meeting Brief as the second tab inside Evaluation & Briefing.
+    Auto-seeds fields from the ev_brief that was already extracted, then lets the
+    user fill gaps via document upload, internet search, or manual entry.
+    """
+    import os as _os
+    _init()
+    _css()
+
+    # ── Seed from ev_brief whenever it changes ──────────────────────────────
+    ev_brief = st.session_state.get("ev_brief")
+    seeded   = st.session_state.get("mb_ev_seeded_key", "")
+    if ev_brief:
+        ev_key = ev_brief.get("company", "") + "|" + ev_brief.get("visitorName", "")
+        if ev_key != seeded:
+            # CRM data first, then ev_brief on top (evaluation extraction wins)
+            crm_data, crm_found = _prefill_from_crm(dfs or {}, ev_brief.get("company", ""))
+            ev_data = _ev_to_mb(ev_brief)
+            for k, v in ev_data.items():
+                if v:
+                    crm_data[k] = v
+                    crm_found.add(k)
+            # Also pull the photo extracted in Evaluation & Briefing
+            if st.session_state.get("ev_photo_bytes") and not st.session_state.get("mb_photo"):
+                st.session_state["mb_photo"] = st.session_state["ev_photo_bytes"]
+            st.session_state["mb_data"]           = crm_data
+            st.session_state["mb_found"]          = crm_found
+            st.session_state["mb_active_company"] = ev_brief.get("company", "")
+            st.session_state["mb_ev_seeded_key"]  = ev_key
+
+    active_company = st.session_state.get("mb_active_company", "")
+    data  = st.session_state["mb_data"]
+    found = st.session_state["mb_found"]
+
+    if not active_company:
+        st.info(
+            "Generate a briefing note in **Evaluation & Briefing** first — "
+            "all extracted fields will be auto-populated here."
+        )
+        return
+
+    # ── API key (inherited from Evaluation & Briefing session) ─────────────
+    api_key = (
+        st.session_state.get("ev_api_key", "")
+        or st.session_state.get("mb_api_key", "")
+        or _os.environ.get("ANTHROPIC_API_KEY", "")
+    ).strip()
+
+    if not api_key:
+        with st.expander("⚙️ API Key (required for AI extraction & internet fill)", expanded=True):
+            k = st.text_input("Anthropic API Key", type="password", key="mb_emb_api_key_inp")
+            if k:
+                st.session_state["mb_api_key"] = k
+                api_key = k
+
+    # ── Status banner ───────────────────────────────────────────────────────
+    n_found   = len(found)
+    n_missing = sum(1 for k in _FIELD_KEYS if not data.get(k))
+    st.markdown(
+        f'<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;'
+        f'padding:8px 14px;margin-bottom:14px;font-size:13px;">'
+        f'<strong>{active_company}</strong> — auto-filled from Evaluation &amp; Briefing + CRM: '
+        f'<strong style="color:{_GREEN}">{n_found} fields found</strong> · '
+        f'<strong style="color:{_RED}">{n_missing} fields still missing</strong>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── 1 — Upload additional document (optional) ───────────────────────────
+    st.markdown("### 1 — Upload Additional Document (optional)")
+    st.markdown(
+        '<p style="font-size:12px;color:#6b7280;">Upload a company brief, PPT, PDF or Word doc '
+        'to fill any remaining gaps automatically.</p>',
+        unsafe_allow_html=True,
+    )
+
+    doc_col, photo_col = st.columns(2)
+
+    with doc_col:
+        doc_file = st.file_uploader(
+            "Company document (PDF, PPT, Word)",
+            type=["pdf", "pptx", "ppt", "docx", "doc"],
+            key="mb_emb_doc_upload",
+        )
+        if doc_file and api_key:
+            if st.button("Extract from document", key="mb_emb_extract_btn"):
+                with st.spinner("Extracting with AI…"):
+                    new_data, extracted_photo = _extract_with_claude(
+                        api_key, doc_file.read(), doc_file.name, data
+                    )
+                new_found = found | {k for k in _FIELD_KEYS if new_data.get(k) and not data.get(k)}
+                st.session_state["mb_data"]  = new_data
+                st.session_state["mb_found"] = new_found
+                if extracted_photo:
+                    st.session_state["mb_photo"] = extracted_photo
+                data  = new_data
+                found = new_found
+                st.success("✅ Extraction complete")
+                st.rerun()
+        elif doc_file and not api_key:
+            st.warning("Enter an API key above to enable AI extraction.")
+
+    with photo_col:
+        st.markdown("**Person Photo** (JPG / PNG)")
+        photo_file = st.file_uploader(
+            "Person photo", type=["jpg", "jpeg", "png"],
+            key="mb_emb_photo_upload", label_visibility="collapsed",
+        )
+        if photo_file:
+            st.session_state["mb_photo"] = photo_file.read()
+            st.image(st.session_state["mb_photo"], width=120)
+        elif st.session_state.get("mb_photo"):
+            src = "from evaluation brief" if st.session_state.get("ev_auto_photo") else "current photo"
+            st.image(st.session_state["mb_photo"], width=120, caption=f"📸 {src}")
+        else:
+            st.markdown(
+                '<div class="mb-missing">No photo found — upload one above '
+                'or it will be left blank in the brief.</div>',
+                unsafe_allow_html=True,
+            )
+
+    # ── 2 — Fill gaps from internet ─────────────────────────────────────────
+    if api_key:
+        missing_keys = [k for k in _FIELD_KEYS if not data.get(k)]
+        if missing_keys:
+            if st.button(
+                f"🌐 Fill {len(missing_keys)} missing fields from internet",
+                key="mb_emb_web_btn",
+            ):
+                with st.spinner("Searching the internet…"):
+                    new_data = _search_online(
+                        api_key, data.get("company_name", active_company),
+                        data.get("full_name", ""), data.get("website", ""), data
+                    )
+                new_found = found | {k for k in _FIELD_KEYS if new_data.get(k) and not data.get(k)}
+                st.session_state["mb_data"]  = new_data
+                st.session_state["mb_found"] = new_found
+                data  = new_data
+                found = new_found
+                st.rerun()
+
+    # ── 3 — Review & edit ───────────────────────────────────────────────────
+    st.markdown("### 2 — Review & Edit")
+    st.markdown(
+        '<p style="font-size:12px;color:#6b7280;">'
+        '<span style="color:#991B1B;">⚠ Red fields</span> were not found — fill manually. '
+        '<span style="color:#065F46;">✓ Green fields</span> were auto-filled.</p>',
+        unsafe_allow_html=True,
+    )
+    updated = _render_form(data, found)
+    st.session_state["mb_data"] = updated
+
+    # ── 4 — Generate PPTX ───────────────────────────────────────────────────
+    st.markdown("### 3 — Generate Brief")
+    missing_req = [_FIELD_LABELS[k] for k in _REQUIRED if not updated.get(k)]
+    if missing_req:
+        st.warning(f"Required fields still missing: {', '.join(missing_req)}")
+
+    gen_col, _ = st.columns([2, 3])
+    with gen_col:
+        if st.button("📊 Generate Minister Brief PPTX", type="primary", key="mb_emb_gen_btn"):
+            with st.spinner("Filling PPTX template…"):
+                try:
+                    logo_bytes = (
+                        st.session_state.get("mb_logo")
+                        or st.session_state.get("ev_logo_bytes")
+                    )
+                    pptx_bytes = _generate_pptx(
+                        updated,
+                        photo_bytes=st.session_state.get("mb_photo"),
+                        logo_bytes=logo_bytes,
+                    )
+                    co_slug = re.sub(r"[^\w]", "_", updated.get("company_name", "Brief"))
+                    fname   = f"MinisterBrief_{co_slug}_{date.today().strftime('%Y%m%d')}.pptx"
+                    st.download_button(
+                        "⬇️ Download Brief",
+                        data=pptx_bytes,
+                        file_name=fname,
+                        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        key="mb_emb_download",
                     )
                     st.success("✅ Brief ready — click Download above.")
                 except Exception as e:
