@@ -430,7 +430,279 @@ def _replace_with_image(slide, rect_name: str, img_bytes: bytes, w_inch: float, 
         pass
 
 
-def _generate_pptx(data: dict, photo_bytes: bytes | None, logo_bytes: bytes | None) -> bytes:
+# ── Slide-content helpers ─────────────────────────────────────────────────────
+
+def _set_shape_text(shape, text: str, keep_first: bool = False):
+    """Replace text in a shape's text frame.
+    keep_first=True → preserve first paragraph (label), append new paragraphs below.
+    keep_first=False → replace all text entirely.
+    """
+    if not shape.has_text_frame:
+        return
+    tf = shape.text_frame
+    tf.word_wrap = True
+    ns = "http://schemas.openxmlformats.org/drawingml/2006/main"
+
+    if keep_first:
+        # keep first paragraph as-is, remove rest, then add value paragraphs
+        while len(tf.paragraphs) > 1:
+            tf.paragraphs[-1]._p.getparent().remove(tf.paragraphs[-1]._p)
+        for line in (text or "").split("\n"):
+            p = tf.add_paragraph()
+            run = p.add_run()
+            run.text = line
+    else:
+        # Remove all paragraphs except first
+        while len(tf.paragraphs) > 1:
+            tf.paragraphs[-1]._p.getparent().remove(tf.paragraphs[-1]._p)
+        # Clear all runs from first paragraph
+        p0 = tf.paragraphs[0]._p
+        for r in list(p0.findall(f"{{{ns}}}r")):
+            p0.remove(r)
+        if not text:
+            return
+        lines = text.split("\n")
+        run = tf.paragraphs[0].add_run()
+        run.text = lines[0]
+        for line in lines[1:]:
+            p = tf.add_paragraph()
+            run = p.add_run()
+            run.text = line
+
+
+def _find_shape(slide, name: str, top_in: float = None, left_in: float = None, tol: float = 0.18):
+    """Find a shape on a slide by name, optionally constrained by position."""
+    for shape in slide.shapes:
+        if shape.name != name:
+            continue
+        if top_in is None and left_in is None:
+            return shape
+        t = (shape.top or 0) / _EMU
+        l = (shape.left or 0) / _EMU
+        t_ok = top_in is None or abs(t - top_in) < tol
+        l_ok = left_in is None or abs(l - left_in) < tol
+        if t_ok and l_ok:
+            return shape
+    return None
+
+
+def _fill_table_cell(table, row: int, col: int, text: str):
+    """Set text in a single table cell, replacing existing content."""
+    try:
+        cell = table.cell(row, col)
+        tf = cell.text_frame
+        ns = "http://schemas.openxmlformats.org/drawingml/2006/main"
+        while len(tf.paragraphs) > 1:
+            tf.paragraphs[-1]._p.getparent().remove(tf.paragraphs[-1]._p)
+        p0 = tf.paragraphs[0]._p
+        for r in list(p0.findall(f"{{{ns}}}r")):
+            p0.remove(r)
+        if text:
+            run = tf.paragraphs[0].add_run()
+            run.text = text
+    except Exception:
+        pass
+
+
+def _generate_slide_content(api_key: str, data: dict) -> dict:
+    """Ask Claude to generate rich content for slides 2-7 based on company data."""
+    company = data.get("company_name", "this company")
+    person  = data.get("full_name", "")
+    known   = {k: v for k, v in data.items() if v}
+
+    prompt = (
+        f"You are preparing a Minister Meeting Brief for a Saudi minister's meeting with {company}.\n\n"
+        f"Known company information:\n{json.dumps(known, indent=2)}\n\n"
+        f"Generate content for these presentation slides. Return ONLY a JSON object with EXACTLY these keys:\n\n"
+        f'{{\n'
+        f'  "slide2_company_label": "Company short name or acronym",\n'
+        f'  "slide2_holdings_left": "• Subsidiary/holding 1\\n• Subsidiary/holding 2\\n• Subsidiary/holding 3\\n• Subsidiary/holding 4",\n'
+        f'  "slide2_equity_left": "Equity assets = USD X.XB (est.)",\n'
+        f'  "slide2_holdings_mid": "• International venture 1\\n• International venture 2\\n• International venture 3",\n'
+        f'  "slide2_equity_mid": "Equity assets = USD X.XB (est.)",\n'
+        f'  "slide2_industry": "• Sector 1: XX%\\n• Sector 2: XX%\\n• Sector 3: XX%\\n• Other: XX%",\n'
+        f'  "slide3_overview": "2-3 sentence overview of existing collaborations with Saudi Arabia or MISA",\n'
+        f'  "slide3_c1_title": "First existing collaboration title",\n'
+        f'  "slide3_c1_detail": "Brief detail about first collaboration (1 sentence)",\n'
+        f'  "slide3_c2_title": "Second existing collaboration title",\n'
+        f'  "slide3_c2_detail": "Brief detail about second collaboration",\n'
+        f'  "slide3_c3_title": "Third collaboration title",\n'
+        f'  "slide3_c3_detail": "Brief detail",\n'
+        f'  "slide3_c4_title": "Fourth collaboration title",\n'
+        f'  "slide3_c4_detail": "Brief detail",\n'
+        f'  "slide3_potential": "• Potential area 1\\n• Potential area 2\\n• Potential area 3",\n'
+        f'  "slide4_ksa_header": "Saudi Arabia",\n'
+        f'  "slide4_ksa_1": "Key investment or project in Saudi Arabia (1-2 lines)",\n'
+        f'  "slide4_ksa_2": "Another Saudi investment or operation",\n'
+        f'  "slide4_ksa_3": "Third Saudi-related activity",\n'
+        f'  "slide4_gcc_header": "GCC / MENA",\n'
+        f'  "slide4_gcc_1": "GCC/MENA operation or investment",\n'
+        f'  "slide4_gcc_2": "Another regional operation",\n'
+        f'  "slide4_gcc_3": "Third regional activity",\n'
+        f'  "slide4_global_header": "Global",\n'
+        f'  "slide4_global_1": "Major global market or investment hub",\n'
+        f'  "slide4_global_2": "Another global operation",\n'
+        f'  "slide5_quantifiable": "• USD X.XB committed investment\\n• X,000 jobs created\\n• X Vision 2030 sectors targeted",\n'
+        f'  "slide5_strategic": "• Strategic value point 1\\n• Vision 2030 alignment detail\\n• Technology transfer benefit",\n'
+        f'  "slide6_quantifiable": "• USD X.XB global AUM\\n• X,000 employees globally\\n• Presence in X+ countries",\n'
+        f'  "slide6_strategic": "• Global market leadership in X\\n• Innovation capability\\n• Partnership network",\n'
+        f'  "slide7_overview": "2-sentence overview of the key investment/partnership opportunities",\n'
+        f'  "slide7_m1": "Opportunity metric 1 name",\n'
+        f'  "slide7_o1": "Expected outcome for metric 1",\n'
+        f'  "slide7_ch1": "Challenge for metric 1",\n'
+        f'  "slide7_m2": "Opportunity metric 2",\n'
+        f'  "slide7_o2": "Expected outcome 2",\n'
+        f'  "slide7_ch2": "Challenge 2",\n'
+        f'  "slide7_m3": "Opportunity metric 3",\n'
+        f'  "slide7_o3": "Expected outcome 3",\n'
+        f'  "slide7_ch3": "Challenge 3",\n'
+        f'  "slide7_m4": "Opportunity metric 4",\n'
+        f'  "slide7_o4": "Expected outcome 4",\n'
+        f'  "slide7_ch4": "Challenge 4",\n'
+        f'  "slide7_m5": "Opportunity metric 5",\n'
+        f'  "slide7_o5": "Expected outcome 5",\n'
+        f'  "slide7_ch5": "Challenge 5"\n'
+        f'}}\n\n'
+        f"Rules:\n"
+        f"- Base content on facts about {company}; use 'est.' for estimates.\n"
+        f"- If collaborations with Saudi Arabia are unknown, describe plausible opportunities given the company's sector.\n"
+        f"- Use professional language appropriate for a Saudi Ministry of Investment meeting.\n"
+        f"- Each bullet point should start with •\n"
+        f"- Return ONLY the JSON object, no markdown, no explanation."
+    )
+
+    raw = _call_claude(api_key, [{"role": "user", "content": prompt}],
+                       system="You are a professional business analyst preparing investor briefs for government officials. Return only valid JSON.")
+    try:
+        m = re.search(r"\{[\s\S]*\}", raw)
+        if m:
+            return json.loads(m.group())
+    except Exception:
+        pass
+    return {}
+
+
+def _fill_slides_2_to_7(prs, sc: dict, data: dict):
+    """Fill slides 2-7 of the presentation with generated content sc."""
+    company = data.get("company_name", "")
+
+    # ── Slide 2: Overview of top holdings ─────────────────────────────────────
+    sl2 = prs.slides[1]
+    sh = _find_shape(sl2, "Text Placeholder 5", left_in=0.5)
+    if sh:
+        _set_shape_text(sh, sc.get("slide2_company_label", company) or company)
+
+    sh = _find_shape(sl2, "TextBox 201")
+    if sh:
+        _set_shape_text(sh, sc.get("slide2_holdings_left", ""), keep_first=True)
+
+    sh = _find_shape(sl2, "TextBox 204")
+    if sh:
+        _set_shape_text(sh, sc.get("slide2_equity_left", ""))
+
+    sh = _find_shape(sl2, "TextBox 223")
+    if sh:
+        _set_shape_text(sh, sc.get("slide2_holdings_mid", ""), keep_first=True)
+
+    sh = _find_shape(sl2, "TextBox 215")
+    if sh:
+        _set_shape_text(sh, sc.get("slide2_equity_mid", ""))
+
+    sh = _find_shape(sl2, "TextBox 227")
+    if sh:
+        _set_shape_text(sh, sc.get("slide2_industry", ""), keep_first=True)
+
+    # ── Slide 3: Collaborations ────────────────────────────────────────────────
+    sl3 = prs.slides[2]
+    sh = _find_shape(sl3, "Text Placeholder 5")
+    if sh:
+        _set_shape_text(sh, sc.get("slide3_overview", ""))
+
+    sh = _find_shape(sl3, "Text Placeholder 7")
+    if sh:
+        _set_shape_text(sh, sc.get("slide3_potential", ""))
+
+    for sh in sl3.shapes:
+        if sh.name == "Table 11" and hasattr(sh, "table"):
+            tbl = sh.table
+            pairs = [
+                (sc.get("slide3_c1_title", ""), sc.get("slide3_c1_detail", "")),
+                (sc.get("slide3_c2_title", ""), sc.get("slide3_c2_detail", "")),
+                (sc.get("slide3_c3_title", ""), sc.get("slide3_c3_detail", "")),
+                (sc.get("slide3_c4_title", ""), sc.get("slide3_c4_detail", "")),
+            ]
+            for ri, (title, detail) in enumerate(pairs):
+                if ri < len(tbl.rows):
+                    _fill_table_cell(tbl, ri, 1, title)
+                    _fill_table_cell(tbl, ri, 3, detail)
+            break
+
+    # ── Slide 4: Investments / operations ────────────────────────────────────
+    sl4 = prs.slides[3]
+    _SLIDE4_MAP = [
+        # (top_in, left_in, content_key)
+        (2.20, 0.50, "slide4_ksa_header"),
+        (3.21, 0.50, "slide4_ksa_1"),
+        (4.40, 0.50, "slide4_ksa_2"),
+        (5.59, 0.50, "slide4_ksa_3"),
+        (2.20, 4.70, "slide4_gcc_header"),
+        (3.27, 4.70, "slide4_gcc_1"),
+        (4.34, 4.70, "slide4_gcc_2"),
+        (5.59, 4.70, "slide4_gcc_3"),
+        (2.20, 8.90, "slide4_global_header"),
+        (3.73, 8.90, "slide4_global_1"),
+        (5.25, 8.90, "slide4_global_2"),
+    ]
+    for top_in, left_in, key in _SLIDE4_MAP:
+        sh = _find_shape(sl4, "Text Placeholder 21", top_in=top_in, left_in=left_in)
+        if sh:
+            _set_shape_text(sh, sc.get(key, ""))
+
+    # ── Slide 5: Value Proposition to Kingdom ────────────────────────────────
+    sl5 = prs.slides[4]
+    sh = _find_shape(sl5, "Text Placeholder 21", top_in=3.29, left_in=0.50)
+    if sh:
+        _set_shape_text(sh, sc.get("slide5_quantifiable", ""))
+    sh = _find_shape(sl5, "Text Placeholder 23", top_in=3.29, left_in=6.92)
+    if sh:
+        _set_shape_text(sh, sc.get("slide5_strategic", ""))
+
+    # ── Slide 6: Value Proposition globally ──────────────────────────────────
+    sl6 = prs.slides[5]
+    sh = _find_shape(sl6, "Text Placeholder 21", top_in=3.29, left_in=0.50)
+    if sh:
+        _set_shape_text(sh, sc.get("slide6_quantifiable", ""))
+    sh = _find_shape(sl6, "Text Placeholder 23", top_in=3.29, left_in=6.92)
+    if sh:
+        _set_shape_text(sh, sc.get("slide6_strategic", ""))
+
+    # ── Slide 7: Opportunities ────────────────────────────────────────────────
+    sl7 = prs.slides[6]
+    sh = _find_shape(sl7, "Rectangle 44")
+    if sh:
+        _set_shape_text(sh, sc.get("slide7_overview", ""))
+
+    for sh in sl7.shapes:
+        if hasattr(sh, "table"):
+            tbl = sh.table
+            rows_data = [
+                (sc.get("slide7_m1",""), sc.get("slide7_o1",""), sc.get("slide7_ch1","")),
+                (sc.get("slide7_m2",""), sc.get("slide7_o2",""), sc.get("slide7_ch2","")),
+                (sc.get("slide7_m3",""), sc.get("slide7_o3",""), sc.get("slide7_ch3","")),
+                (sc.get("slide7_m4",""), sc.get("slide7_o4",""), sc.get("slide7_ch4","")),
+                (sc.get("slide7_m5",""), sc.get("slide7_o5",""), sc.get("slide7_ch5","")),
+            ]
+            for ri, (m, o, c) in enumerate(rows_data):
+                row_idx = ri + 1  # row 0 is headers
+                if row_idx < len(tbl.rows):
+                    _fill_table_cell(tbl, row_idx, 0, m)
+                    _fill_table_cell(tbl, row_idx, 1, o)
+                    _fill_table_cell(tbl, row_idx, 2, c)
+            break
+
+
+def _generate_pptx(data: dict, photo_bytes: bytes | None, logo_bytes: bytes | None,
+                   slide_content: dict | None = None) -> bytes:
     from pptx import Presentation
     from pptx.util import Inches, Pt
     from pptx.dml.color import RGBColor
@@ -512,6 +784,10 @@ def _generate_pptx(data: dict, photo_bytes: bytes | None, logo_bytes: bytes | No
         logo = _fetch_logo(domain)
     if logo:
         _replace_with_image(sl1, "Rectangle 3", logo, 0.90, 0.42)
+
+    # ── Slides 2-7 (generated content)
+    if slide_content:
+        _fill_slides_2_to_7(prs, slide_content, data)
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -766,12 +1042,17 @@ def render(dfs: dict, lang: str):
                         st.session_state["mb_found"] = found | {
                             k for k in _FIELD_KEYS if final_data.get(k) and k not in found
                         }
+            slide_content = None
+            if api_key:
+                with st.spinner("🤖 Generating content for all slides…"):
+                    slide_content = _generate_slide_content(api_key, final_data)
             with st.spinner("Building PPTX…"):
                 try:
                     pptx_bytes = _generate_pptx(
                         final_data,
                         photo_bytes=st.session_state.get("mb_photo"),
                         logo_bytes=st.session_state.get("mb_logo"),
+                        slide_content=slide_content,
                     )
                     co_slug = re.sub(r"[^\w]", "_", final_data.get("company_name", "Brief"))
                     fname   = f"MinisterBrief_{co_slug}_{date.today().strftime('%Y%m%d')}.pptx"
@@ -1043,6 +1324,10 @@ def render_embedded(dfs: dict, lang: str):
                         st.session_state["mb_found"] = found | {
                             k for k in _FIELD_KEYS if final_data.get(k) and k not in found
                         }
+            slide_content = None
+            if api_key:
+                with st.spinner("🤖 Generating content for all slides…"):
+                    slide_content = _generate_slide_content(api_key, final_data)
             with st.spinner("Building PPTX…"):
                 try:
                     logo_bytes = (
@@ -1053,6 +1338,7 @@ def render_embedded(dfs: dict, lang: str):
                         final_data,
                         photo_bytes=st.session_state.get("mb_photo"),
                         logo_bytes=logo_bytes,
+                        slide_content=slide_content,
                     )
                     co_slug = re.sub(r"[^\w]", "_", final_data.get("company_name", "Brief"))
                     fname   = f"MinisterBrief_{co_slug}_{date.today().strftime('%Y%m%d')}.pptx"
