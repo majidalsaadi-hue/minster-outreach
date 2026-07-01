@@ -806,6 +806,7 @@ def render_embedded(dfs: dict, lang: str):
         ev_available = bool(st.session_state.get("ev_brief"))
         if ev_available:
             st.info("Loading data from Evaluation & Briefing…")
+            return
         else:
             st.markdown(
                 '<p style="font-size:12px;color:#6b7280;margin-bottom:10px;">'
@@ -846,6 +847,7 @@ def render_embedded(dfs: dict, lang: str):
                             st.session_state["mb_data"]           = d
                             st.session_state["mb_found"]          = f
                             st.session_state["mb_active_company"] = m
+                            st.rerun()
 
             if load_clicked and st.session_state.get("mb_emb_co_input", "").strip():
                 active = st.session_state["mb_emb_co_input"].strip()
@@ -853,13 +855,10 @@ def render_embedded(dfs: dict, lang: str):
                 st.session_state["mb_data"]           = d
                 st.session_state["mb_found"]          = f
                 st.session_state["mb_active_company"] = active
+                st.rerun()
 
-            if not st.session_state.get("mb_active_company"):
-                return
-
-            active_company = st.session_state["mb_active_company"]
-            data  = st.session_state["mb_data"]
-            found = st.session_state["mb_found"]
+            # Nothing loaded yet — show input only
+            return
 
     # ── API key (inherited from Evaluation & Briefing session) ─────────────
     api_key = (
