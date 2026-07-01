@@ -804,12 +804,65 @@ def render_embedded(dfs: dict, lang: str):
     data  = st.session_state["mb_data"]
     found = st.session_state["mb_found"]
 
+    # ── If no company loaded yet: show company input (works with or without ev_brief) ──
     if not active_company:
-        st.info(
-            "Generate a briefing note in **Evaluation & Briefing** first — "
-            "all extracted fields will be auto-populated here."
-        )
-        return
+        ev_available = bool(st.session_state.get("ev_brief"))
+        if ev_available:
+            st.info("Loading data from Evaluation & Briefing…")
+        else:
+            st.markdown(
+                '<p style="font-size:12px;color:#6b7280;margin-bottom:10px;">'
+                'After generating in <strong>Evaluation &amp; Briefing</strong>, all fields auto-populate here. '
+                'Or enter a company name below to start the brief manually.</p>',
+                unsafe_allow_html=True,
+            )
+            inv = (dfs or {}).get("Investor Master", pd.DataFrame())
+            companies = (
+                sorted(inv["Company Name"].dropna().unique().tolist())
+                if not inv.empty and "Company Name" in inv.columns
+                else []
+            )
+            co_col, btn_col = st.columns([4, 1])
+            with co_col:
+                company_input = st.text_input(
+                    "Company name",
+                    placeholder="e.g. Barclays, Morgan Stanley, ACWA Power…",
+                    key="mb_emb_co_input",
+                    label_visibility="collapsed",
+                )
+            with btn_col:
+                load_clicked = st.button(
+                    "Load →", key="mb_emb_load_btn", type="primary", use_container_width=True
+                )
+
+            if company_input and companies:
+                matches = [c for c in companies if company_input.lower() in c.lower()][:5]
+                if matches:
+                    st.markdown(
+                        '<div style="font-size:11px;color:#6b7280;margin-bottom:4px;">CRM matches — click to load:</div>',
+                        unsafe_allow_html=True,
+                    )
+                    chip_cols = st.columns(min(len(matches), 5))
+                    for i, m in enumerate(matches):
+                        if chip_cols[i].button(m, key=f"mb_emb_chip_{i}"):
+                            d, f = _prefill_from_crm(dfs or {}, m)
+                            st.session_state["mb_data"]           = d
+                            st.session_state["mb_found"]          = f
+                            st.session_state["mb_active_company"] = m
+
+            if load_clicked and st.session_state.get("mb_emb_co_input", "").strip():
+                active = st.session_state["mb_emb_co_input"].strip()
+                d, f = _prefill_from_crm(dfs or {}, active)
+                st.session_state["mb_data"]           = d
+                st.session_state["mb_found"]          = f
+                st.session_state["mb_active_company"] = active
+
+            if not st.session_state.get("mb_active_company"):
+                return
+
+            active_company = st.session_state["mb_active_company"]
+            data  = st.session_state["mb_data"]
+            found = st.session_state["mb_found"]
 
     # ── API key (inherited from Evaluation & Briefing session) ─────────────
     api_key = (
@@ -828,10 +881,11 @@ def render_embedded(dfs: dict, lang: str):
     # ── Status banner ───────────────────────────────────────────────────────
     n_found   = len(found)
     n_missing = sum(1 for k in _FIELD_KEYS if not data.get(k))
+    ev_source = " + Evaluation & Briefing" if st.session_state.get("mb_ev_seeded_key") else ""
     st.markdown(
         f'<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;'
         f'padding:8px 14px;margin-bottom:14px;font-size:13px;">'
-        f'<strong>{active_company}</strong> — auto-filled from Evaluation &amp; Briefing + CRM: '
+        f'<strong>{active_company}</strong> — auto-filled from CRM{ev_source}: '
         f'<strong style="color:{_GREEN}">{n_found} fields found</strong> · '
         f'<strong style="color:{_RED}">{n_missing} fields still missing</strong>'
         f'</div>',

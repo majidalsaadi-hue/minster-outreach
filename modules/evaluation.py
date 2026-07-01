@@ -1385,6 +1385,16 @@ def render(dfs=None, lang="en"):
 
     # ── Mode selector ────────────────────────────────────────────────────────
     _mode = st.session_state.get("ev_page_mode", "evaluation")
+    # Custom segment-control style so active/inactive tabs are visually distinct
+    st.markdown("""
+    <style>
+    div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"]) button[data-testid="baseButton-primary"] {
+        background:#1B5C3F !important; color:#fff !important; border:2px solid #1B5C3F !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"]) button[data-testid="baseButton-secondary"] {
+        background:#fff !important; color:#1B5C3F !important; border:2px solid #1B5C3F !important;
+    }
+    </style>""", unsafe_allow_html=True)
     mc1, mc2 = st.columns(2)
     if mc1.button(
         "📋 Evaluation & Briefing",
