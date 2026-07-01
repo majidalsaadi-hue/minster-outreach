@@ -209,18 +209,14 @@ def _call_claude(api_key: str, messages: list, system: str = "") -> str:
         return f"[error: {e}]"
 
 
-def _extract_with_claude(api_key: str, file_bytes: bytes, filename: str, current_data: dict) -> tuple[dict, bytes | None]:
-    """Use Claude to extract structured data + photo from an uploaded file."""
-    text, photo = _extract_text_from_file(file_bytes, filename)
-    ext = Path(filename).suffix.lower()
-
+def _extract_with_claude(api_key: str, files: list, current_data: dict) -> tuple[dict, bytes | None]:
+    """Use Claude to extract structured data + photo from one or more uploaded files."""
     schema = {k: _FIELD_LABELS[k] for k in _FIELD_KEYS}
     system = (
         "You are an expert at extracting structured company and leadership information from documents. "
         "Return ONLY a valid JSON object with the exact keys provided. "
         "Use empty string for any value you cannot find. Be concise — no markdown."
     )
-
     prompt = (
         f"Extract information about this company/person and fill the following JSON schema:\n"
         f"{json.dumps(schema, indent=2)}\n\n"
@@ -231,22 +227,36 @@ def _extract_with_claude(api_key: str, file_bytes: bytes, filename: str, current
         f"Document content:\n"
     )
 
-    if text == "__PDF__":
-        b64 = base64.standard_b64encode(file_bytes).decode()
-        messages = [{"role": "user", "content": [
-            {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64}},
-            {"type": "text", "text": prompt},
-        ]}]
-    elif text == "__IMAGE__":
-        mt = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
-              "gif": "image/gif", "webp": "image/webp"}.get(ext.lstrip("."), "image/png")
-        b64 = base64.standard_b64encode(file_bytes).decode()
-        messages = [{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": mt, "data": b64}},
-            {"type": "text", "text": prompt},
-        ]}]
-    else:
-        messages = [{"role": "user", "content": prompt + text[:6000]}]
+    content_blocks = []
+    photo = None
+
+    for file_bytes, filename in files:
+        text, file_photo = _extract_text_from_file(file_bytes, filename)
+        ext = Path(filename).suffix.lower()
+        if not photo and file_photo:
+            photo = file_photo
+        if text == "__PDF__":
+            b64 = base64.standard_b64encode(file_bytes).decode()
+            content_blocks.append({
+                "type": "document",
+                "source": {"type": "base64", "media_type": "application/pdf", "data": b64},
+            })
+        elif text == "__IMAGE__":
+            mt = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                  "gif": "image/gif", "webp": "image/webp"}.get(ext.lstrip("."), "image/png")
+            b64 = base64.standard_b64encode(file_bytes).decode()
+            content_blocks.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": mt, "data": b64},
+            })
+        else:
+            content_blocks.append({
+                "type": "text",
+                "text": f"--- File: {filename} ---\n{text[:6000]}",
+            })
+
+    content_blocks.append({"type": "text", "text": prompt})
+    messages = [{"role": "user", "content": content_blocks}]
 
     raw = _call_claude(api_key, messages, system)
     new_data = dict(current_data)
@@ -642,16 +652,17 @@ def render(dfs: dict, lang: str):
     doc_col, photo_col = st.columns(2)
 
     with doc_col:
-        doc_file = st.file_uploader(
-            "Company document (PDF, PPT, Word)",
+        doc_files = st.file_uploader(
+            "Company documents (PDF, PPT, Word)",
             type=["pdf", "pptx", "ppt", "docx", "doc"],
             key="mb_doc_upload",
+            accept_multiple_files=True,
         )
-        if doc_file and api_key:
-            if st.button("Extract from document", key="mb_extract_btn"):
+        if doc_files and api_key:
+            if st.button(f"Extract from {len(doc_files)} file(s)", key="mb_extract_btn"):
                 with st.spinner("Extracting with AI…"):
                     new_data, extracted_photo = _extract_with_claude(
-                        api_key, doc_file.read(), doc_file.name, data
+                        api_key, [(f.read(), f.name) for f in doc_files], data
                     )
                 new_found = found | {k for k in _FIELD_KEYS if new_data.get(k) and not data.get(k)}
                 st.session_state["mb_data"]  = new_data
@@ -662,7 +673,7 @@ def render(dfs: dict, lang: str):
                 found = new_found
                 st.success("✅ Extraction complete")
                 st.rerun()
-        elif doc_file and not api_key:
+        elif doc_files and not api_key:
             st.warning("Add an API key above to enable AI extraction.")
 
     with photo_col:
@@ -899,16 +910,17 @@ def render_embedded(dfs: dict, lang: str):
     doc_col, photo_col = st.columns(2)
 
     with doc_col:
-        doc_file = st.file_uploader(
-            "Company document (PDF, PPT, Word)",
+        doc_files = st.file_uploader(
+            "Company documents (PDF, PPT, Word)",
             type=["pdf", "pptx", "ppt", "docx", "doc"],
             key="mb_emb_doc_upload",
+            accept_multiple_files=True,
         )
-        if doc_file and api_key:
-            if st.button("Extract from document", key="mb_emb_extract_btn"):
+        if doc_files and api_key:
+            if st.button(f"Extract from {len(doc_files)} file(s)", key="mb_emb_extract_btn"):
                 with st.spinner("Extracting with AI…"):
                     new_data, extracted_photo = _extract_with_claude(
-                        api_key, doc_file.read(), doc_file.name, data
+                        api_key, [(f.read(), f.name) for f in doc_files], data
                     )
                 new_found = found | {k for k in _FIELD_KEYS if new_data.get(k) and not data.get(k)}
                 st.session_state["mb_data"]  = new_data
@@ -919,7 +931,7 @@ def render_embedded(dfs: dict, lang: str):
                 found = new_found
                 st.success("✅ Extraction complete")
                 st.rerun()
-        elif doc_file and not api_key:
+        elif doc_files and not api_key:
             st.warning("Enter an API key above to enable AI extraction.")
 
     with photo_col:
