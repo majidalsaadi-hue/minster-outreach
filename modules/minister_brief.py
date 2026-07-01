@@ -504,22 +504,19 @@ def _render_form(data: dict, found: set) -> dict:
         color  = _GREEN if is_ok else (_RED if (is_req and not val) else "#92400E")
         hint   = "✓ auto-filled" if is_ok else ("⚠ required — enter manually" if is_req and not val else ("⚠ not found — enter manually" if not val else ""))
 
-        container = cols_in if cols_in else st
-        with container:
-            st.markdown(
-                f'<div style="font-size:11px;font-weight:600;color:{color};margin-bottom:2px;">'
-                f'{label}{suffix} <span style="font-size:10px;font-weight:400;color:{color};">{hint}</span></div>',
-                unsafe_allow_html=True,
-            )
-            border_color = color if not is_ok else "#86efac"
-            style = f"border:1.5px solid {border_color};border-radius:6px;"
-            if multiline:
-                new_val = st.text_area(label, value=val, label_visibility="collapsed",
+        target = cols_in if cols_in else st
+        target.markdown(
+            f'<div style="font-size:11px;font-weight:600;color:{color};margin-bottom:2px;">'
+            f'{label}{suffix} <span style="font-size:10px;font-weight:400;color:{color};">{hint}</span></div>',
+            unsafe_allow_html=True,
+        )
+        if multiline:
+            new_val = target.text_area(label, value=val, label_visibility="collapsed",
                                        height=100, key=f"mb_{key}")
-            else:
-                new_val = st.text_input(label, value=val, label_visibility="collapsed",
+        else:
+            new_val = target.text_input(label, value=val, label_visibility="collapsed",
                                         key=f"mb_{key}")
-            updated[key] = new_val
+        updated[key] = new_val
         return new_val
 
     c1, c2, c3 = st.columns(3)
