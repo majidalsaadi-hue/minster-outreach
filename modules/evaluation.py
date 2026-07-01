@@ -1670,6 +1670,22 @@ def render(dfs=None, lang="en"):
                         s.pop(k, None)
                     st.rerun()
 
+            st.markdown(
+                '<div style="height:6px"></div>'
+                '<div style="font-size:12px;color:#6b7280;margin-bottom:6px;">'
+                '✅ Briefing note ready. Next step: generate the minister\'s PPTX brief with all '
+                'company data, Saudi presence, value propositions, and opportunities pre-filled.</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button(
+                "📊 Generate Minister Meeting Brief PPTX →",
+                type="primary",
+                use_container_width=True,
+                key="ev_to_mb_btn",
+            ):
+                st.session_state["ev_page_mode"] = "minister_brief"
+                st.rerun()
+
         # ── Decision / Mode selector ──────────────────────────────────────────
         with st.container(border=True):
             st.markdown('<p class="ev-section">Decision & Direction</p>',

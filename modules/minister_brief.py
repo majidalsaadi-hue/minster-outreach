@@ -504,16 +504,49 @@ def _fill_table_cell(table, row: int, col: int, text: str):
         pass
 
 
-def _generate_slide_content(api_key: str, data: dict) -> dict:
-    """Ask Claude to generate rich content for slides 2-7 based on company data."""
+def _generate_slide_content(api_key: str, data: dict, ev_brief: dict | None = None) -> dict:
+    """Ask Claude to generate rich content for slides 2-7 based on company data.
+    Pass ev_brief to include structured data (subsidiaries, regions, Saudi presence,
+    discussion points) directly in the prompt rather than relying on estimation.
+    """
     company = data.get("company_name", "this company")
     person  = data.get("full_name", "")
     known   = {k: v for k, v in data.items() if v}
 
+    # Build structured context from ev_brief — these are the richest data sources
+    ev_ctx = ""
+    if ev_brief:
+        subs    = ev_brief.get("globalSubsidiaries", [])
+        regions = ev_brief.get("investmentRegions", [])
+        saudi   = ev_brief.get("saudiPresence", {})
+        dps     = ev_brief.get("discussionPoints", [])
+        sectors = ev_brief.get("sectors", [])
+        jv      = saudi.get("jvPartners", [])
+        projs   = saudi.get("majorProjects", [])
+        inv     = saudi.get("investments", "")
+
+        ev_ctx = "\n\nStructured data from Evaluation & Briefing (use this as ground truth — do not invent alternatives):\n"
+        if subs:
+            ev_ctx += f"Global subsidiaries/entities: {json.dumps(subs)}\n"
+        if regions:
+            ev_ctx += f"Investment regions: {json.dumps([{'region': r.get('region'), 'focus': r.get('focus')} for r in regions])}\n"
+        if sectors:
+            ev_ctx += f"Sectors with detail: {json.dumps([{'title': s.get('title'), 'detail': s.get('subbullet')} for s in sectors])}\n"
+        if inv:
+            ev_ctx += f"Saudi Arabia investments: {inv}\n"
+        if jv:
+            ev_ctx += f"Saudi JV partners: {json.dumps(jv)}\n"
+        if projs:
+            ev_ctx += f"Saudi major projects: {json.dumps(projs)}\n"
+        if dps:
+            ev_ctx += f"Suggested discussion points (use as potential collaboration areas): {json.dumps(dps)}\n"
+        ev_ctx += "\n"
+
     prompt = (
         f"You are preparing a Minister Meeting Brief for a Saudi minister's meeting with {company}.\n\n"
-        f"Known company information:\n{json.dumps(known, indent=2)}\n\n"
-        f"Generate content for these presentation slides. Return ONLY a JSON object with EXACTLY these keys:\n\n"
+        f"Known company information:\n{json.dumps(known, indent=2)}\n"
+        + ev_ctx +
+        f"Generate content for these presentation slides. Where structured data is provided above, use it directly — do not invent alternatives. Return ONLY a JSON object with EXACTLY these keys:\n\n"
         f'{{\n'
         f'  "slide2_company_label": "Company short name or acronym",\n'
         f'  "slide2_holdings_left": "• Subsidiary/holding 1\\n• Subsidiary/holding 2\\n• Subsidiary/holding 3\\n• Subsidiary/holding 4",\n'
@@ -564,8 +597,13 @@ def _generate_slide_content(api_key: str, data: dict) -> dict:
         f'  "slide7_ch5": "Challenge 5"\n'
         f'}}\n\n'
         f"Rules:\n"
-        f"- Base content on facts about {company}; use 'est.' for estimates.\n"
-        f"- If collaborations with Saudi Arabia are unknown, describe plausible opportunities given the company's sector.\n"
+        f"- Use structured data provided above as ground truth; supplement with your knowledge.\n"
+        f"- For slide2_holdings_left: use global subsidiaries/entities if provided.\n"
+        f"- For slide3_c*_title/detail: use Saudi JV partners and major projects if provided.\n"
+        f"- For slide3_potential: use the discussion points list if provided.\n"
+        f"- For slide4_ksa_*: use Saudi Arabia investments and projects if provided.\n"
+        f"- For slide4_gcc_* and slide4_global_*: use investment regions if provided.\n"
+        f"- Use 'est.' for any value that is estimated rather than directly sourced.\n"
         f"- Use professional language appropriate for a Saudi Ministry of Investment meeting.\n"
         f"- Each bullet point should start with •\n"
         f"- Return ONLY the JSON object, no markdown, no explanation."
@@ -1044,8 +1082,11 @@ def render(dfs: dict, lang: str):
                         }
             slide_content = None
             if api_key:
-                with st.spinner("🤖 Generating content for all slides…"):
-                    slide_content = _generate_slide_content(api_key, final_data)
+                with st.spinner("🤖 Generating rich content for all 7 slides…"):
+                    slide_content = _generate_slide_content(
+                        api_key, final_data,
+                        ev_brief=st.session_state.get("ev_brief"),
+                    )
             with st.spinner("Building PPTX…"):
                 try:
                     pptx_bytes = _generate_pptx(
@@ -1071,23 +1112,88 @@ def render(dfs: dict, lang: str):
 # ── Embedded render (called from Evaluation & Briefing tab) ───────────────────
 
 def _ev_to_mb(ev_brief: dict) -> dict:
-    """Map Evaluation & Briefing extracted JSON to Minister Brief data format."""
+    """Map Evaluation & Briefing extracted JSON to Minister Brief data format.
+    Uses every available field from ev_brief to maximise pre-fill coverage.
+    """
     data = _empty()
+
+    # ── Company basics
     data["company_name"]   = ev_brief.get("company", "")
     data["website"]        = ev_brief.get("companyDomain", "")
-    data["revenue"]        = ev_brief.get("revenue", "")
     data["employee_count"] = ev_brief.get("employees", "")
-    data["description"]    = ev_brief.get("strategicContext", "")
-    data["full_name"]      = ev_brief.get("visitorName", "")
-    data["position"]       = ev_brief.get("visitorTitle", "")
+
+    # Revenue + AUM merged
+    rev = ev_brief.get("revenue", "")
+    aum = ev_brief.get("aum", "")
+    data["revenue"] = f"{rev} · AUM: {aum}" if (rev and aum) else (rev or aum)
+
+    # Sectors (titles)
+    sectors = ev_brief.get("sectors", [])
+    data["sectors"] = ", ".join(s.get("title", "") for s in sectors if s.get("title"))
+
+    # Global branches + company size from employee string
+    regions = ev_brief.get("investmentRegions", [])
+    subs    = ev_brief.get("globalSubsidiaries", [])
+    data["global_branches"] = "Yes" if (regions or subs) else "No"
+    try:
+        n = int(re.sub(r"[^\d]", "", (ev_brief.get("employees") or "").split("(")[0]
+                       .replace(",", "").replace("+", "").strip())
+                or "0")
+        if   n < 50:   data["company_size"] = "Micro"
+        elif n < 250:  data["company_size"] = "Small"
+        elif n < 5000: data["company_size"] = "Medium"
+        elif n > 0:    data["company_size"] = "Large"
+    except Exception:
+        pass
+
+    # Description: strategic context + investment regions summary
+    ctx = ev_brief.get("strategicContext", "")
+    if regions:
+        reg_txt = "; ".join(
+            f"{r.get('region','')} ({r.get('focus','')})"
+            for r in regions[:3] if r.get("region")
+        )
+        ctx = (ctx + " ") if ctx else ""
+        ctx += f"Active across: {reg_txt}."
+    data["description"] = ctx
+
+    # Biography from organisation + sector subbullets
+    org = ev_brief.get("organisation", "")
+    sub_bullets = "; ".join(
+        s.get("subbullet", "") for s in sectors[:2] if s.get("subbullet")
+    )
+    bio_parts = [p for p in [org, sub_bullets] if p]
+    data["biography"] = " | ".join(bio_parts)
+
+    # ── Leadership
+    data["full_name"] = ev_brief.get("visitorName", "")
+    data["position"]  = ev_brief.get("visitorTitle", "")
+
+    # ── Meeting
     data["meeting_reason"] = ev_brief.get("subject", "")
     data["attendees"]      = ev_brief.get("accompaniedBy", "")
-    sectors = ev_brief.get("sectors", [])
-    data["sectors"]        = ", ".join(s.get("title", "") for s in sectors if s.get("title"))
-    saudi = ev_brief.get("saudiPresence", {})
-    data["ksa_presence"]   = saudi.get("investments", "")
-    projects               = saudi.get("majorProjects", [])
-    data["in_saudi"]       = "; ".join(projects) if projects else ""
+
+    # Brief owner from AI recommendation
+    rec = ev_brief.get("recommendation", {})
+    data["brief_owner"] = rec.get("delegateTo", "")
+
+    # Investor presence: first rationale bullet gives context
+    rationale = rec.get("rationale", [])
+    data["investor_presence"] = rationale[0] if rationale else ""
+
+    # ── Saudi presence
+    saudi   = ev_brief.get("saudiPresence", {})
+    inv_txt = saudi.get("investments", "")
+    data["ksa_presence"] = (
+        "Yes" if inv_txt and "no known" not in inv_txt.lower() else "No"
+    )
+    projects    = saudi.get("majorProjects", [])
+    jv_partners = saudi.get("jvPartners", [])
+    in_sa = list(projects)
+    if jv_partners:
+        in_sa.append(f"JV partners: {', '.join(jv_partners)}")
+    data["in_saudi"] = "; ".join(in_sa)
+
     return data
 
 
@@ -1213,142 +1319,165 @@ def render_embedded(dfs: dict, lang: str):
         unsafe_allow_html=True,
     )
 
-    # ── 1 — Upload additional document (optional) ───────────────────────────
-    st.markdown("### 1 — Upload Additional Document (optional)")
-    st.markdown(
-        '<p style="font-size:12px;color:#6b7280;">Upload a company brief, PPT, PDF or Word doc '
-        'to fill any remaining gaps automatically.</p>',
-        unsafe_allow_html=True,
-    )
+    # ── Documents — reuse from Evaluation or upload new ────────────────────
+    ev_files     = st.session_state.get("ev_loaded_files", [])
+    ev_doc_files = [f for f in ev_files if not f.get("media_type", "").startswith("image/")]
 
-    doc_col, photo_col = st.columns(2)
+    photo_col_w = 1
+    if ev_doc_files or True:   # always show doc section
+        doc_col, photo_col = st.columns([3, 1])
+    else:
+        doc_col, photo_col = st.columns([3, 1])
 
     with doc_col:
-        doc_files = st.file_uploader(
-            "Company documents (PDF, PPT, Word)",
-            type=["pdf", "pptx", "ppt", "docx", "doc"],
-            key="mb_emb_doc_upload",
-            accept_multiple_files=True,
-        )
-        if doc_files and api_key:
-            if st.button(f"Extract from {len(doc_files)} file(s)", key="mb_emb_extract_btn"):
-                with st.spinner("Extracting with AI…"):
-                    new_data, extracted_photo = _extract_with_claude(
-                        api_key, [(f.read(), f.name) for f in doc_files], data
-                    )
-                new_found = found | {k for k in _FIELD_KEYS if new_data.get(k) and not data.get(k)}
-                st.session_state["mb_data"]  = new_data
-                st.session_state["mb_found"] = new_found
-                if extracted_photo:
-                    st.session_state["mb_photo"] = extracted_photo
-                data  = new_data
-                found = new_found
-                st.success("✅ Extraction complete")
-                st.rerun()
-        elif doc_files and not api_key:
-            st.warning("Enter an API key above to enable AI extraction.")
+        # If evaluation already has docs — offer 1-click re-extraction for minister brief schema
+        if ev_doc_files:
+            doc_names = ", ".join(f["name"] for f in ev_doc_files)
+            st.markdown(
+                f'<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;'
+                f'padding:8px 12px;margin-bottom:8px;font-size:12px;">'
+                f'📂 <strong>{len(ev_doc_files)} file(s) from your evaluation</strong>: {doc_names}</div>',
+                unsafe_allow_html=True,
+            )
+            if api_key:
+                if st.button(
+                    f"🔍 Re-extract PPTX details from these files",
+                    key="mb_emb_ev_extract_btn",
+                    help="Runs a minister-brief-specific extraction pass on the files you already uploaded"
+                ):
+                    with st.spinner("Extracting minister brief details…"):
+                        file_tuples = [(f["bytes"], f["name"]) for f in ev_doc_files]
+                        new_data, extracted_photo = _extract_with_claude(api_key, file_tuples, data)
+                    new_found = found | {k for k in _FIELD_KEYS if new_data.get(k) and not data.get(k)}
+                    st.session_state["mb_data"]  = new_data
+                    st.session_state["mb_found"] = new_found
+                    if extracted_photo and not st.session_state.get("mb_photo"):
+                        st.session_state["mb_photo"] = extracted_photo
+                    data  = new_data
+                    found = new_found
+                    st.success("✅ Extraction complete")
+                    st.rerun()
+
+        # Additional upload for new files not in evaluation
+        with st.expander(
+            "📎 Upload additional documents (optional)" if ev_doc_files else "📎 Upload documents",
+            expanded=not bool(ev_doc_files)
+        ):
+            doc_files = st.file_uploader(
+                "Company documents (PDF, PPT, Word)",
+                type=["pdf", "pptx", "ppt", "docx", "doc"],
+                key="mb_emb_doc_upload",
+                accept_multiple_files=True,
+            )
+            if doc_files and api_key:
+                if st.button(f"Extract from {len(doc_files)} file(s)", key="mb_emb_extract_btn"):
+                    with st.spinner("Extracting with AI…"):
+                        new_data, extracted_photo = _extract_with_claude(
+                            api_key, [(f.read(), f.name) for f in doc_files], data
+                        )
+                    new_found = found | {k for k in _FIELD_KEYS if new_data.get(k) and not data.get(k)}
+                    st.session_state["mb_data"]  = new_data
+                    st.session_state["mb_found"] = new_found
+                    if extracted_photo:
+                        st.session_state["mb_photo"] = extracted_photo
+                    data  = new_data
+                    found = new_found
+                    st.success("✅ Extraction complete")
+                    st.rerun()
+            elif doc_files and not api_key:
+                st.warning("Enter an API key above to enable AI extraction.")
 
     with photo_col:
-        st.markdown("**Person Photo** (JPG / PNG)")
+        st.markdown("**Photo**")
         photo_file = st.file_uploader(
             "Person photo", type=["jpg", "jpeg", "png"],
             key="mb_emb_photo_upload", label_visibility="collapsed",
         )
         if photo_file:
             st.session_state["mb_photo"] = photo_file.read()
-            st.image(st.session_state["mb_photo"], width=120)
+            st.image(st.session_state["mb_photo"], width=100)
         elif st.session_state.get("mb_photo"):
-            src = "from evaluation brief" if st.session_state.get("ev_auto_photo") else "current photo"
-            st.image(st.session_state["mb_photo"], width=120, caption=f"📸 {src}")
+            src = "from brief" if st.session_state.get("ev_auto_photo") else "uploaded"
+            st.image(st.session_state["mb_photo"], width=100, caption=f"📸 {src}")
         else:
-            st.markdown(
-                '<div class="mb-missing">No photo found — upload one above '
-                'or it will be left blank in the brief.</div>',
-                unsafe_allow_html=True,
-            )
+            st.caption("No photo — will be blank in PPTX")
 
-    # ── 2 — Fill gaps from internet ─────────────────────────────────────────
-    if api_key:
-        missing_keys = [k for k in _FIELD_KEYS if not data.get(k)]
-        if missing_keys:
-            if st.button(
-                f"🌐 Fill {len(missing_keys)} missing fields from internet",
-                key="mb_emb_web_btn",
-            ):
-                with st.spinner("Searching the internet…"):
-                    new_data = _search_online(
-                        api_key, data.get("company_name", active_company),
-                        data.get("full_name", ""), data.get("website", ""), data
-                    )
-                new_found = found | {k for k in _FIELD_KEYS if new_data.get(k) and not data.get(k)}
-                st.session_state["mb_data"]  = new_data
-                st.session_state["mb_found"] = new_found
-                data  = new_data
-                found = new_found
-                st.rerun()
-
-    # ── 3 — Review & edit ───────────────────────────────────────────────────
-    st.markdown("### 2 — Review & Edit")
+    # ── Review & Edit ───────────────────────────────────────────────────────
+    st.markdown("### Review & Edit Fields")
     st.markdown(
         '<p style="font-size:12px;color:#6b7280;">'
-        '<span style="color:#991B1B;">⚠ Red fields</span> were not found — fill manually. '
-        '<span style="color:#065F46;">✓ Green fields</span> were auto-filled.</p>',
+        '<span style="color:#991B1B;">⚠ Red fields</span> not found — fill manually if needed. '
+        '<span style="color:#065F46;">✓ Green</span> = auto-filled. '
+        'Generate will auto-fill any remaining gaps from internet before building.</p>',
         unsafe_allow_html=True,
     )
     updated = _render_form(data, found)
     st.session_state["mb_data"] = updated
 
-    # ── 4 — Generate PPTX ───────────────────────────────────────────────────
-    st.markdown("### 3 — Generate Brief")
+    # ── Generate PPTX ───────────────────────────────────────────────────────
+    st.markdown("---")
     missing_req = [_FIELD_LABELS[k] for k in _REQUIRED if not updated.get(k)]
     if missing_req:
         st.warning(f"Required fields still missing: {', '.join(missing_req)}")
 
-    gen_col, _ = st.columns([2, 3])
-    with gen_col:
-        if st.button("📊 Generate Minister Brief PPTX", type="primary", key="mb_emb_gen_btn"):
-            final_data = dict(updated)
-            # Auto-fill any still-missing fields from internet / Claude knowledge
-            if api_key:
-                missing = [k for k in _FIELD_KEYS if not final_data.get(k)]
-                if missing:
-                    with st.spinner(f"🌐 Auto-filling {len(missing)} missing fields from internet & AI…"):
-                        final_data = _search_online(
-                            api_key,
-                            final_data.get("company_name", active_company),
-                            final_data.get("full_name", ""),
-                            final_data.get("website", ""),
-                            final_data,
-                        )
-                        st.session_state["mb_data"] = final_data
-                        st.session_state["mb_found"] = found | {
-                            k for k in _FIELD_KEYS if final_data.get(k) and k not in found
-                        }
-            slide_content = None
-            if api_key:
-                with st.spinner("🤖 Generating content for all slides…"):
-                    slide_content = _generate_slide_content(api_key, final_data)
-            with st.spinner("Building PPTX…"):
-                try:
-                    logo_bytes = (
-                        st.session_state.get("mb_logo")
-                        or st.session_state.get("ev_logo_bytes")
-                    )
-                    pptx_bytes = _generate_pptx(
+    n_still_missing = sum(1 for k in _FIELD_KEYS if not updated.get(k))
+    auto_note = (
+        f" (will auto-fill {n_still_missing} missing fields from internet first)"
+        if n_still_missing and api_key else ""
+    )
+
+    if st.button(
+        f"📊 Generate Minister Brief PPTX{auto_note}",
+        type="primary",
+        use_container_width=True,
+        key="mb_emb_gen_btn",
+    ):
+        final_data = dict(updated)
+        _ev_brief  = st.session_state.get("ev_brief")
+
+        # Auto-fill any still-missing fields from internet / Claude knowledge
+        if api_key:
+            missing = [k for k in _FIELD_KEYS if not final_data.get(k)]
+            if missing:
+                with st.spinner(f"🌐 Auto-filling {len(missing)} missing fields…"):
+                    final_data = _search_online(
+                        api_key,
+                        final_data.get("company_name", active_company),
+                        final_data.get("full_name", ""),
+                        final_data.get("website", ""),
                         final_data,
-                        photo_bytes=st.session_state.get("mb_photo"),
-                        logo_bytes=logo_bytes,
-                        slide_content=slide_content,
                     )
-                    co_slug = re.sub(r"[^\w]", "_", final_data.get("company_name", "Brief"))
-                    fname   = f"MinisterBrief_{co_slug}_{date.today().strftime('%Y%m%d')}.pptx"
-                    st.download_button(
-                        "⬇️ Download Brief",
-                        data=pptx_bytes,
-                        file_name=fname,
-                        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                        key="mb_emb_download",
-                    )
-                    st.success("✅ Brief ready — click Download above.")
-                except Exception as e:
-                    st.error(f"Failed to generate: {e}")
+                    st.session_state["mb_data"] = final_data
+                    st.session_state["mb_found"] = found | {
+                        k for k in _FIELD_KEYS if final_data.get(k) and k not in found
+                    }
+
+        slide_content = None
+        if api_key:
+            with st.spinner("🤖 Generating rich content for all 7 slides…"):
+                slide_content = _generate_slide_content(api_key, final_data, ev_brief=_ev_brief)
+
+        with st.spinner("Building PPTX…"):
+            try:
+                logo_bytes = (
+                    st.session_state.get("mb_logo")
+                    or st.session_state.get("ev_logo_bytes")
+                )
+                pptx_bytes = _generate_pptx(
+                    final_data,
+                    photo_bytes=st.session_state.get("mb_photo"),
+                    logo_bytes=logo_bytes,
+                    slide_content=slide_content,
+                )
+                co_slug = re.sub(r"[^\w]", "_", final_data.get("company_name", "Brief"))
+                fname   = f"MinisterBrief_{co_slug}_{date.today().strftime('%Y%m%d')}.pptx"
+                st.download_button(
+                    "⬇️ Download Minister Brief PPTX",
+                    data=pptx_bytes,
+                    file_name=fname,
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    key="mb_emb_download",
+                )
+                st.success("✅ All 7 slides filled — click Download above.")
+            except Exception as e:
+                st.error(f"Failed to generate: {e}")
