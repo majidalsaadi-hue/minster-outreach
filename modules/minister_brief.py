@@ -288,32 +288,49 @@ def _fetch_logo(domain: str) -> bytes | None:
 
 
 def _search_online(api_key: str, company: str, person: str, website: str, current_data: dict) -> dict:
-    """Use DuckDuckGo + Claude to fill missing fields from the internet."""
-    try:
-        domain = re.sub(r"https?://", "", website or "").split("/")[0].strip()
-        query  = urllib.parse.quote(f"{company} {person} investment company profile")
-        url    = f"https://api.duckduckgo.com/?q={query}&format=json&no_redirect=1&no_html=1&skip_disambig=1"
-        req    = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=8) as r:
-            ddg = json.loads(r.read().decode())
-        abstract = ddg.get("AbstractText", "") or ddg.get("Answer", "")
-        related  = " ".join(r.get("Text", "") for r in ddg.get("RelatedTopics", [])[:5])
-        snippet  = (abstract + " " + related)[:3000]
-    except Exception:
-        snippet = ""
+    """Use DuckDuckGo + Claude (with training knowledge fallback) to fill missing fields."""
+    # Try several DuckDuckGo queries and merge results
+    snippets = []
+    queries = [
+        f"{company} company profile employees revenue",
+        f"{company} Saudi Arabia investment",
+        f"{person} {company} CEO biography" if person else f"{company} leadership",
+    ]
+    for q in queries:
+        try:
+            url = f"https://api.duckduckgo.com/?q={urllib.parse.quote(q)}&format=json&no_redirect=1&no_html=1&skip_disambig=1"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                ddg  = json.loads(r.read().decode())
+            abstract = ddg.get("AbstractText", "") or ddg.get("Answer", "")
+            related  = " ".join(t.get("Text", "") for t in ddg.get("RelatedTopics", [])[:4])
+            chunk    = (abstract + " " + related).strip()
+            if chunk:
+                snippets.append(chunk)
+        except Exception:
+            pass
 
-    if not snippet.strip():
-        return current_data
+    snippet = " ".join(snippets)[:4000]
 
-    schema  = {k: _FIELD_LABELS[k] for k in _FIELD_KEYS if not current_data.get(k)}
+    schema = {k: _FIELD_LABELS[k] for k in _FIELD_KEYS if not current_data.get(k)}
     if not schema:
         return current_data
 
+    # Always ask Claude — it uses web snippet if available, otherwise its training knowledge
+    web_section = f"Web search results:\n{snippet}" if snippet else "(No web results retrieved — use your training knowledge.)"
     prompt = (
-        f"Using the web snippet below, fill these missing fields for company '{company}' / person '{person}'.\n"
-        f"Schema: {json.dumps(schema)}\n\n"
-        f"Return ONLY a JSON object with the keys above. Empty string if not found.\n\n"
-        f"Web content:\n{snippet}"
+        f"Fill the missing fields for company '{company}'"
+        + (f" / person '{person}'" if person else "")
+        + f".\n"
+        f"Use the web content below if helpful; otherwise draw on your training knowledge — "
+        f"this is a well-known company so factual estimates are acceptable.\n\n"
+        f"Missing fields to fill:\n{json.dumps(schema, indent=2)}\n\n"
+        f"Rules:\n"
+        f"- For 'company_size' use one of: Micro, Small, Medium, Large.\n"
+        f"- For 'ksa_presence', 'engaged_with_he', 'engaged_with_misa', 'global_branches' use Yes or No.\n"
+        f"- For revenue/employees: include unit (e.g. '$4.2B', '40,000+') and mark with 'est.' if estimated.\n"
+        f"- Return ONLY a JSON object with the exact keys above. Empty string if truly unknown.\n\n"
+        f"{web_section}"
     )
     raw = _call_claude(api_key, [{"role": "user", "content": prompt}])
     new_data = dict(current_data)
@@ -733,14 +750,30 @@ def render(dfs: dict, lang: str):
     gen_col, _ = st.columns([2, 3])
     with gen_col:
         if st.button("📊 Generate Minister Brief PPTX", type="primary", key="mb_gen_btn"):
-            with st.spinner("Filling PPTX template…"):
+            final_data = dict(updated)
+            if api_key:
+                missing = [k for k in _FIELD_KEYS if not final_data.get(k)]
+                if missing:
+                    with st.spinner(f"🌐 Auto-filling {len(missing)} missing fields from internet & AI…"):
+                        final_data = _search_online(
+                            api_key,
+                            final_data.get("company_name", active_company),
+                            final_data.get("full_name", ""),
+                            final_data.get("website", ""),
+                            final_data,
+                        )
+                        st.session_state["mb_data"] = final_data
+                        st.session_state["mb_found"] = found | {
+                            k for k in _FIELD_KEYS if final_data.get(k) and k not in found
+                        }
+            with st.spinner("Building PPTX…"):
                 try:
                     pptx_bytes = _generate_pptx(
-                        updated,
+                        final_data,
                         photo_bytes=st.session_state.get("mb_photo"),
                         logo_bytes=st.session_state.get("mb_logo"),
                     )
-                    co_slug = re.sub(r"[^\w]", "_", updated.get("company_name", "Brief"))
+                    co_slug = re.sub(r"[^\w]", "_", final_data.get("company_name", "Brief"))
                     fname   = f"MinisterBrief_{co_slug}_{date.today().strftime('%Y%m%d')}.pptx"
                     st.download_button(
                         "⬇️ Download Brief",
@@ -993,18 +1026,35 @@ def render_embedded(dfs: dict, lang: str):
     gen_col, _ = st.columns([2, 3])
     with gen_col:
         if st.button("📊 Generate Minister Brief PPTX", type="primary", key="mb_emb_gen_btn"):
-            with st.spinner("Filling PPTX template…"):
+            final_data = dict(updated)
+            # Auto-fill any still-missing fields from internet / Claude knowledge
+            if api_key:
+                missing = [k for k in _FIELD_KEYS if not final_data.get(k)]
+                if missing:
+                    with st.spinner(f"🌐 Auto-filling {len(missing)} missing fields from internet & AI…"):
+                        final_data = _search_online(
+                            api_key,
+                            final_data.get("company_name", active_company),
+                            final_data.get("full_name", ""),
+                            final_data.get("website", ""),
+                            final_data,
+                        )
+                        st.session_state["mb_data"] = final_data
+                        st.session_state["mb_found"] = found | {
+                            k for k in _FIELD_KEYS if final_data.get(k) and k not in found
+                        }
+            with st.spinner("Building PPTX…"):
                 try:
                     logo_bytes = (
                         st.session_state.get("mb_logo")
                         or st.session_state.get("ev_logo_bytes")
                     )
                     pptx_bytes = _generate_pptx(
-                        updated,
+                        final_data,
                         photo_bytes=st.session_state.get("mb_photo"),
                         logo_bytes=logo_bytes,
                     )
-                    co_slug = re.sub(r"[^\w]", "_", updated.get("company_name", "Brief"))
+                    co_slug = re.sub(r"[^\w]", "_", final_data.get("company_name", "Brief"))
                     fname   = f"MinisterBrief_{co_slug}_{date.today().strftime('%Y%m%d')}.pptx"
                     st.download_button(
                         "⬇️ Download Brief",
