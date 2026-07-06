@@ -181,10 +181,11 @@ def render(dfs: dict, lang: str):
         with u1:
             st.markdown(
                 '<span class="rb-num">1</span>'
-                '<strong style="font-size:12px">Arabic meeting minutes (.docx)</strong>',
+                '<strong style="font-size:12px">Arabic meeting minutes (any format)</strong>',
                 unsafe_allow_html=True)
-            st.caption("Standard Ministry meeting template — optional if using PPT brief")
-            word_file = st.file_uploader("word", type=["docx","doc"],
+            st.caption("Standard Ministry meeting template — optional if using PPT brief · accepts .docx, .pdf, .png, .jpg")
+            word_file = st.file_uploader("word",
+                                         type=["docx", "doc", "pdf", "png", "jpg", "jpeg", "webp"],
                                          key="rb_word_up", label_visibility="collapsed")
         with u2:
             st.markdown(
@@ -203,7 +204,7 @@ def render(dfs: dict, lang: str):
             excel_file = st.file_uploader("excel", type=["xlsx","xls"],
                                           key="rb_excel_up", label_visibility="collapsed")
 
-    # Auto-parse Word (only when a new file is uploaded)
+    # Auto-parse minutes file (only when a new file is uploaded)
     if word_file is not None:
         _wd_key = f"{word_file.name}_{word_file.size}"
         if _wd_key == st.session_state.get("rb_word_file_key", ""):
@@ -212,16 +213,30 @@ def render(dfs: dict, lang: str):
             st.session_state["rb_word_file_key"] = _wd_key
     if word_file is not None:
         raw = word_file.read()
-        with st.spinner("Parsing Arabic document and translating action items…"):
+        _ext = word_file.name.rsplit(".", 1)[-1].lower() if "." in word_file.name else ""
+        _MIME_MAP = {
+            "pdf": "application/pdf",
+            "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp",
+        }
+        _is_docx = _ext in ("docx", "doc")
+        with st.spinner("Parsing document and extracting action items…"):
             try:
-                parsed = _parse_word(raw)
+                if _is_docx:
+                    parsed = _parse_word(raw)
+                else:
+                    _api_key = st.session_state.get("rb_ar_api_key", "").strip() or \
+                               __import__("os").environ.get("ANTHROPIC_API_KEY", "")
+                    _mime = _MIME_MAP.get(_ext, "application/pdf")
+                    parsed = _parse_minutes_via_claude(raw, _mime, _api_key) if _api_key else {}
+                    if not _api_key:
+                        st.warning("Add your Anthropic API key in the Arabic Minutes Generator section to parse non-DOCX files.")
             except Exception as _pe:
                 parsed = {}
-                st.error(f"Could not parse Word document: {_pe}")
+                st.error(f"Could not parse document: {_pe}")
         if not parsed:
             st.warning(
                 "⚠️ No recognisable meeting-minutes structure found in the uploaded document. "
-                "Expected the standard 4-table Arabic Ministry format. "
+                "For DOCX files, the standard 4-table Arabic Ministry format is expected. "
                 "You can still run the pipeline using action items loaded via the "
                 "**Arabic Minutes Generator** below."
             )
@@ -932,6 +947,93 @@ def _render_action_table(df: pd.DataFrame):
       <tbody>{rows_html}</tbody>
     </table></div>
     """, unsafe_allow_html=True)
+
+
+# ─── Multi-format meeting minutes parser ─────────────────────────────────────
+
+def _parse_minutes_via_claude(file_bytes: bytes, media_type: str, api_key: str) -> dict:
+    """Use Claude to extract meeting-minutes structure from any file format (PDF, image, etc.)."""
+    try:
+        import anthropic, json, base64
+    except ImportError:
+        return {}
+
+    prompt = """You are a bilingual Arabic-English assistant for the Ministry of Investment of Saudi Arabia (MISA).
+Extract meeting-minutes content from the attached document and return ONLY a JSON object with this structure:
+
+{
+  "company": "name of the visiting company",
+  "date": "DD-MM-YYYY or empty string",
+  "subject_ar": "Arabic meeting subject/title",
+  "subject_en": "English translation of the subject",
+  "location": "meeting location (Arabic)",
+  "chair": "name of the chair (Arabic)",
+  "priority": "Very High | High | Medium | Low",
+  "next_meeting_text": "any text about next meeting date/topic",
+  "attendees": "comma-separated list of attendee names and titles",
+  "discussion_ar": "full discussion notes in Arabic (one paragraph)",
+  "action_items": [
+    {
+      "Action (AR)": "action description in Arabic",
+      "Action (EN)": "English translation",
+      "Assigned To": "owner name or department",
+      "Type": "Support | Opportunity | Challenge | Follow-up | Action | Administrative",
+      "Priority": "Very High | High | Medium | Low",
+      "Due Date": "YYYY-MM-DD or empty",
+      "Due Text": "human readable due date or timeframe",
+      "Remarks": ""
+    }
+  ]
+}
+
+Rules:
+- Extract ALL action items mentioned anywhere in the document
+- Keep Arabic text in Arabic script; provide English translations where shown
+- Dates: output as DD-MM-YYYY for "date" field
+- Respond ONLY with the JSON object — no markdown fences, no explanation
+- If a field cannot be found, use an empty string or empty array"""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        b64 = base64.standard_b64encode(file_bytes).decode()
+        msg = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=8192,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "document" if media_type == "application/pdf" else "image",
+                     "source": {"type": "base64", "media_type": media_type, "data": b64}}
+                    if media_type != "application/pdf"
+                    else
+                    {"type": "document",
+                     "source": {"type": "base64", "media_type": "application/pdf", "data": b64}},
+                    {"type": "text", "text": prompt},
+                ],
+            }],
+        )
+        raw = msg.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.rstrip("`").strip()
+        data = json.loads(raw)
+        # Normalise date field if returned
+        from datetime import datetime as _dt
+        for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y"):
+            try:
+                data["date"] = _dt.strptime(data.get("date", ""), fmt).date()
+                break
+            except (ValueError, TypeError):
+                pass
+        if not isinstance(data.get("date"), type(date.today())):
+            data["date"] = None
+        if not isinstance(data.get("action_items"), list):
+            data["action_items"] = []
+        return data
+    except Exception:
+        return {}
 
 
 # ─── Word parser ──────────────────────────────────────────────────────────────
