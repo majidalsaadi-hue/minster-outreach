@@ -190,18 +190,20 @@ def render(dfs: dict, lang: str):
         with u2:
             st.markdown(
                 '<span class="rb-num">2</span>'
-                '<strong style="font-size:12px">Company Brief (.pptx)</strong>',
+                '<strong style="font-size:12px">Company Brief (any format)</strong>',
                 unsafe_allow_html=True)
-            st.caption("Account manager brief — extracts all action items by sector")
-            ppt_file = st.file_uploader("ppt", type=["pptx", "ppt"],
+            st.caption("Account manager brief — extracts all action items by sector · accepts .pptx, .pdf, .png, .jpg")
+            ppt_file = st.file_uploader("ppt",
+                                        type=["pptx", "ppt", "pdf", "png", "jpg", "jpeg", "webp"],
                                         key="rb_ppt_up", label_visibility="collapsed")
         with u3:
             st.markdown(
                 '<span class="rb-num">3</span>'
-                '<strong style="font-size:12px">Action Item Tracker (.xlsx)</strong>',
+                '<strong style="font-size:12px">Action Item Tracker (any format)</strong>',
                 unsafe_allow_html=True)
-            st.caption("V5 tracker — existing rows updated, new rows appended")
-            excel_file = st.file_uploader("excel", type=["xlsx","xls"],
+            st.caption("V5 tracker — existing rows updated, new rows appended · accepts .xlsx, .pdf, .png, .jpg")
+            excel_file = st.file_uploader("excel",
+                                          type=["xlsx", "xls", "pdf", "png", "jpg", "jpeg", "webp"],
                                           key="rb_excel_up", label_visibility="collapsed")
 
     # Auto-parse minutes file (only when a new file is uploaded)
@@ -274,13 +276,28 @@ def render(dfs: dict, lang: str):
             n = len(parsed.get("action_items", []))
             st.success(f"✅ Parsed — {n} action item(s) found and translated to English.")
 
-    # Auto-parse PPT company brief
+    # Auto-parse company brief (any format)
     if ppt_file is not None:
         raw_ppt = ppt_file.read()
-        with st.spinner("Parsing company brief presentation…"):
-            pptx_data = _parse_company_brief_pptx(raw_ppt)
+        _ppt_ext = ppt_file.name.rsplit(".", 1)[-1].lower() if "." in ppt_file.name else ""
+        _MIME_MAP_PPT = {
+            "pdf": "application/pdf",
+            "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp",
+        }
+        _is_pptx = _ppt_ext in ("pptx", "ppt")
+        with st.spinner("Parsing company brief…"):
+            if _is_pptx:
+                pptx_data = _parse_company_brief_pptx(raw_ppt)
+            else:
+                _ppt_api = st.session_state.get("rb_ar_api_key", "").strip() or \
+                           __import__("os").environ.get("ANTHROPIC_API_KEY", "")
+                if _ppt_api:
+                    _ppt_mime = _MIME_MAP_PPT.get(_ppt_ext, "application/pdf")
+                    pptx_data = _parse_brief_via_claude(raw_ppt, _ppt_mime, _ppt_api)
+                else:
+                    pptx_data = {"error": "API key required — add it in the Arabic Minutes Generator section"}
         if pptx_data.get("error"):
-            st.error(f"PPT parse error: {pptx_data['error']}")
+            st.error(f"Brief parse error: {pptx_data['error']}")
         else:
             st.session_state["rb_ppt_bytes"]        = raw_ppt
             st.session_state["rb_ppt_company_info"] = pptx_data.get("company_info", {})
@@ -342,33 +359,62 @@ def render(dfs: dict, lang: str):
 
     if excel_file is not None:
         _xl_key = f"{excel_file.name}_{excel_file.size}"
+        _xl_ext = excel_file.name.rsplit(".", 1)[-1].lower() if "." in excel_file.name else ""
+        _MIME_MAP_XL = {
+            "pdf": "application/pdf",
+            "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp",
+        }
+        _is_xlsx = _xl_ext in ("xlsx", "xls")
         if _xl_key != st.session_state.get("rb_excel_file_key", ""):
             # New file — parse and cache everything once
             st.session_state["rb_excel_file_key"] = _xl_key
-            st.session_state["rb_excel_bytes"]    = excel_file.read()
-            hdr_data = _read_all_header_data(st.session_state["rb_excel_bytes"])
-            st.session_state["rb_excel_header_data"] = hdr_data
-            xl_companies = list(hdr_data.keys())
-            st.session_state["rb_excel_companies"] = xl_companies
-            st.info(
-                f"Excel loaded — {len(xl_companies)} company sheet(s): "
-                f"{', '.join(xl_companies[:6])}"
-            )
-            if xl_companies:
-                first_co = xl_companies[0]
-                if not st.session_state.get("rb_company"):
-                    st.session_state["rb_company"] = first_co
-                cur_co = st.session_state["rb_company"]
-                _fill_company_fields(hdr_data, cur_co)
-                st.session_state["rb_last_co_fill"] = cur_co
-            _det = _detect_opps_from_actions(st.session_state["rb_excel_bytes"])
-            st.session_state["rb_detected_opps"] = _det
+            raw_xl = excel_file.read()
+            if _is_xlsx:
+                st.session_state["rb_excel_bytes"] = raw_xl
+                hdr_data = _read_all_header_data(raw_xl)
+                st.session_state["rb_excel_header_data"] = hdr_data
+                xl_companies = list(hdr_data.keys())
+                st.session_state["rb_excel_companies"] = xl_companies
+                st.info(
+                    f"Tracker loaded — {len(xl_companies)} company sheet(s): "
+                    f"{', '.join(xl_companies[:6])}"
+                )
+                if xl_companies:
+                    first_co = xl_companies[0]
+                    if not st.session_state.get("rb_company"):
+                        st.session_state["rb_company"] = first_co
+                    cur_co = st.session_state["rb_company"]
+                    _fill_company_fields(hdr_data, cur_co)
+                    st.session_state["rb_last_co_fill"] = cur_co
+                _det = _detect_opps_from_actions(raw_xl)
+                st.session_state["rb_detected_opps"] = _det
+            else:
+                # Non-Excel: extract action items via Claude
+                _xl_api = st.session_state.get("rb_ar_api_key", "").strip() or \
+                          __import__("os").environ.get("ANTHROPIC_API_KEY", "")
+                if _xl_api:
+                    with st.spinner("Extracting action items from document…"):
+                        _xl_mime = _MIME_MAP_XL.get(_xl_ext, "application/pdf")
+                        _xl_data = _parse_tracker_via_claude(raw_xl, _xl_mime, _xl_api)
+                    if _xl_data.get("error"):
+                        st.error(f"Tracker parse error: {_xl_data['error']}")
+                    else:
+                        if not st.session_state.get("rb_company") and _xl_data.get("company"):
+                            st.session_state["rb_company"] = _xl_data["company"]
+                        items = _xl_data.get("action_items", [])
+                        if items:
+                            st.session_state["rb_actions"] = pd.DataFrame(items)
+                            st.info(f"Tracker loaded — {len(items)} action item(s) extracted")
+                        else:
+                            st.warning("No action items found in the uploaded document.")
+                else:
+                    st.warning("Add your Anthropic API key in the Arabic Minutes Generator section to parse non-Excel files.")
         else:
             # Same file already processed — just show the cached info
             xl_companies = st.session_state.get("rb_excel_companies", [])
             if xl_companies:
                 st.info(
-                    f"Excel loaded — {len(xl_companies)} company sheet(s): "
+                    f"Tracker loaded — {len(xl_companies)} company sheet(s): "
                     f"{', '.join(xl_companies[:6])}"
                 )
 
@@ -1034,6 +1080,142 @@ Rules:
         return data
     except Exception:
         return {}
+
+
+def _parse_brief_via_claude(file_bytes: bytes, media_type: str, api_key: str) -> dict:
+    """Use Claude to extract company brief data from any file format (PDF, image, etc.)."""
+    try:
+        import anthropic, json, base64
+    except ImportError:
+        return {"error": "anthropic package not installed"}
+
+    prompt = """You are an assistant for the Ministry of Investment of Saudi Arabia (MISA).
+Extract all data from the attached company brief document and return ONLY a JSON object:
+
+{
+  "company": "company name",
+  "company_info": {
+    "sector": "primary sector/industry",
+    "hq": "headquarters location",
+    "aum": "assets under management or revenue figure",
+    "ksa_presence": "Yes/No or description",
+    "employees": "employee count",
+    "website": "website URL",
+    "rep_name": "company representative name",
+    "email": "representative email",
+    "phone": "representative phone"
+  },
+  "sectors": ["Sector A", "Sector B"],
+  "action_items": [
+    {
+      "Action (EN)": "description of the action item",
+      "Sector": "relevant sector name",
+      "Assigned To": "owner name or department",
+      "Type": "Support | Opportunity | Challenge | Follow-up | Action | Administrative",
+      "Priority": "Very High | High | Medium | Low",
+      "Start Date": "YYYY-MM-DD or empty",
+      "Due Date": "YYYY-MM-DD or empty",
+      "Progress": 0,
+      "Status": "Not Started | In Progress | Completed | Blocked",
+      "Remarks": ""
+    }
+  ]
+}
+
+Rules:
+- Extract ALL action items mentioned anywhere in the document
+- sectors: unique list of sector names that have action items
+- Respond ONLY with the JSON object — no markdown fences, no explanation
+- If a field cannot be found use empty string, empty array, or 0"""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        b64 = base64.standard_b64encode(file_bytes).decode()
+        content_block = (
+            {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64}}
+            if media_type == "application/pdf"
+            else {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}}
+        )
+        msg = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=8192,
+            messages=[{"role": "user", "content": [content_block, {"type": "text", "text": prompt}]}],
+        )
+        raw = msg.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.rstrip("`").strip()
+        data = json.loads(raw)
+        if not isinstance(data.get("action_items"), list):
+            data["action_items"] = []
+        if not isinstance(data.get("sectors"), list):
+            data["sectors"] = []
+        if not isinstance(data.get("company_info"), dict):
+            data["company_info"] = {}
+        return data
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _parse_tracker_via_claude(file_bytes: bytes, media_type: str, api_key: str) -> dict:
+    """Use Claude to extract action items from a tracker document (PDF, image, etc.)."""
+    try:
+        import anthropic, json, base64
+    except ImportError:
+        return {"error": "anthropic package not installed"}
+
+    prompt = """You are an assistant for the Ministry of Investment of Saudi Arabia (MISA).
+Extract all action items from the attached document and return ONLY a JSON object:
+
+{
+  "company": "company name if visible",
+  "action_items": [
+    {
+      "Action (AR)": "Arabic text if present, else empty string",
+      "Action (EN)": "English description of the action",
+      "Assigned To": "owner name or department",
+      "Type": "Support | Opportunity | Challenge | Follow-up | Action | Administrative",
+      "Priority": "Very High | High | Medium | Low",
+      "Due Date": "YYYY-MM-DD or empty",
+      "Due Text": "human readable due date or timeframe",
+      "Status": "Not Started | In Progress | Completed | Blocked",
+      "Remarks": ""
+    }
+  ]
+}
+
+Rules:
+- Extract ALL action items, tasks, follow-ups, and commitments
+- Respond ONLY with the JSON object — no markdown fences, no explanation
+- If a field is not found use empty string"""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        b64 = base64.standard_b64encode(file_bytes).decode()
+        content_block = (
+            {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64}}
+            if media_type == "application/pdf"
+            else {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}}
+        )
+        msg = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=8192,
+            messages=[{"role": "user", "content": [content_block, {"type": "text", "text": prompt}]}],
+        )
+        raw = msg.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.rstrip("`").strip()
+        data = json.loads(raw)
+        if not isinstance(data.get("action_items"), list):
+            data["action_items"] = []
+        return data
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 # ─── Word parser ──────────────────────────────────────────────────────────────
