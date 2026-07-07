@@ -242,15 +242,164 @@ def _extract_text_from_file(uploaded_file) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# MoM text parser — extracts structured fields from plain text
+# ─────────────────────────────────────────────────────────────────────────────
+def _parse_mom_text(text: str) -> dict:
+    import re
+    lines = [l.rstrip() for l in text.splitlines()]
+
+    SECTIONS = {
+        "attendees":  ["attendees", "الحضور"],
+        "objective":  ["meeting objective", "هدف الاجتماع"],
+        "discussion": ["key discussion points", "محاور النقاش", "discussion points"],
+        "actions":    ["action items", "بنود العمل"],
+        "next_steps": ["summary of next steps", "ملخص الخطوات", "next steps"],
+        "priority":   ["immediate priority", "الأولوية الفورية"],
+    }
+
+    # Find first line index for each section
+    section_starts = {}
+    for i, line in enumerate(lines):
+        ll = line.strip().lower()
+        for key, markers in SECTIONS.items():
+            if key not in section_starts and any(m in ll for m in markers):
+                section_starts[key] = i
+
+    def section_lines(key):
+        if key not in section_starts:
+            return []
+        start = section_starts[key] + 1
+        later = sorted(v for v in section_starts.values() if v > section_starts[key])
+        end   = later[0] if later else len(lines)
+        return [l for l in lines[start:end] if l.strip()]
+
+    result = {
+        "date": "", "ref": "", "subject": "", "objective": "", "priority": "",
+        "attendees": [], "disc_points": [], "next_steps": [], "actions": [],
+    }
+
+    # ── Metadata from header block ────────────────────────────────────────────
+    first_sec = min(section_starts.values()) if section_starts else len(lines)
+    for line in lines[:first_sec]:
+        s = line.strip()
+        if not s:
+            continue
+        m = re.match(r'(?:subject|الموضوع)\s*[:\-]\s*(.+)', s, re.IGNORECASE)
+        if m:
+            result["subject"] = m.group(1).strip(); continue
+        if re.match(r'(?:MISA|وزارة)', s, re.IGNORECASE) and ('/' in s or '-' in s):
+            if re.search(r'\d{4}', s):
+                result["ref"] = s; continue
+        if re.search(r'\d{1,2}\s+\w+\s+\d{4}', s) and not result["date"]:
+            result["date"] = s; continue
+
+    # ── Attendees ─────────────────────────────────────────────────────────────
+    for line in section_lines("attendees"):
+        if re.match(r'^(?:name|الاسم)', line, re.IGNORECASE):
+            continue
+        parts = re.split(r'\s{2,}|\t', line.strip())
+        if len(parts) >= 2:
+            result["attendees"].append({"name": parts[0].strip(), "role": " ".join(parts[1:]).strip()})
+        elif len(parts) == 1 and parts[0]:
+            result["attendees"].append({"name": parts[0].strip(), "role": ""})
+
+    # ── Objective ─────────────────────────────────────────────────────────────
+    result["objective"] = " ".join(section_lines("objective"))
+
+    # ── Discussion points ─────────────────────────────────────────────────────
+    for line in section_lines("discussion"):
+        pt = re.sub(r'^[\•\-\*·]\s*', '', line.strip())
+        if pt:
+            result["disc_points"].append(pt)
+
+    # ── Action items ──────────────────────────────────────────────────────────
+    skip_header = True
+    for line in section_lines("actions"):
+        ll = line.lower()
+        if skip_header and any(h in ll for h in ["#", "action item", "بند", "م", "owner"]):
+            skip_header = False; continue
+        skip_header = False
+        parts = re.split(r'\t|\s{2,}', line.strip())
+        if not parts or not parts[0].strip():
+            continue
+        num_match = re.match(r'^\d+$', parts[0].strip())
+        idx = 1 if num_match else 0
+        num = parts[0].strip() if num_match else str(len(result["actions"]) + 1)
+        result["actions"].append({
+            "num":         num,
+            "item":        parts[idx]     if len(parts) > idx     else "",
+            "owner":       parts[idx+1]   if len(parts) > idx+1   else "",
+            "deliverable": parts[idx+2]   if len(parts) > idx+2   else "",
+            "due":         parts[idx+3]   if len(parts) > idx+3   else "",
+            "measure":     parts[idx+4]   if len(parts) > idx+4   else "",
+        })
+
+    # ── Next steps ────────────────────────────────────────────────────────────
+    for line in section_lines("next_steps"):
+        pt = re.sub(r'^[\•\-\*·]\s*', '', line.strip())
+        if pt:
+            result["next_steps"].append(pt)
+
+    # ── Priority ──────────────────────────────────────────────────────────────
+    result["priority"] = " ".join(section_lines("priority"))
+
+    return result
+
+
+def _apply_parsed_data(parsed: dict):
+    """Write parsed fields into session state."""
+    if parsed.get("date"):
+        st.session_state["mom_date"] = parsed["date"]
+    if parsed.get("ref"):
+        st.session_state["mom_ref"] = parsed["ref"]
+    if parsed.get("subject"):
+        st.session_state["mom_subject"] = parsed["subject"]
+    if parsed.get("objective"):
+        st.session_state["mom_objective"] = parsed["objective"]
+    if parsed.get("priority"):
+        st.session_state["mom_priority"] = parsed["priority"]
+    if parsed.get("attendees"):
+        st.session_state["mom_attendees"] = parsed["attendees"]
+    if parsed.get("disc_points"):
+        st.session_state["mom_disc_points"] = parsed["disc_points"]
+    if parsed.get("next_steps"):
+        st.session_state["mom_next_steps"] = parsed["next_steps"]
+    if parsed.get("actions"):
+        st.session_state["mom_actions"] = parsed["actions"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Step B — Structured meeting details (Arabic input fields)
 # ─────────────────────────────────────────────────────────────────────────────
 def _render_step_b():
     st.markdown(
-        "<p style='font-size:13px;color:#374151;margin-bottom:16px;'>"
-        "Enter all meeting details below. Fields accept Arabic text directly. "
-        "All inputs build the structured محضر الاجتماع document.</p>",
+        "<p style='font-size:13px;color:#374151;margin-bottom:8px;'>"
+        "Upload a meeting notes file to auto-fill all fields, or fill them in manually below.</p>",
         unsafe_allow_html=True,
     )
+
+    # ── Auto-fill from file ───────────────────────────────────────────────────
+    with st.expander("📎 Auto-fill from file (.txt, .docx, .pdf, .pptx, .xlsx, .csv)", expanded=False):
+        autofill_file = st.file_uploader(
+            "Auto-fill file",
+            type=["txt", "docx", "pdf", "pptx", "xlsx", "csv", "md", "rtf"],
+            key="mom_b_autofill",
+            label_visibility="collapsed",
+            help="Upload your meeting notes — the system will extract all structured fields automatically.",
+        )
+        if autofill_file is not None:
+            raw_text = _extract_text_from_file(autofill_file)
+            if raw_text:
+                parsed = _parse_mom_text(raw_text)
+                _apply_parsed_data(parsed)
+                st.success(
+                    f"✅ Auto-filled from **{autofill_file.name}** — "
+                    f"{len(parsed['attendees'])} attendees, "
+                    f"{len(parsed['actions'])} action items, "
+                    f"{len(parsed['disc_points'])} discussion points detected. "
+                    f"Review and edit the fields below."
+                )
+                st.rerun()
 
     # ── Metadata ──────────────────────────────────────────────────────────────
     _section_header("📋 Meeting Metadata", "بيانات الاجتماع")
@@ -429,25 +578,26 @@ def _render_step_c():
 
     mode = st.radio(
         "Output language",
-        ["Arabic Only — عربي فقط", "Bilingual — ثنائي اللغة (English + Arabic)"],
+        ["English Only", "Arabic Only — عربي فقط", "Bilingual — ثنائي اللغة (English + Arabic)"],
         horizontal=True,
         key="mom_output_mode",
     )
-    bilingual = "Bilingual" in mode
+    mode_key = "en" if "English Only" in mode else ("ar" if "Arabic Only" in mode else "bilingual")
 
     col_prev, col_dl = st.columns([1, 1])
+    data = _collect_data()
+    html_bytes = _build_html(data, mode=mode_key)
+    fname_map = {"en": "MoM_English.html", "ar": "MoM_Arabic.html", "bilingual": "MoM_Bilingual.html"}
 
     with col_prev:
         if st.button("👁 Preview Document", use_container_width=True, key="mom_preview_btn"):
             st.session_state["mom_show_preview"] = True
 
     with col_dl:
-        html_bytes = _build_html(_collect_data(), bilingual=bilingual)
-        fname = "MoM_Arabic.html" if not bilingual else "MoM_Bilingual.html"
         st.download_button(
             "⬇ Download HTML (Print-ready)",
             data=html_bytes,
-            file_name=fname,
+            file_name=fname_map[mode_key],
             mime="text/html",
             use_container_width=True,
             key="mom_dl_btn",
@@ -495,16 +645,21 @@ def _collect_data() -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # HTML generation
 # ─────────────────────────────────────────────────────────────────────────────
-def _build_html(data: dict, bilingual: bool = False) -> bytes:
-    arabic_page = _arabic_page(data)
-    if bilingual:
-        english_page = _english_page(data)
-        body = english_page + '<div style="page-break-after:always;"></div>' + arabic_page
+def _build_html(data: dict, mode: str = "ar") -> bytes:
+    if mode == "en":
+        body = _english_page(data)
+        lang_attr = "en"
+    elif mode == "bilingual":
+        body = (_english_page(data)
+                + '<div style="page-break-after:always;"></div>'
+                + _arabic_page(data))
+        lang_attr = "en"
     else:
-        body = arabic_page
+        body = _arabic_page(data)
+        lang_attr = "ar"
 
     html = f"""<!DOCTYPE html>
-<html lang="ar">
+<html lang="{lang_attr}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -780,22 +935,43 @@ def _arabic_page(data: dict) -> str:
 
 
 def _english_page(data: dict) -> str:
-    en_notes = data.get("en_notes", "").strip()
-    # Render the English notes as simple paragraphs / bullets
-    lines_html = ""
-    for line in en_notes.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            lines_html += "<br>"
-        elif stripped.startswith(("• ", "- ", "* ")):
-            lines_html += f"<li>{_e(stripped[2:])}</li>"
-        else:
-            lines_html += f"<p style='margin:4px 0;'>{_e(stripped)}</p>"
-
     att_rows = "".join(
         f"<tr><td>{_e(a['name'])}</td><td>{_e(a['role'])}</td></tr>"
         for a in data["attendees"] if a.get("name")
     )
+    disc_items = "".join(
+        f"<li>{_e(pt)}</li>" for pt in data["disc_points"] if str(pt).strip()
+    )
+    action_rows = "".join(
+        f"<tr>"
+        f"<td class='cell-num'>{_e(a['num'])}</td>"
+        f"<td>{_e(a['item'])}</td>"
+        f"<td>{_e(a['owner'])}</td>"
+        f"<td>{_e(a['deliverable'])}</td>"
+        f"<td>{_e(a['due'])}</td>"
+        f"<td>{_e(a['measure'])}</td>"
+        f"</tr>"
+        for a in data["actions"] if a.get("item")
+    )
+    step_items = "".join(
+        f"<li>{_e(s)}</li>" for s in data["next_steps"] if str(s).strip()
+    )
+    # Raw notes fallback — shown only when structured fields are mostly empty
+    has_structured = any([
+        any(a.get("item") for a in data["actions"]),
+        any(str(p).strip() for p in data["disc_points"]),
+        data.get("objective", "").strip(),
+    ])
+    en_notes_html = ""
+    if not has_structured and data.get("en_notes", "").strip():
+        for line in data["en_notes"].splitlines():
+            s = line.strip()
+            if not s:
+                en_notes_html += "<br>"
+            elif s.startswith(("• ", "- ", "* ")):
+                en_notes_html += f"<li>{_e(s[2:])}</li>"
+            else:
+                en_notes_html += f"<p style='margin:4px 0;'>{_e(s)}</p>"
 
     return f"""
 <div class="page en">
@@ -826,10 +1002,46 @@ def _english_page(data: dict) -> str:
     </table>
   </div>
 
-  <!-- English Notes -->
+  <!-- Meeting Objective -->
   <div class="section">
-    <div class="section-title">Meeting Notes</div>
-    <div class="section-body" style="line-height:1.7;">{lines_html or "<span style='color:#9ca3af;'>No English notes provided.</span>"}</div>
+    <div class="section-title">Meeting Objective</div>
+    <div class="section-body">{_e(data['objective']) or (en_notes_html or "<span style='color:#9ca3af;'>—</span>")}</div>
+  </div>
+
+  <!-- Key Discussion Points -->
+  <div class="section">
+    <div class="section-title">Key Discussion Points</div>
+    <ul class="bullet-list">{disc_items or "<li style='color:#9ca3af;'>—</li>"}</ul>
+  </div>
+
+  <!-- Action Items -->
+  <div class="section">
+    <div class="section-title">Action Items</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:28px;text-align:left;">#</th>
+          <th style="text-align:left;">Action Item</th>
+          <th style="text-align:left;">Owner</th>
+          <th style="text-align:left;">Deliverable</th>
+          <th style="text-align:left;">Due Date</th>
+          <th style="text-align:left;">Success Measure</th>
+        </tr>
+      </thead>
+      <tbody>{action_rows or "<tr><td colspan='6' style='color:#9ca3af;text-align:center;'>—</td></tr>"}</tbody>
+    </table>
+  </div>
+
+  <!-- Summary of Next Steps -->
+  <div class="section">
+    <div class="section-title">Summary of Next Steps</div>
+    <ul class="bullet-list">{step_items or "<li style='color:#9ca3af;'>—</li>"}</ul>
+  </div>
+
+  <!-- Immediate Priority -->
+  <div class="section">
+    <div class="section-title">Immediate Priority</div>
+    <div class="priority-box">{_e(data['priority']) or "<span style='color:#9ca3af;'>—</span>"}</div>
   </div>
 
   <!-- Footer -->
