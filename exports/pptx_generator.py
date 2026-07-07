@@ -1011,19 +1011,19 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         ("Completed mtg", MISA_GREEN), ("Scheduled", MISA_GOLD), ("Cancelled", "#AAAAAA"),
     ]
     for ri, (lbl, col) in enumerate(_mtg_items):
-        lx = Inches(5.13) + ri * Inches(1.10)
+        lx = Inches(5.45) + ri * Inches(1.10)
         _add_rect(slide, lx, _LG_Y + Inches(0.06), _LG_SQ, _LG_SQ,
                   fill_color=_rgb(col), line_color=_rgb(col))
         _add_text_box(slide, lbl, lx + Inches(0.12), _LG_Y,
                       Inches(1.00), Inches(0.20), font_size=6.5, color=MGRAY)
-    _add_text_box(slide, "|", Inches(8.44), _LG_Y, Inches(0.15), Inches(0.20),
+    _add_text_box(slide, "|", Inches(8.76), _LG_Y, Inches(0.15), Inches(0.20),
                   font_size=6.5, color=MGRAY, align=PP_ALIGN.CENTER)
     _act_items = [
         ("Done", MISA_GREEN), ("In Progress", MISA_GOLD),
         ("Pending", "#888888"), ("Blocked", "#C0392B"),
     ]
     for ri, (lbl, col) in enumerate(_act_items):
-        lx = Inches(8.60) + ri * Inches(0.82)
+        lx = Inches(8.92) + ri * Inches(0.82)
         _add_rect(slide, lx, _LG_Y + Inches(0.06), _LG_SQ, _LG_SQ,
                   fill_color=_rgb(col), line_color=_rgb(col))
         _add_text_box(slide, lbl, lx + Inches(0.12), _LG_Y,
@@ -1061,8 +1061,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _pct_any  = min(1.0, (_donut_vals[0] + _donut_vals[1]) / _tot)  # completed+in-progress
         _pct_done = min(1.0, _donut_vals[0] / _tot)                     # completed only
         _ccx = Inches(1.75)   # circle center x
-        _ccy = Inches(4.55)   # circle center y
-        _CR  = Inches(1.20)   # outer radius
+        _ccy = Inches(4.40)   # circle center y
+        _CR  = Inches(1.10)   # outer radius
 
         def _oval_c(cx, cy, r, color):
             r = max(r, Inches(0.05))
@@ -1081,7 +1081,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _chart_data.add_series("Status", tuple(_donut_vals))
             _chart_gfx = slide.shapes.add_chart(
                 XL_CHART_TYPE.DOUGHNUT,
-                Inches(0.5), Inches(3.3), Inches(2.5), Inches(2.5),
+                Inches(0.5), Inches(3.3), Inches(2.5), Inches(2.20),
                 _chart_data,
             )
             _chart_obj = _chart_gfx.chart
@@ -1099,19 +1099,11 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     # Center label overlaid on doughnut hole
     _add_text_box(slide, f"{pct_s}%",
-                  Inches(1.25), Inches(4.25), Inches(1.0), Inches(0.40),
+                  Inches(1.25), Inches(4.15), Inches(1.0), Inches(0.40),
                   font_size=18, bold=True, color=GREEN, align=PP_ALIGN.CENTER)
     _add_text_box(slide, "complete",
-                  Inches(1.25), Inches(4.65), Inches(1.0), Inches(0.18),
+                  Inches(1.25), Inches(4.52), Inches(1.0), Inches(0.18),
                   font_size=7, color=MGRAY, align=PP_ALIGN.CENTER)
-
-    # Text legend below chart (width capped at 2.5" — Due Dates strip starts at x=3.10")
-    _add_text_box(
-        slide,
-        f"■ Done: {n_done_s}  ■ In Prog: {n_prog_s}  ■ Pending: {n_due_s}",
-        Inches(0.5), Inches(5.85), Inches(2.50), Inches(0.22),
-        font_size=7, color=DARK,
-    )
 
     # ── LEFT PANEL: Opportunities list (x constrained to 0.5"–3.0") ──────────
     _n_opps_left = len(opps) if not opps.empty else 0
@@ -1147,19 +1139,19 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       font_size=8, color=MGRAY)
 
     # Thin vertical divider between left and right panels
-    _add_rect(slide, Inches(5.05), Inches(2.42), Inches(0.015), Inches(4.60),
+    _add_rect(slide, Inches(5.40), Inches(2.42), Inches(0.015), Inches(4.60),
               fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
 
     # ── RIGHT PANEL: Two stacked action tables ────────────────────────────────
     _n_pend_label = len(pend_df)
     _n_done_label = len(done_df)
     # Heading moved to vertical strip on far right (see below after timeline)
-    TBL_X  = Inches(5.1)
+    TBL_X  = Inches(5.42)
     HDR_Y  = Inches(2.94)
     HDR_H  = Inches(0.32)
     ROW_H  = Inches(0.46)
     MAX_R  = 4
-    CW_NEW = [Inches(w) for w in [0.30, 3.20, 1.50, 1.00, 0.75]]
+    CW_NEW = [Inches(w) for w in [0.30, 2.85, 1.50, 1.50, 0.75]]
 
     def _render_tbl_new(df, tbl_y, title, hdr_color, max_r=MAX_R):
         CX = [TBL_X + sum(CW_NEW[:j]) for j in range(len(CW_NEW))]
@@ -1205,7 +1197,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             # Col 3: update note only (no status label)
             _add_rect(slide, CX[3], ry, CW_NEW[3], ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
             if note:
-                _add_text_box(slide, note[:40], CX[3] + Inches(0.05), ry + Inches(0.07),
+                _add_text_box(slide, note[:55], CX[3] + Inches(0.05), ry + Inches(0.07),
                               CW_NEW[3] - Inches(0.08), Inches(0.32),
                               font_size=7.5, color=DARK)
             # Col 4: progress bar + % label
@@ -1230,10 +1222,10 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         return tbl_y + HDR_H + min(len(df), max_r) * ROW_H
 
     tbl1_end = _render_tbl_new(pend_df, HDR_Y, "Pending / In Progress", GREEN, max_r=4)
-    _render_tbl_new(done_df, tbl1_end + Inches(0.15), "Completed", _rgb("#2D7A54"), max_r=3)
+    if not done_df.empty:
+        _render_tbl_new(done_df, tbl1_end + Inches(0.15), "Completed", _rgb("#2D7A54"), max_r=3)
 
-    # ── Vertical due-date timeline strip — LEFT panel, below Engagement Timeline ─
-    # Positioned at x=3.10"–4.95" (right of donut chart), y=3.05"–7.00"
+    # ── Horizontal due-date timeline — above opportunities, full left panel width ─
     try:
         if not acts.empty and "Due Date" in acts.columns:
             _act_tl = acts.copy()
@@ -1243,7 +1235,6 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 _today = date.today()
                 _vt_min_dt = _act_tl["_dt"].min().date()
                 _vt_max_dt = _act_tl["_dt"].max().date()
-                # Cap range: at most 18 months before/after today
                 _vt_min_dt = max(_vt_min_dt, _today.replace(day=1) - timedelta(days=548))
                 _vt_max_dt = min(_vt_max_dt, _today.replace(day=28) + timedelta(days=548))
                 _vt_min_dt = _vt_min_dt.replace(day=1)
@@ -1256,60 +1247,66 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                     _vt_max_dt = _today.replace(day=_ld2)
                 _span = max((_vt_max_dt - _vt_min_dt).days, 1)
 
-                VTL_X   = Inches(3.10)
-                VTL_W   = Inches(1.85)
-                VTL_TOP = Inches(2.41)
-                VTL_BOT = Inches(7.00)
-                _vt_h   = VTL_BOT - VTL_TOP
-                _axis_x = VTL_X + Inches(0.60)
+                HX_L    = Inches(0.45)
+                HX_W    = Inches(4.85)
+                HX_BG_Y = Inches(5.58)
+                HX_BG_H = Inches(0.42)
+                HX_AX_Y = HX_BG_Y + Inches(0.16)
 
-                def _vy(d):
+                def _hx(d):
                     if hasattr(d, "date") and callable(d.date):
                         d = d.date()
                     frac = max(0.0, min(1.0, (d - _vt_min_dt).days / _span))
-                    return VTL_TOP + frac * _vt_h
+                    return HX_L + frac * HX_W
 
-                _add_rect(slide, VTL_X, VTL_TOP, VTL_W, _vt_h,
+                _add_rect(slide, HX_L, HX_BG_Y, HX_W, HX_BG_H,
                           fill_color=_rgb("#F5F5F0"), line_color=_rgb("#DDDDDD"))
-                _add_text_box(slide, "Action Due Dates", VTL_X, VTL_TOP,
-                              VTL_W, Inches(0.20),
-                              font_size=7, bold=True, color=DARK, align=PP_ALIGN.CENTER)
-                _add_rect(slide, _axis_x, VTL_TOP + Inches(0.22),
-                          Inches(0.008), _vt_h - Inches(0.22),
-                          fill_color=_rgb("#BBBBBB"), line_color=_rgb("#BBBBBB"))
+                _add_text_box(slide, "Action Due Dates",
+                              HX_L, HX_BG_Y + Inches(0.02), HX_W, Inches(0.14),
+                              font_size=7, bold=True, color=DARK)
+                _add_rect(slide, HX_L, HX_AX_Y, HX_W, Inches(0.012),
+                          fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
+
+                _n_months = max(1, (_vt_max_dt.year - _vt_min_dt.year) * 12
+                                + (_vt_max_dt.month - _vt_min_dt.month))
+                _show_every = 1 if _n_months <= 12 else 2
                 _mo = _vt_min_dt.replace(day=1)
                 _mo_count = 0
                 while _mo <= _vt_max_dt and _mo_count < 24:
                     _mo_count += 1
-                    _my = _vy(_mo)
-                    _add_rect(slide, _axis_x - Inches(0.08), _my,
-                              Inches(0.08), Inches(0.008),
+                    _mx = _hx(_mo)
+                    _add_rect(slide, _mx, HX_AX_Y, Inches(0.008), Inches(0.08),
                               fill_color=_rgb("#AAAAAA"), line_color=_rgb("#AAAAAA"))
-                    _add_text_box(slide, _mo.strftime("%b '%y"), VTL_X, _my - Inches(0.07),
-                                  Inches(0.57), Inches(0.13),
-                                  font_size=5.5, color=_rgb("#777777"), align=PP_ALIGN.RIGHT)
+                    if _mo_count % _show_every == 1:
+                        _add_text_box(slide, _mo.strftime("%b"), _mx - Inches(0.15),
+                                      HX_AX_Y + Inches(0.09), Inches(0.32), Inches(0.12),
+                                      font_size=5.5, color=_rgb("#777777"), align=PP_ALIGN.CENTER)
                     _mo = (_mo.replace(year=_mo.year + 1, month=1)
                            if _mo.month == 12
                            else _mo.replace(month=_mo.month + 1))
-                _now_y = _vy(_today)
-                _add_rect(slide, VTL_X + Inches(0.04), _now_y,
-                          VTL_W - Inches(0.08), Inches(0.012),
+
+                _now_x = _hx(_today)
+                _add_rect(slide, _now_x - Inches(0.005), HX_AX_Y - Inches(0.10),
+                          Inches(0.010), Inches(0.20),
                           fill_color=GOLD, line_color=GOLD)
-                _add_text_box(slide, "NOW", _axis_x + Inches(0.02), _now_y - Inches(0.10),
-                              Inches(0.35), Inches(0.12),
-                              font_size=5.5, bold=True, color=GOLD)
+                _add_text_box(slide, "NOW", _now_x - Inches(0.15), HX_AX_Y - Inches(0.18),
+                              Inches(0.32), Inches(0.10),
+                              font_size=5.5, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+
                 for _ai, (_, _arow) in enumerate(_act_tl.iterrows()):
-                    _ady = _vy(_arow["_dt"])
+                    _adx = _hx(_arow["_dt"])
                     _ast = str(_arow.get("Status", ""))
                     _asc = _rgb(_ACT_SC.get(_ast, "#888888"))
-                    _add_rect(slide, _axis_x + Inches(0.01), _ady - Inches(0.025),
-                              Inches(0.22), Inches(0.05),
+                    _dy = Inches(0.09) if _ai % 2 == 0 else Inches(0.04)
+                    _add_rect(slide, _adx - Inches(0.035), HX_AX_Y - _dy - Inches(0.07),
+                              Inches(0.07), Inches(0.07),
                               fill_color=_asc, line_color=_asc)
-                    _add_text_box(slide, str(_ai + 1), _axis_x + Inches(0.24),
-                                  _ady - Inches(0.07), Inches(0.22), Inches(0.13),
-                                  font_size=5.5, color=DARK)
+                    _add_text_box(slide, str(_ai + 1),
+                                  _adx - Inches(0.09), HX_AX_Y - _dy - Inches(0.16),
+                                  Inches(0.18), Inches(0.10),
+                                  font_size=5, color=DARK, align=PP_ALIGN.CENTER)
     except Exception:
-        pass  # timeline strip is non-critical; never block slide generation
+        pass  # timeline is non-critical; never block slide generation
 
     # ── Vertical action items heading — far right strip (x=13.05" to 13.33") ─
     # Placed after timeline so it draws on top; rotation=90 → reads bottom-to-top
