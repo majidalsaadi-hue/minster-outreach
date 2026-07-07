@@ -216,6 +216,50 @@ def _co_summary_slide(prs, company, inv_row, actions, opportunities, meetings, l
                   font_size=10, color=WHITE, align=PP_ALIGN.CENTER)
 
 
+def _slide_dashboard_title_cover(prs):
+    """Intro cover slide for the All-Companies dashboard deck."""
+    slide = _blank_slide(prs)
+    _fill_background(slide, _rgb(MISA_GREEN))
+
+    # Decorative gold band at top third
+    _add_rect(slide, Inches(0), Inches(2.40), Inches(13.33), Inches(0.05),
+              fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
+    _add_rect(slide, Inches(0), Inches(4.80), Inches(13.33), Inches(0.05),
+              fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
+
+    # Arabic & English ministry label
+    _add_text_box(slide, "وزارة الاستثمار  |  Ministry of Investment",
+                  Inches(1), Inches(1.50), Inches(11.33), Inches(0.40),
+                  font_size=13, color=_rgb(MISA_GOLD), align=PP_ALIGN.CENTER)
+
+    # Main title
+    _add_text_box(slide, "Man-marking Weekly Report",
+                  Inches(1), Inches(2.55), Inches(11.33), Inches(0.90),
+                  font_size=32, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+
+    # Subtitle
+    _add_text_box(slide, "Executive Outreach  |  Minister Office",
+                  Inches(1), Inches(3.52), Inches(11.33), Inches(0.38),
+                  font_size=14, color=_rgb(MISA_GOLD), align=PP_ALIGN.CENTER)
+
+    # Date
+    _add_text_box(slide, date.today().strftime("%d %B %Y"),
+                  Inches(1), Inches(5.00), Inches(11.33), Inches(0.32),
+                  font_size=11, color=WHITE, align=PP_ALIGN.CENTER)
+
+    # Confidential note
+    _add_text_box(slide, "FOR INTERNAL USE ONLY",
+                  Inches(1), Inches(5.36), Inches(11.33), Inches(0.26),
+                  font_size=9, color=_rgb("#AADDBB"), align=PP_ALIGN.CENTER)
+
+    # Gold footer
+    _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
+              fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
+    _add_text_box(slide, "CONFIDENTIAL | Ministry of Investment — وزارة الاستثمار",
+                  Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
+                  font_size=10, color=WHITE, align=PP_ALIGN.CENTER)
+
+
 def _slide_end_thankyou(prs):
     slide = _blank_slide(prs)
     _fill_background(slide, _rgb(MISA_GREEN))
@@ -257,7 +301,10 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
     actions       = dfs.get("Action Items",         pd.DataFrame())
     deals         = dfs.get("Deal Progress",        pd.DataFrame())
 
-    # ── Slide 1: Cover / Summary ──────────────────────────────────────────────
+    # ── Slide 1: Title / Intro cover ─────────────────────────────────────────
+    _slide_dashboard_title_cover(prs)
+
+    # ── Slide 2: KPI Summary ─────────────────────────────────────────────────
     slide = _blank_slide(prs)
 
     # Full-width green header
@@ -1118,7 +1165,21 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     n_done_s = int(acts["Status"].str.lower().str.contains("complet").sum()) if not acts.empty and "Status" in acts.columns else 0
     n_prog_s = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
     n_due_s  = max(n_total - n_done_s - n_prog_s, 0)
-    pct_s    = round((n_done_s + n_prog_s) / n_total * 100) if n_total > 0 else 0
+    # Average of individual action Progress values (0–1 fractions stored per row)
+    if not acts.empty and "Progress" in acts.columns and n_total > 0:
+        def _parse_prog(x):
+            try:
+                v = float(str(x).replace("%", "")) if x not in (None, "", "nan") else 0.0
+                return v / 100.0 if v > 1.0 else v
+            except Exception:
+                return 0.0
+        # Completed actions count as 100%; use stored Progress for others
+        _prog_series = acts.apply(
+            lambda r: 1.0 if str(r.get("Status", "")).lower() in ("completed", "cancelled")
+            else _parse_prog(r.get("Progress", 0)), axis=1)
+        pct_s = round(_prog_series.mean() * 100)
+    else:
+        pct_s = round((n_done_s + n_prog_s) / n_total * 100) if n_total > 0 else 0
 
     if not acts.empty and "Status" in acts.columns:
         pend_df = acts[~acts["Status"].isin(["Completed", "Cancelled"])].copy()
