@@ -186,7 +186,7 @@ def render(dfs: dict, lang: str):
     edit_cols = [c for c in [
         "⚠", "Action ID", "Company Name", "Action Description",
         "Assigned To", "Type of Engagement", "Priority",
-        "Status", "Progress", "Due Date", "Escalation Flag", "Remarks", "AM Input",
+        "Status", "Progress", "Escalation Flag", "Remarks", "AM Input",
     ] if c in display.columns]
 
     col_cfg = {
@@ -195,7 +195,6 @@ def render(dfs: dict, lang: str):
         "Company Name":       st.column_config.TextColumn("Company", disabled=True),
         "Action Description": st.column_config.TextColumn("Action Item", width="large"),
         "Assigned To":        st.column_config.TextColumn("Owner"),
-        "Due Date":           st.column_config.DateColumn("Due Date"),
         "Status":             st.column_config.SelectboxColumn("Status",   options=ACTION_STATUSES),
         "Priority":           st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low", "Very High"]),
         "Progress":           st.column_config.SelectboxColumn("Progress", options=PROGRESS_OPTIONS),
