@@ -216,6 +216,31 @@ def _co_summary_slide(prs, company, inv_row, actions, opportunities, meetings, l
                   font_size=10, color=WHITE, align=PP_ALIGN.CENTER)
 
 
+def _slide_end_thankyou(prs):
+    slide = _blank_slide(prs)
+    _fill_background(slide, _rgb(MISA_GREEN))
+    # Decorative gold horizontal band
+    _add_rect(slide, Inches(0), Inches(3.30), Inches(13.33), Inches(0.04),
+              fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
+    _add_text_box(slide, "شكراً",
+                  Inches(1), Inches(1.40), Inches(11.33), Inches(1.20),
+                  font_size=54, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+    _add_text_box(slide, "Thank You",
+                  Inches(1), Inches(2.60), Inches(11.33), Inches(0.80),
+                  font_size=32, bold=True, color=_rgb(MISA_GOLD), align=PP_ALIGN.CENTER)
+    _add_text_box(slide, "Minister Office  ·  Executive Outreach",
+                  Inches(1), Inches(3.55), Inches(11.33), Inches(0.32),
+                  font_size=12, color=_rgb(MISA_GOLD), align=PP_ALIGN.CENTER)
+    _add_text_box(slide, "Ministry of Investment — وزارة الاستثمار",
+                  Inches(1), Inches(3.90), Inches(11.33), Inches(0.30),
+                  font_size=11, color=WHITE, align=PP_ALIGN.CENTER)
+    _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
+              fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
+    _add_text_box(slide, "CONFIDENTIAL | Ministry of Investment — وزارة الاستثمار",
+                  Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
+                  font_size=10, color=WHITE, align=PP_ALIGN.CENTER)
+
+
 def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
     """
     Strategic all-companies dashboard deck.
@@ -236,14 +261,20 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
     slide = _blank_slide(prs)
 
     # Full-width green header
-    _add_rect(slide, Inches(0), Inches(0), Inches(13.33), Inches(0.82),
+    _add_rect(slide, Inches(0), Inches(0), Inches(13.33), Inches(0.96),
               fill_color=GREEN, line_color=GREEN)
     _add_text_box(slide, "Ministry of Investment — All Companies Dashboard",
-                  Inches(0.3), Inches(0.07), Inches(10.0), Inches(0.68),
-                  font_size=22, bold=True, color=WHITE)
+                  Inches(0.3), Inches(0.04), Inches(9.5), Inches(0.40),
+                  font_size=18, bold=True, color=WHITE)
+    _add_text_box(slide, "Minister Office  ·  Executive Outreach",
+                  Inches(0.3), Inches(0.44), Inches(7.0), Inches(0.22),
+                  font_size=9, bold=False, color=GOLD)
+    _add_text_box(slide, "Man-marking Weekly Report",
+                  Inches(0.3), Inches(0.64), Inches(7.0), Inches(0.20),
+                  font_size=8, color=WHITE)
     _add_text_box(slide, date.today().strftime("%d %B %Y"),
-                  Inches(10.3), Inches(0.25), Inches(2.8), Inches(0.40),
-                  font_size=10, color=GOLD, align=PP_ALIGN.RIGHT)
+                  Inches(10.3), Inches(0.30), Inches(2.8), Inches(0.30),
+                  font_size=9, color=GOLD, align=PP_ALIGN.RIGHT)
 
     # ── KPI strip (4 cards) ───────────────────────────────────────────────────
     total_cos    = len(investors)
@@ -461,6 +492,8 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                                         _skip_logos=True, _skip_charts=True)
             except Exception:
                 pass
+
+    _slide_end_thankyou(prs)
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -1100,7 +1133,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             s.fill.solid(); s.fill.fore_color.rgb = color
             s.line.fill.background()
 
-        _oval_c(_ccx, _ccy, _CR,                                    _rgb("#DDDDDD"))          # bg gray
+        _oval_c(_ccx, _ccy, _CR,                                    _rgb("#E6F2EA"))          # bg soft green
         _oval_c(_ccx, _ccy, _CR * max(_pct_any  ** 0.5, 0.08),     _rgb(MISA_GOLD))          # in-prog+done
         _oval_c(_ccx, _ccy, _CR * max(_pct_done ** 0.5, 0.08),     _rgb(MISA_GREEN))         # done
         _oval_c(_ccx, _ccy, _CR * 0.46,                             _rgb("#FFFFFF"))          # hole
@@ -1154,15 +1187,20 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             for _, r in opps.head(4).iterrows()
             if str(r.get("Opportunity Name", "") or "").strip() not in ("nan", "")
         ]
-        for _oname, _ostage in _opp_names_list:
-            _add_rect(slide, Inches(0.50), _opp_item_y + Inches(0.06),
-                      Inches(0.09), Inches(0.09),
+        # 2-column grid: 2 opportunities per row
+        _OPP_COL_W = Inches(2.45)
+        _OPP_ROW_H = Inches(0.26)
+        for _oi, (_oname, _ostage) in enumerate(_opp_names_list):
+            _col_i = _oi % 2
+            _row_i = _oi // 2
+            _ox = Inches(0.50) + _col_i * (_OPP_COL_W + Inches(0.10))
+            _oy = _opp_item_y + _row_i * _OPP_ROW_H
+            _add_rect(slide, _ox, _oy + Inches(0.06), Inches(0.09), Inches(0.09),
                       fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
             _stage_txt = f"  [{_ostage}]" if _ostage else ""
-            _add_text_box(slide, f"{_oname[:45]}{_stage_txt}",
-                          Inches(0.64), _opp_item_y, Inches(3.90), Inches(0.22),
+            _add_text_box(slide, f"{_oname[:22]}{_stage_txt}",
+                          _ox + Inches(0.13), _oy, _OPP_COL_W - Inches(0.15), Inches(0.22),
                           font_size=8, color=DARK)
-            _opp_item_y += Inches(0.23)
     else:
         _add_text_box(slide, "No opportunities recorded.",
                       Inches(0.5), _opp_item_y, Inches(3.90), Inches(0.22),
