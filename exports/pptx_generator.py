@@ -1137,22 +1137,24 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     if sum(_donut_vals) == 0:
         _donut_vals = [0, 0, 1]
     if _skip_charts:
-        # Simple stacked bars instead of an embedded chart (much faster to save)
-        _bar_x, _bar_y, _bar_w, _bar_h = Inches(0.5), Inches(3.3), Inches(2.5), Inches(2.5)
-        _add_rect(slide, _bar_x, _bar_y, _bar_w, _bar_h,
-                  fill_color=_rgb("#F0FFF4"), line_color=_rgb("#C8E0D4"))
-        _tot = sum(_donut_vals) or 1
-        _colors_s = ["#1B5C3F", "#C9974A", "#888888"]
-        _labels_s = ["Completed", "In Progress", "Not Started"]
-        _cy = _bar_y + Inches(0.2)
-        for _dv, _dc, _dl in zip(_donut_vals, _colors_s, _labels_s):
-            _dh = max((_dv / _tot) * (_bar_h - Inches(0.4)), Inches(0.05))
-            _add_rect(slide, _bar_x + Inches(0.1), _cy, _bar_w - Inches(0.2), _dh,
-                      fill_color=_rgb(_dc), line_color=_rgb(_dc))
-            _add_text_box(slide, f"{_dl}: {_dv}", _bar_x + Inches(0.1), _cy,
-                          _bar_w - Inches(0.2), _dh,
-                          font_size=7, color=WHITE, align=PP_ALIGN.CENTER)
-            _cy += _dh + Inches(0.05)
+        # Circle chart — concentric ovals (area-proportional, no embedded Excel)
+        _tot = max(sum(_donut_vals), 1)
+        _pct_any  = min(1.0, (_donut_vals[0] + _donut_vals[1]) / _tot)  # completed+in-progress
+        _pct_done = min(1.0, _donut_vals[0] / _tot)                     # completed only
+        _ccx = Inches(1.75)   # circle center x
+        _ccy = Inches(4.55)   # circle center y
+        _CR  = Inches(1.20)   # outer radius
+
+        def _oval_c(cx, cy, r, color):
+            r = max(r, Inches(0.05))
+            s = slide.shapes.add_shape(9, cx - r, cy - r, r * 2, r * 2)
+            s.fill.solid(); s.fill.fore_color.rgb = color
+            s.line.fill.background()
+
+        _oval_c(_ccx, _ccy, _CR,                                    _rgb("#DDDDDD"))          # bg gray
+        _oval_c(_ccx, _ccy, _CR * max(_pct_any  ** 0.5, 0.08),     _rgb(MISA_GOLD))          # in-prog+done
+        _oval_c(_ccx, _ccy, _CR * max(_pct_done ** 0.5, 0.08),     _rgb(MISA_GREEN))         # done
+        _oval_c(_ccx, _ccy, _CR * 0.46,                             _rgb("#FFFFFF"))          # hole
     else:
         try:
             _chart_data = ChartData()
@@ -1184,24 +1186,24 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   Inches(1.25), Inches(4.65), Inches(1.0), Inches(0.18),
                   font_size=7, color=MGRAY, align=PP_ALIGN.CENTER)
 
-    # Text legend below chart
+    # Text legend below chart (width capped at 2.5" — Due Dates strip starts at x=3.10")
     _add_text_box(
         slide,
-        f"■ Completed: {n_done_s}  ■ In Progress: {n_prog_s}  ■ Not Started: {n_due_s}",
-        Inches(0.5), Inches(5.85), Inches(4.5), Inches(0.22),
-        font_size=7.5, color=DARK,
+        f"■ Done: {n_done_s}  ■ In Prog: {n_prog_s}  ■ Pending: {n_due_s}",
+        Inches(0.5), Inches(5.85), Inches(2.50), Inches(0.22),
+        font_size=7, color=DARK,
     )
 
-    # ── LEFT PANEL: Opportunities list ───────────────────────────────────────
+    # ── LEFT PANEL: Opportunities list (x constrained to 0.5"–3.0") ──────────
     _n_opps_left = len(opps) if not opps.empty else 0
     _n_active_opps = int((opps["Opportunity Status"] == "Active").sum()) \
         if not opps.empty and "Opportunity Status" in opps.columns else _n_opps_left
     _add_text_box(slide, f"Opportunities ({_n_opps_left})",
-                  Inches(0.5), Inches(6.08), Inches(4.5), Inches(0.26),
-                  font_size=10, bold=True, color=GREEN)
+                  Inches(0.5), Inches(6.08), Inches(2.50), Inches(0.26),
+                  font_size=9, bold=True, color=GREEN)
     if _n_active_opps > 0:
         _add_text_box(slide, f"Active: {_n_active_opps}",
-                      Inches(3.30), Inches(6.10), Inches(1.70), Inches(0.22),
+                      Inches(1.80), Inches(6.10), Inches(1.20), Inches(0.22),
                       font_size=8, color=_rgb(MISA_GOLD), align=PP_ALIGN.RIGHT)
     _opp_item_y = Inches(6.38)
     if not opps.empty and "Opportunity Name" in opps.columns:
@@ -1216,13 +1218,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       Inches(0.09), Inches(0.09),
                       fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
             _stage_txt = f"  [{_ostage}]" if _ostage else ""
-            _add_text_box(slide, f"{_oname[:44]}{_stage_txt}",
-                          Inches(0.64), _opp_item_y, Inches(4.26), Inches(0.22),
+            _add_text_box(slide, f"{_oname[:30]}{_stage_txt}",
+                          Inches(0.64), _opp_item_y, Inches(2.35), Inches(0.22),
                           font_size=8, color=DARK)
             _opp_item_y += Inches(0.23)
     else:
         _add_text_box(slide, "No opportunities recorded.",
-                      Inches(0.5), _opp_item_y, Inches(4.5), Inches(0.22),
+                      Inches(0.5), _opp_item_y, Inches(2.50), Inches(0.22),
                       font_size=8, color=MGRAY)
 
     # Thin vertical divider between left and right panels
@@ -1281,15 +1283,12 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _add_rect(slide, CX[2], ry, CW_NEW[2], ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
             _add_text_box(slide, owner, CX[2] + Inches(0.03), ry + Inches(0.07),
                           CW_NEW[2] - Inches(0.05), Inches(0.22), font_size=8.5, color=DARK)
-            # Col 3: status text + update note (no colored dot)
+            # Col 3: update note only (no status label)
             _add_rect(slide, CX[3], ry, CW_NEW[3], ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
-            _add_text_box(slide, status[:14], CX[3] + Inches(0.05), ry + Inches(0.04),
-                          CW_NEW[3] - Inches(0.08), Inches(0.20),
-                          font_size=8, bold=True, color=DARK)
             if note:
-                _add_text_box(slide, note[:28], CX[3] + Inches(0.05), ry + Inches(0.25),
-                              CW_NEW[3] - Inches(0.08), Inches(0.17),
-                              font_size=7, color=MGRAY)
+                _add_text_box(slide, note[:40], CX[3] + Inches(0.05), ry + Inches(0.07),
+                              CW_NEW[3] - Inches(0.08), Inches(0.32),
+                              font_size=7.5, color=DARK)
             # Col 4: progress bar + % label
             px, pcw = CX[4], CW_NEW[4]
             _add_rect(slide, px, ry, pcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
@@ -1314,7 +1313,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     tbl1_end = _render_tbl_new(pend_df, HDR_Y, "Pending / In Progress", GREEN, max_r=4)
     _render_tbl_new(done_df, tbl1_end + Inches(0.15), "Completed", _rgb("#2D7A54"), max_r=3)
 
-    # ── Vertical due-date timeline strip (far right of action table) ──────────
+    # ── Vertical due-date timeline strip — LEFT panel, below Engagement Timeline ─
+    # Positioned at x=3.10"–4.95" (right of donut chart), y=3.05"–7.00"
     try:
         if not acts.empty and "Due Date" in acts.columns:
             _act_tl = acts.copy()
@@ -1337,12 +1337,12 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                     _vt_max_dt = _today.replace(day=_ld2)
                 _span = max((_vt_max_dt - _vt_min_dt).days, 1)
 
-                VTL_X   = Inches(11.95)
-                VTL_W   = Inches(1.10)
-                VTL_TOP = Inches(2.42)
+                VTL_X   = Inches(3.10)
+                VTL_W   = Inches(1.85)
+                VTL_TOP = Inches(3.05)
                 VTL_BOT = Inches(7.00)
                 _vt_h   = VTL_BOT - VTL_TOP
-                _axis_x = VTL_X + Inches(0.42)
+                _axis_x = VTL_X + Inches(0.60)
 
                 def _vy(d):
                     if hasattr(d, "date") and callable(d.date):
@@ -1367,7 +1367,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                               Inches(0.08), Inches(0.008),
                               fill_color=_rgb("#AAAAAA"), line_color=_rgb("#AAAAAA"))
                     _add_text_box(slide, _mo.strftime("%b '%y"), VTL_X, _my - Inches(0.07),
-                                  Inches(0.40), Inches(0.13),
+                                  Inches(0.57), Inches(0.13),
                                   font_size=5.5, color=_rgb("#777777"), align=PP_ALIGN.RIGHT)
                     _mo = (_mo.replace(year=_mo.year + 1, month=1)
                            if _mo.month == 12
