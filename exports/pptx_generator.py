@@ -1151,31 +1151,25 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _add_text_box(slide, str(i + 1), CX[0] + Inches(0.03), ry + Inches(0.07),
                           CW_NEW[0] - Inches(0.05), Inches(0.22),
                           font_size=9, color=DARK, align=PP_ALIGN.CENTER)
-            # Col 1: action description + optional note
+            # Col 1: action description only (no note — note moves to Update the Status col)
             _add_rect(slide, CX[1], ry, CW_NEW[1], ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
-            _add_text_box(slide, desc[:70], CX[1] + Inches(0.04), ry + Inches(0.02),
-                          CW_NEW[1] - Inches(0.08), Inches(0.20), font_size=9, color=DARK)
+            _add_text_box(slide, desc[:70], CX[1] + Inches(0.04), ry + Inches(0.12),
+                          CW_NEW[1] - Inches(0.08), Inches(0.25), font_size=9, color=DARK)
             note = (remark if remark and remark not in ("nan",) else "") or \
                    (am_inp if am_inp and am_inp not in ("nan",) else "")
-            if note:
-                _add_text_box(slide, f"↳ {note[:55]}", CX[1] + Inches(0.04), ry + Inches(0.25),
-                              CW_NEW[1] - Inches(0.08), Inches(0.17), font_size=7.5, color=MGRAY)
             # Col 2: owner
             _add_rect(slide, CX[2], ry, CW_NEW[2], ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
             _add_text_box(slide, owner, CX[2] + Inches(0.03), ry + Inches(0.07),
                           CW_NEW[2] - Inches(0.05), Inches(0.22), font_size=8.5, color=DARK)
-            # Col 3: status — small colored dot + text
-            _ST_DOT = {
-                "Completed": MISA_GREEN, "In Progress": MISA_GOLD, "Inprogress": MISA_GOLD,
-                "Not Started": "#888888", "Blocked": "#C0392B", "Cancelled": "#AAAAAA",
-            }
-            _dot_col = _rgb(_ST_DOT.get(status, "#888888"))
+            # Col 3: status text + update note (no colored dot)
             _add_rect(slide, CX[3], ry, CW_NEW[3], ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
-            _add_rect(slide, CX[3] + Inches(0.05), ry + Inches(0.18), Inches(0.10), Inches(0.10),
-                      fill_color=_dot_col, line_color=_dot_col)
-            _add_text_box(slide, status[:12], CX[3] + Inches(0.17), ry + Inches(0.13),
-                          CW_NEW[3] - Inches(0.20), Inches(0.22),
-                          font_size=8, color=DARK)
+            _add_text_box(slide, status[:14], CX[3] + Inches(0.05), ry + Inches(0.04),
+                          CW_NEW[3] - Inches(0.08), Inches(0.20),
+                          font_size=8, bold=True, color=DARK)
+            if note:
+                _add_text_box(slide, note[:28], CX[3] + Inches(0.05), ry + Inches(0.25),
+                              CW_NEW[3] - Inches(0.08), Inches(0.17),
+                              font_size=7, color=MGRAY)
             # Col 4: progress bar + % label
             px, pcw = CX[4], CW_NEW[4]
             _add_rect(slide, px, ry, pcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
