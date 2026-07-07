@@ -806,23 +806,29 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     # ── Strategic brief — synthesised from all action items ────────────────────
     goal_text, strat_text, action_text = _build_strategic_brief(acts, opps, meetings, inv_row)
 
-    # Single divider — 2-panel brief strip (Strategic Goal | Immediate Action)
-    _add_rect(slide, Inches(6.80), BRIEF_Y + Inches(0.08), Inches(0.02),
-              BRIEF_H - Inches(0.16), fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
-
-    # Panel 1: Strategic Goal — narrowed to ~50% of strip
-    _add_text_box(slide, "STRATEGIC GOAL", Inches(0.3), BRIEF_Y + Inches(0.07),
-                  Inches(1.16), Inches(0.22), font_size=9, bold=True, color=_rgb(MISA_GREEN))
-    _add_text_box(slide, goal_text, Inches(1.50), BRIEF_Y + Inches(0.06),
-                  Inches(5.10), Inches(0.74), font_size=9, color=DARK)
-
-    # Panel 2: Immediate Action — expanded to right half
-    _add_text_box(slide, "IMMEDIATE ACTION", Inches(6.90), BRIEF_Y + Inches(0.07),
-                  Inches(6.10), Inches(0.22), font_size=9, bold=True, color=RED)
-    _add_text_box(slide, action_text, Inches(6.90), BRIEF_Y + Inches(0.32),
-                  Inches(6.10), Inches(0.52), font_size=9, color=DARK)
-
-    # No vertical divider — tables now span full width
+    # ── 3-panel brief strip: Strategic Goal | Ministry Strategy | Minister Action ──
+    P1_X = Inches(0.20);  P1_W = Inches(4.20)
+    P2_X = Inches(4.55);  P2_W = Inches(4.10)
+    P3_X = Inches(8.80);  P3_W = Inches(4.35)
+    DIV_H = BRIEF_H - Inches(0.16)
+    for div_x in (Inches(4.47), Inches(8.72)):
+        _add_rect(slide, div_x, BRIEF_Y + Inches(0.08), Inches(0.015), DIV_H,
+                  fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
+    # Panel 1 — Strategic Goal
+    _add_text_box(slide, "STRATEGIC GOAL", P1_X, BRIEF_Y + Inches(0.07),
+                  P1_W, Inches(0.22), font_size=9, bold=True, color=_rgb(MISA_GREEN))
+    _add_text_box(slide, goal_text, P1_X, BRIEF_Y + Inches(0.30),
+                  P1_W, Inches(0.54), font_size=8.5, color=DARK)
+    # Panel 2 — Ministry Strategy
+    _add_text_box(slide, "MINISTRY STRATEGY", P2_X, BRIEF_Y + Inches(0.07),
+                  P2_W, Inches(0.22), font_size=9, bold=True, color=_rgb(MISA_GOLD))
+    _add_text_box(slide, strat_text, P2_X, BRIEF_Y + Inches(0.30),
+                  P2_W, Inches(0.54), font_size=8.5, color=DARK)
+    # Panel 3 — Minister Action
+    _add_text_box(slide, "MINISTER ACTION", P3_X, BRIEF_Y + Inches(0.07),
+                  P3_W, Inches(0.22), font_size=9, bold=True, color=RED)
+    _add_text_box(slide, action_text, P3_X, BRIEF_Y + Inches(0.30),
+                  P3_W, Inches(0.54), font_size=8.5, color=DARK)
 
     # ══════════════════════════════════════════════════════════════════════════
     # LEFT: Compact timeline + Full action items table
@@ -1017,20 +1023,32 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     # ── LEFT PANEL: Opportunities list ───────────────────────────────────────
     _n_opps_left = len(opps) if not opps.empty else 0
+    _n_active_opps = int((opps["Opportunity Status"] == "Active").sum()) \
+        if not opps.empty and "Opportunity Status" in opps.columns else _n_opps_left
     _add_text_box(slide, f"Opportunities ({_n_opps_left})",
-                  Inches(0.2), Inches(6.10), Inches(4.7), Inches(0.24),
+                  Inches(0.2), Inches(6.08), Inches(4.7), Inches(0.26),
                   font_size=10, bold=True, color=GREEN)
+    if _n_active_opps > 0:
+        _add_text_box(slide, f"Active: {_n_active_opps}",
+                      Inches(3.20), Inches(6.10), Inches(1.70), Inches(0.22),
+                      font_size=8, color=_rgb(MISA_GOLD), align=PP_ALIGN.RIGHT)
     _opp_item_y = Inches(6.38)
     if not opps.empty and "Opportunity Name" in opps.columns:
         _opp_names_list = [
-            str(n).strip() for n in opps["Opportunity Name"].dropna().head(3)
-            if str(n).strip() not in ("nan", "")
+            (str(r.get("Opportunity Name", "") or "").strip(),
+             str(r.get("Opportunity Stage", "") or "").strip())
+            for _, r in opps.head(4).iterrows()
+            if str(r.get("Opportunity Name", "") or "").strip() not in ("nan", "")
         ]
-        for _oname in _opp_names_list:
-            _add_text_box(slide, f"• {_oname[:50]}",
-                          Inches(0.2), _opp_item_y, Inches(4.7), Inches(0.22),
+        for _oname, _ostage in _opp_names_list:
+            _add_rect(slide, Inches(0.20), _opp_item_y + Inches(0.06),
+                      Inches(0.09), Inches(0.09),
+                      fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
+            _stage_txt = f"  [{_ostage}]" if _ostage else ""
+            _add_text_box(slide, f"{_oname[:44]}{_stage_txt}",
+                          Inches(0.34), _opp_item_y, Inches(4.56), Inches(0.22),
                           font_size=8, color=DARK)
-            _opp_item_y += Inches(0.22)
+            _opp_item_y += Inches(0.23)
     else:
         _add_text_box(slide, "No opportunities recorded.",
                       Inches(0.2), _opp_item_y, Inches(4.7), Inches(0.22),
@@ -1041,14 +1059,23 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
               fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
 
     # ── RIGHT PANEL: Two stacked action tables ────────────────────────────────
+    # Section heading with totals — mirrors the "10 total | 7 pending" label from sample
+    _n_pend_label = len(pend_df)
+    _n_done_label = len(done_df)
+    _add_text_box(
+        slide,
+        f"Action Items — {n_total} total | {_n_pend_label} pending / in progress",
+        Inches(5.1), Inches(2.42), Inches(8.10), Inches(0.22),
+        font_size=9, bold=True, color=DARK,
+    )
     TBL_X  = Inches(5.1)
-    HDR_Y  = Inches(2.42)
+    HDR_Y  = Inches(2.68)
     HDR_H  = Inches(0.32)
     ROW_H  = Inches(0.46)
     MAX_R  = 4
     CW_NEW = [Inches(w) for w in [0.30, 3.60, 1.50, 1.00, 0.75]]
 
-    def _render_tbl_new(df, tbl_y, title, hdr_color):
+    def _render_tbl_new(df, tbl_y, title, hdr_color, max_r=MAX_R):
         CX = [TBL_X + sum(CW_NEW[:j]) for j in range(len(CW_NEW))]
         col_hdrs = ["#", title, "Owner", "Status", "%"]
         for hdr, cx, cw in zip(col_hdrs, CX, CW_NEW):
@@ -1056,7 +1083,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _add_text_box(slide, hdr, cx + Inches(0.02), tbl_y + Inches(0.04),
                           cw - Inches(0.04), HDR_H - Inches(0.06),
                           font_size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-        for i, (_, row) in enumerate(df.head(MAX_R).iterrows()):
+        for i, (_, row) in enumerate(df.head(max_r).iterrows()):
             ry     = tbl_y + HDR_H + i * ROW_H
             alt    = _rgb("#F7F7F2") if i % 2 == 0 else WHITE
             desc   = str(row.get("Action Description", "") or "")
@@ -1118,10 +1145,15 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _add_text_box(slide, "100%" if is_done else f"{int(prog_val * 100)}%",
                           px, ry + Inches(0.22), pcw, Inches(0.18),
                           font_size=8, color=DARK, align=PP_ALIGN.CENTER)
-        return tbl_y + HDR_H + min(len(df), MAX_R) * ROW_H
+        if len(df) > max_r:
+            overflow_y = tbl_y + HDR_H + max_r * ROW_H
+            _add_text_box(slide, f"+ {len(df) - max_r} more",
+                          TBL_X + Inches(0.10), overflow_y, Inches(3.0), Inches(0.18),
+                          font_size=7.5, color=MGRAY)
+        return tbl_y + HDR_H + min(len(df), max_r) * ROW_H
 
-    tbl1_end = _render_tbl_new(pend_df, HDR_Y, "Pending Actions", GREEN)
-    _render_tbl_new(done_df, tbl1_end + Inches(0.15), "Completed Actions", _rgb("#2D7A54"))
+    tbl1_end = _render_tbl_new(pend_df, HDR_Y, "Pending / In Progress", GREEN, max_r=4)
+    _render_tbl_new(done_df, tbl1_end + Inches(0.15), "Completed", _rgb("#2D7A54"), max_r=3)
 
     # ── Gold footer ───────────────────────────────────────────────────────────
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
