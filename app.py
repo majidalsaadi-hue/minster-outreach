@@ -49,12 +49,13 @@ from modules.report_builder      import render as render_report_builder
 from modules.evaluation          import render as render_evaluation
 
 try:
-    from exports.pptx_generator import generate_pptx, generate_pptx_company
+    from exports.pptx_generator import generate_pptx, generate_pptx_company, generate_pptx_all_companies_dashboard
     _PPTX_AVAILABLE = True
 except Exception:
     _PPTX_AVAILABLE = False
-    generate_pptx         = None
-    generate_pptx_company = None
+    generate_pptx                       = None
+    generate_pptx_company               = None
+    generate_pptx_all_companies_dashboard = None
 
 try:
     from exports.pdf_generator import generate_pdf
@@ -599,6 +600,24 @@ def render_export():
             )
     else:
         st.info("Upload data first to generate company reports.")
+
+    # ── All-Companies Dashboard PowerPoint ───────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 📊 All Companies Dashboard")
+    st.caption("One summary slide (KPIs + actions by company + sector + country) followed by one slide per company.")
+
+    if not _PPTX_AVAILABLE:
+        st.warning("PPTX export requires python-pptx. Run: python -m pip install python-pptx")
+    elif st.button("Generate All Companies Dashboard", use_container_width=False, disabled=(dfs is None)):
+        with st.spinner(T("generating")):
+            all_co_pptx = generate_pptx_all_companies_dashboard(dfs or {}, lang="en")
+        all_co_filename = f"MoI_AllCompanies_Dashboard_{date.today().strftime('%Y-%m-%d')}.pptx"
+        st.download_button(
+            "Download — All Companies Dashboard",
+            data=all_co_pptx,
+            file_name=all_co_filename,
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )
 
     # ── Export notes ──────────────────────────────────────────────────────────
     st.markdown("---")

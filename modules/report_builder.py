@@ -131,6 +131,8 @@ def _init():
         "rb_ar_content":        None,
         "rb_ar_docx_bytes":     None,
         "rb_ar_doc_key":        "",
+        "rb_en_docx_bytes":     None,
+        "rb_am_letter_bytes":   None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
