@@ -388,6 +388,14 @@ def render(dfs: dict, lang: str):
                     cur_co = st.session_state["rb_company"]
                     _fill_company_fields(hdr_data, cur_co)
                     st.session_state["rb_last_co_fill"] = cur_co
+                    # Auto-load action items from the selected company's sheet
+                    _xl_acts = _load_excel_actions_for_company(raw_xl, cur_co)
+                    if not _xl_acts.empty:
+                        st.session_state["rb_actions"] = _xl_acts
+                        st.info(
+                            f"✅ Loaded **{len(_xl_acts)}** action item(s) from "
+                            f"*{cur_co}* sheet."
+                        )
                 _det = _detect_opps_from_actions(raw_xl)
                 st.session_state["rb_detected_opps"] = _det
             else:
@@ -447,6 +455,12 @@ def render(dfs: dict, lang: str):
             if company and company != st.session_state.get("rb_last_co_fill", "") and company in hdr_data:
                 _fill_company_fields(hdr_data, company)
                 st.session_state["rb_last_co_fill"] = company
+                # Reload action items from the tracker for the newly selected company
+                _raw_xl_co = st.session_state.get("rb_excel_bytes")
+                if _raw_xl_co:
+                    _co_acts = _load_excel_actions_for_company(_raw_xl_co, company)
+                    if not _co_acts.empty:
+                        st.session_state["rb_actions"] = _co_acts
                 st.rerun()
         except Exception as _fill_err:
             st.warning(f"⚠️ Auto-fill error (non-fatal): {_fill_err}")
@@ -1335,9 +1349,18 @@ def _parse_word(file_bytes: bytes) -> dict:
     def _classify_table(rows: list) -> str:
         """Identify table type by header content, not by position."""
         header_text = " ".join(c for row in rows[:2] for c in row)
+        header_lower = header_text.lower()
+        # Arabic action item markers
         if any(m in header_text for m in ["التوجيه", "المهمة", "مسؤول", "الأولوية", "الموعد النهائي", "الإجراء"]):
             return "actions"
+        # English action item markers
+        if any(m in header_lower for m in ["action item", "due date", "success measure", "deliverable"]):
+            return "actions"
+        # Arabic attendee markers
         if any(m in header_text for m in ["الاسم", "المسمى", "الجهة", "حضر", "المشاركون", "التوقيع"]):
+            return "attendees"
+        # English attendee markers (small table with Name/Role)
+        if len(rows) <= 6 and "name" in header_lower and ("role" in header_lower or "title" in header_lower):
             return "attendees"
         if len(rows) <= 5:
             for row in rows:
@@ -2510,6 +2533,106 @@ def _detect_opps_from_actions(raw_bytes: bytes) -> list[dict]:
     except Exception:
         pass
     return results
+
+
+def _load_excel_actions_for_company(raw_bytes: bytes, company: str) -> pd.DataFrame:
+    """
+    Extract action item rows from the Excel tracker sheet matching `company`.
+    The sheet title is "Action Items <company>" and the header row is auto-detected
+    by scanning for the cell 'Action Item' anywhere in rows 15-25.
+    Returns a DataFrame in rb_actions format, or empty DataFrame on failure.
+    """
+    _PRIORITY_MAP = {"Very High": "Very High", "High": "High", "Medium": "Medium", "Low": "Low",
+                     "مهم جدا": "Very High", "مهم": "High", "متوسط": "Medium", "عادي": "Low"}
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
+        # Find the sheet whose name matches the company
+        target_ws = None
+        co_lower = company.strip().lower()
+        for ws in wb.worksheets:
+            sheet_co = ws.title.strip()
+            for prefix in ("Action Items", "Actions", "Action Item"):
+                if sheet_co.lower().startswith(prefix.lower()):
+                    sheet_co = sheet_co[len(prefix):].strip()
+                    break
+            if co_lower in sheet_co.lower() or sheet_co.lower() in co_lower:
+                target_ws = ws
+                break
+
+        if target_ws is None:
+            return pd.DataFrame()
+
+        ws = target_ws
+        # Find header row
+        hdr_row = None
+        col_map: dict[str, int] = {}
+        for r in range(15, 26):
+            for c in range(1, 20):
+                v = str(ws.cell(row=r, column=c).value or "").strip()
+                if v.lower() in ("action item", "action", "task", "بند العمل"):
+                    hdr_row = r
+                    break
+            if hdr_row:
+                break
+        if not hdr_row:
+            return pd.DataFrame()
+
+        # Map column headers
+        for c in range(1, 20):
+            v = str(ws.cell(row=hdr_row, column=c).value or "").strip()
+            if v:
+                col_map[v.lower()] = c
+
+        def _col(*aliases):
+            for a in aliases:
+                for k, v in col_map.items():
+                    if a.lower() in k or k in a.lower():
+                        return v
+            return None
+
+        id_c    = _col("id", "#", "no", "م")
+        item_c  = _col("action item", "action", "task", "بند")
+        owner_c = _col("assigned to", "owner", "responsible", "rep", "المسؤول")
+        type_c  = _col("type of engagement", "type", "engagement", "النوع")
+        start_c = _col("start date", "start", "بداية")
+        due_c   = _col("due date", "due", "deadline", "الاستحقاق")
+        prio_c  = _col("priority", "الأولوية")
+        prog_c  = _col("progress", "التقدم")
+        rmk_c   = _col("remarks", "am input", "notes", "ملاحظات")
+
+        if not item_c:
+            return pd.DataFrame()
+
+        rows = []
+        for r in range(hdr_row + 1, hdr_row + 200):
+            id_val   = str(ws.cell(row=r, column=id_c).value or "").strip() if id_c else ""
+            item_val = str(ws.cell(row=r, column=item_c).value or "").strip()
+            if not item_val:
+                break  # end of data
+            prio_raw = str(ws.cell(row=r, column=prio_c).value or "").strip() if prio_c else ""
+            prio_en  = _PRIORITY_MAP.get(prio_raw, "Medium")
+            due_raw  = ws.cell(row=r, column=due_c).value if due_c else None
+            if hasattr(due_raw, "strftime"):
+                due_str = due_raw.strftime("%d %B %Y")
+            else:
+                due_str = str(due_raw or "").strip()
+            rows.append({
+                "Action (AR)": item_val,
+                "Action (EN)": item_val,
+                "Assigned To": str(ws.cell(row=r, column=owner_c).value or "").strip() if owner_c else "",
+                "Type":        str(ws.cell(row=r, column=type_c).value or "Action").strip() if type_c else "Action",
+                "Priority":    prio_en,
+                "Due Date":    None,
+                "Due Text":    due_str,
+                "Due Text EN": due_str,
+                "Remarks":     str(ws.cell(row=r, column=rmk_c).value or "").strip() if rmk_c else "",
+                "Status":      "Not Started",
+            })
+
+        return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+    except Exception:
+        return pd.DataFrame()
 
 
 def _investor_id(investors: pd.DataFrame, company: str) -> str:
