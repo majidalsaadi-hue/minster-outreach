@@ -976,29 +976,31 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         "Not Started": "#888888",  "Blocked": "#C0392B",      "Cancelled": "#AAAAAA",
     }
 
-    # ── Compact legend — right of timeline, two tidy columns ─────────────────
-    LG_X1 = Inches(9.85)   # Meeting types
-    LG_X2 = Inches(11.45)  # Action statuses
-    LG_Y0 = Inches(2.41)   # Top — aligns with "Engagement Timeline" label
-    LG_DY = Inches(0.20)
-    LG_SQ = Inches(0.09)
-    for ri, (lbl, col) in enumerate([
+    # ── Legend row rendered between section heading (y=2.42) and table header ─
+    # Placed at y=2.68 as a single horizontal strip so the table never covers it
+    _LG_Y  = Inches(2.68)
+    _LG_SQ = Inches(0.09)
+    _mtg_items = [
         ("Completed mtg", MISA_GREEN), ("Scheduled", MISA_GOLD), ("Cancelled", "#AAAAAA"),
-    ]):
-        gy = LG_Y0 + ri * LG_DY
-        _add_rect(slide, LG_X1, gy + Inches(0.03), LG_SQ, LG_SQ,
+    ]
+    for ri, (lbl, col) in enumerate(_mtg_items):
+        lx = Inches(5.13) + ri * Inches(1.10)
+        _add_rect(slide, lx, _LG_Y + Inches(0.06), _LG_SQ, _LG_SQ,
                   fill_color=_rgb(col), line_color=_rgb(col))
-        _add_text_box(slide, lbl, LG_X1 + Inches(0.13), gy,
-                      Inches(1.45), Inches(0.18), font_size=6.5, color=MGRAY)
-    for ri, (lbl, col) in enumerate([
+        _add_text_box(slide, lbl, lx + Inches(0.12), _LG_Y,
+                      Inches(1.00), Inches(0.20), font_size=6.5, color=MGRAY)
+    _add_text_box(slide, "|", Inches(8.44), _LG_Y, Inches(0.15), Inches(0.20),
+                  font_size=6.5, color=MGRAY, align=PP_ALIGN.CENTER)
+    _act_items = [
         ("Done", MISA_GREEN), ("In Progress", MISA_GOLD),
         ("Pending", "#888888"), ("Blocked", "#C0392B"),
-    ]):
-        gy = LG_Y0 + ri * LG_DY
-        _add_rect(slide, LG_X2, gy + Inches(0.03), LG_SQ, LG_SQ,
+    ]
+    for ri, (lbl, col) in enumerate(_act_items):
+        lx = Inches(8.60) + ri * Inches(0.82)
+        _add_rect(slide, lx, _LG_Y + Inches(0.06), _LG_SQ, _LG_SQ,
                   fill_color=_rgb(col), line_color=_rgb(col))
-        _add_text_box(slide, lbl, LG_X2 + Inches(0.13), gy,
-                      Inches(1.60), Inches(0.18), font_size=6.5, color=MGRAY)
+        _add_text_box(slide, lbl, lx + Inches(0.12), _LG_Y,
+                      Inches(0.72), Inches(0.20), font_size=6.5, color=MGRAY)
 
     # ── Action counts ─────────────────────────────────────────────────────────
     n_total  = len(acts)
@@ -1112,7 +1114,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         font_size=9, bold=True, color=DARK,
     )
     TBL_X  = Inches(5.1)
-    HDR_Y  = Inches(2.68)
+    HDR_Y  = Inches(2.94)
     HDR_H  = Inches(0.32)
     ROW_H  = Inches(0.46)
     MAX_R  = 4
@@ -1219,8 +1221,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
             VTL_X   = Inches(11.95)
             VTL_W   = Inches(1.25)
-            VTL_TOP = Inches(2.58)
-            VTL_BOT = Inches(6.98)
+            VTL_TOP = Inches(2.42)
+            VTL_BOT = Inches(7.00)
             _vt_h   = VTL_BOT - VTL_TOP
             _axis_x = VTL_X + Inches(0.42)
 
