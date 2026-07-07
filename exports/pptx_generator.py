@@ -322,7 +322,10 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             inv_dls  = (deals[deals["Company Name"] == co]
                         if not deals.empty and "Company Name" in deals.columns
                         else pd.DataFrame())
-            _co_slide_cover_profile(prs, co, inv, inv_opps, inv_acts, inv_mtgs, inv_dls, lang)
+            try:
+                _co_slide_cover_profile(prs, co, inv, inv_opps, inv_acts, inv_mtgs, inv_dls, lang)
+            except Exception:
+                pass  # skip one bad company rather than halting the whole deck
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -1871,7 +1874,7 @@ def _fetch_logo_bytes(company: str, website: str = ""):
     for url in urls:
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=1) as resp:
                 data = resp.read()
                 if data and len(data) > 200:
                     return data
