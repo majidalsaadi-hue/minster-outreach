@@ -324,7 +324,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                         else pd.DataFrame())
             try:
                 _co_slide_cover_profile(prs, co, inv, inv_opps, inv_acts, inv_mtgs, inv_dls, lang,
-                                        _skip_logos=True)
+                                        _skip_logos=True, _skip_charts=True)
             except Exception:
                 pass  # skip one bad company rather than halting the whole deck
 
@@ -809,7 +809,7 @@ def _slide_investor(prs, inv_row, actions, opportunities, deals, lang):
 # COMPANY DECK — slide builders (3 slides)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, lang, _skip_logos=False):
+def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, lang, _skip_logos=False, _skip_charts=False):
     """Slide 1 (merged 1+3): Header + metadata + Brief strip + compact timeline + full action items table (L) + status/deals/KPI (R)."""
     slide = _blank_slide(prs)
 
@@ -1031,28 +1031,46 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     # ── LEFT PANEL: Doughnut status chart ────────────────────────────────────
     _donut_vals = [max(n_done_s, 0), max(n_prog_s, 0), max(n_due_s, 0)]
     if sum(_donut_vals) == 0:
-        _donut_vals = [0, 0, 1]  # avoid empty chart
-    try:
-        _chart_data = ChartData()
-        _chart_data.categories = ["Completed", "In Progress", "Not Started"]
-        _chart_data.add_series("Status", tuple(_donut_vals))
-        _chart_gfx = slide.shapes.add_chart(
-            XL_CHART_TYPE.DOUGHNUT,
-            Inches(0.5), Inches(3.3), Inches(2.5), Inches(2.5),
-            _chart_data,
-        )
-        _chart_obj = _chart_gfx.chart
-        _chart_obj.has_title = False
-        _chart_obj.has_legend = False
-        _donut_colors = [_rgb("#1B5C3F"), _rgb("#C9974A"), _rgb("#888888")]
-        _chart_series = _chart_obj.series[0]
-        for _pi, _pc in enumerate(_donut_colors):
-            _pt = _chart_series.points[_pi]
-            _pt.format.fill.solid()
-            _pt.format.fill.fore_color.rgb = _pc
-    except Exception:
-        _add_rect(slide, Inches(0.2), Inches(3.3), Inches(2.5), Inches(2.5),
+        _donut_vals = [0, 0, 1]
+    if _skip_charts:
+        # Simple stacked bars instead of an embedded chart (much faster to save)
+        _bar_x, _bar_y, _bar_w, _bar_h = Inches(0.5), Inches(3.3), Inches(2.5), Inches(2.5)
+        _add_rect(slide, _bar_x, _bar_y, _bar_w, _bar_h,
                   fill_color=_rgb("#F0FFF4"), line_color=_rgb("#C8E0D4"))
+        _tot = sum(_donut_vals) or 1
+        _colors_s = ["#1B5C3F", "#C9974A", "#888888"]
+        _labels_s = ["Completed", "In Progress", "Not Started"]
+        _cy = _bar_y + Inches(0.2)
+        for _dv, _dc, _dl in zip(_donut_vals, _colors_s, _labels_s):
+            _dh = max((_dv / _tot) * (_bar_h - Inches(0.4)), Inches(0.05))
+            _add_rect(slide, _bar_x + Inches(0.1), _cy, _bar_w - Inches(0.2), _dh,
+                      fill_color=_rgb(_dc), line_color=_rgb(_dc))
+            _add_text_box(slide, f"{_dl}: {_dv}", _bar_x + Inches(0.1), _cy,
+                          _bar_w - Inches(0.2), _dh,
+                          font_size=7, color=WHITE, align=PP_ALIGN.CENTER)
+            _cy += _dh + Inches(0.05)
+    else:
+        try:
+            _chart_data = ChartData()
+            _chart_data.categories = ["Completed", "In Progress", "Not Started"]
+            _chart_data.add_series("Status", tuple(_donut_vals))
+            _chart_gfx = slide.shapes.add_chart(
+                XL_CHART_TYPE.DOUGHNUT,
+                Inches(0.5), Inches(3.3), Inches(2.5), Inches(2.5),
+                _chart_data,
+            )
+            _chart_obj = _chart_gfx.chart
+            _chart_obj.has_title = False
+            _chart_obj.has_legend = False
+            _donut_colors = [_rgb("#1B5C3F"), _rgb("#C9974A"), _rgb("#888888")]
+            _chart_series = _chart_obj.series[0]
+            for _pi, _pc in enumerate(_donut_colors):
+                _pt = _chart_series.points[_pi]
+                _pt.format.fill.solid()
+                _pt.format.fill.fore_color.rgb = _pc
+        except Exception:
+            _add_rect(slide, Inches(0.2), Inches(3.3), Inches(2.5), Inches(2.5),
+                      fill_color=_rgb("#F0FFF4"), line_color=_rgb("#C8E0D4"))
 
     # Center label overlaid on doughnut hole
     _add_text_box(slide, f"{pct_s}%",
