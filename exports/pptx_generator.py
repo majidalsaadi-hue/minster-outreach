@@ -1230,15 +1230,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
               fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
 
     # ── RIGHT PANEL: Two stacked action tables ────────────────────────────────
-    # Section heading with totals — mirrors the "10 total | 7 pending" label from sample
     _n_pend_label = len(pend_df)
     _n_done_label = len(done_df)
-    _add_text_box(
-        slide,
-        f"Action Items — {n_total} total | {_n_pend_label} pending / in progress",
-        Inches(5.1), Inches(2.42), Inches(6.70), Inches(0.22),
-        font_size=9, bold=True, color=DARK,
-    )
+    # Heading moved to vertical strip on far right (see below after timeline)
     TBL_X  = Inches(5.1)
     HDR_Y  = Inches(2.94)
     HDR_H  = Inches(0.32)
@@ -1344,7 +1338,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 _span = max((_vt_max_dt - _vt_min_dt).days, 1)
 
                 VTL_X   = Inches(11.95)
-                VTL_W   = Inches(1.25)
+                VTL_W   = Inches(1.10)
                 VTL_TOP = Inches(2.42)
                 VTL_BOT = Inches(7.00)
                 _vt_h   = VTL_BOT - VTL_TOP
@@ -1397,6 +1391,24 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                                   font_size=5.5, color=DARK)
     except Exception:
         pass  # timeline strip is non-critical; never block slide generation
+
+    # ── Vertical action items heading — far right strip (x=13.05" to 13.33") ─
+    # Placed after timeline so it draws on top; rotation=90 → reads bottom-to-top
+    _vai_text = f"Action Items — {n_total} total | {_n_pend_label} pending / in progress"
+    _add_rect(slide, Inches(13.05), Inches(2.42), Inches(0.28), Inches(4.63),
+              fill_color=GREEN, line_color=GREEN)
+    _vai_tb = slide.shapes.add_textbox(Inches(10.875), Inches(4.595), Inches(4.63), Inches(0.28))
+    _vai_tf = _vai_tb.text_frame
+    _vai_tf.word_wrap = False
+    _vai_tf.auto_size = MSO_AUTO_SIZE.NONE
+    _vai_p = _vai_tf.paragraphs[0]
+    _vai_p.alignment = PP_ALIGN.CENTER
+    _vai_run = _vai_p.add_run()
+    _vai_run.text = _vai_text
+    _vai_run.font.size = Pt(7.5)
+    _vai_run.font.bold = True
+    _vai_run.font.color.rgb = WHITE
+    _vai_tb.rotation = 90
 
     # ── Gold footer ───────────────────────────────────────────────────────────
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
