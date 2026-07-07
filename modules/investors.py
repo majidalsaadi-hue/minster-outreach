@@ -34,6 +34,117 @@ _STAGE_COLOR = {
     "Post-Investment":       _GREEN,
 }
 
+_STAGE_SCORE = {
+    "Awareness": 2, "Initial Contact": 5, "Engagement": 8,
+    "Opportunity Matching": 12, "Active Negotiation": 16,
+    "Committed": 18, "Post-Investment": 20,
+}
+
+
+def _compute_health_score(company: str, dfs: dict) -> tuple:
+    """Return (score 0-100, breakdown dict) for engagement health."""
+    meetings = dfs.get("Meeting Log",          pd.DataFrame())
+    actions  = dfs.get("Action Items",         pd.DataFrame())
+    opps     = dfs.get("Opportunity Pipeline", pd.DataFrame())
+    investors = dfs.get("Investor Master",     pd.DataFrame())
+
+    today = date.today()
+    score = 0
+    breakdown = {}
+
+    def _co(df, col="Company Name"):
+        if df.empty or col not in df.columns:
+            return pd.DataFrame()
+        return df[df[col] == company]
+
+    # 1. Meeting recency (max 30 pts)
+    co_mtgs = _co(meetings)
+    recency_pts = 0
+    if not co_mtgs.empty and "Meeting Date" in co_mtgs.columns:
+        dates = pd.to_datetime(co_mtgs["Meeting Date"], errors="coerce").dropna()
+        if not dates.empty:
+            days_ago = (today - dates.max().date()).days
+            if days_ago <= 30:   recency_pts = 30
+            elif days_ago <= 60: recency_pts = 20
+            elif days_ago <= 90: recency_pts = 10
+            elif days_ago <= 180: recency_pts = 5
+    breakdown["Recency"] = recency_pts
+    score += recency_pts
+
+    # 2. Action completion rate (max 25 pts)
+    co_acts = _co(actions)
+    action_pts = 0
+    if not co_acts.empty and "Status" in co_acts.columns:
+        total = len(co_acts)
+        completed = len(co_acts[co_acts["Status"] == "Completed"])
+        if total > 0:
+            action_pts = max(5, round((completed / total) * 25))
+    breakdown["Actions"] = action_pts
+    score += action_pts
+
+    # 3. Journey stage (max 20 pts)
+    stage_pts = 0
+    if not investors.empty and "Company Name" in investors.columns and "Journey Stage" in investors.columns:
+        crow = investors[investors["Company Name"] == company]
+        if not crow.empty:
+            stage_pts = _STAGE_SCORE.get(str(crow.iloc[0].get("Journey Stage", "") or ""), 0)
+    breakdown["Stage"] = stage_pts
+    score += stage_pts
+
+    # 4. Active opportunities (max 15 pts)
+    co_opps = _co(opps)
+    opp_pts = 0
+    if not co_opps.empty:
+        if "Opportunity Stage" in co_opps.columns:
+            advanced = co_opps[co_opps["Opportunity Stage"].isin(["Active Negotiation", "Committed", "Post-Investment"])]
+            opp_pts = 15 if not advanced.empty else 8
+        else:
+            opp_pts = 8
+    breakdown["Pipeline"] = opp_pts
+    score += opp_pts
+
+    # 5. Meeting frequency last 90 days (max 10 pts)
+    freq_pts = 0
+    if not co_mtgs.empty and "Meeting Date" in co_mtgs.columns:
+        dates = pd.to_datetime(co_mtgs["Meeting Date"], errors="coerce").dropna()
+        recent = sum(1 for d in dates.dt.date if (today - d).days <= 90)
+        freq_pts = min(recent * 3, 10)
+    breakdown["Frequency"] = freq_pts
+    score += freq_pts
+
+    # 6. Open challenge deduction (−5 each, max −15)
+    deduction = 0
+    if not co_acts.empty and "Type of Engagement" in co_acts.columns and "Status" in co_acts.columns:
+        blockers = co_acts[
+            (co_acts["Type of Engagement"] == "Challenge") &
+            (co_acts["Status"].isin(["Not Started", "In Progress", "Blocked"]))
+        ]
+        deduction = min(len(blockers) * 5, 15)
+    breakdown["Challenges"] = -deduction
+    score -= deduction
+
+    return max(0, min(100, score)), breakdown
+
+
+def _health_badge_html(score: int, breakdown: dict | None = None) -> str:
+    if score >= 70:
+        color, label = "#059669", "Healthy"
+    elif score >= 40:
+        color, label = "#D97706", "Monitor"
+    else:
+        color, label = "#DC2626", "At Risk"
+    tooltip = ""
+    if breakdown:
+        parts = [f"{k}: {'+' if v >= 0 else ''}{v}" for k, v in breakdown.items()]
+        tooltip = " | ".join(parts)
+    return (
+        f'<div style="display:flex;align-items:center;gap:4px;margin-top:5px;" title="{tooltip}">'
+        f'<div style="width:7px;height:7px;border-radius:50%;background:{color};flex-shrink:0;"></div>'
+        f'<span style="font-size:10px;font-weight:600;color:{color};">Health {score}/100</span>'
+        f'<span style="font-size:9px;color:#9CA3AF;">— {label}</span>'
+        f'</div>'
+    )
+
 
 # ── Logo & data helpers (cached) ──────────────────────────────────────────────
 
@@ -324,7 +435,7 @@ def render(dfs: dict, lang: str):
         cols  = st.columns(cols_per_row)
         for ci, (_, row) in enumerate(chunk.iterrows()):
             with cols[ci]:
-                _render_investor_card(row)
+                _render_investor_card(row, dfs)
 
     # ── Profile drill-down ────────────────────────────────────────────────────
     st.markdown("---")
@@ -340,7 +451,7 @@ def render(dfs: dict, lang: str):
 
 # ── Investor card ─────────────────────────────────────────────────────────────
 
-def _render_investor_card(row):
+def _render_investor_card(row, dfs: dict | None = None):
     company  = str(row.get("Company Name", "?"))
     sector   = str(row.get("Sector",   "") or "")
     country  = str(row.get("Country",  "") or "")
@@ -537,8 +648,11 @@ def _render_investor_card(row):
         # AM/RM
         f'{rm_am}'
 
+        # Health score
+        + (_health_badge_html(*_compute_health_score(company, dfs)) if dfs else "")
+
         # Company Rep + website
-        f'{rep_html}'
+        + f'{rep_html}'
         f'{website_html}'
 
         # News
@@ -618,6 +732,148 @@ def _add_investor_form(dfs: dict, lang: str):
             save_session(dfs)
             st.success(f"{company} added ({new_id})")
             st.rerun()
+
+
+# ── Activity timeline ─────────────────────────────────────────────────────────
+
+def _render_activity_timeline(company: str, dfs: dict):
+    meetings = dfs.get("Meeting Log",          pd.DataFrame())
+    actions  = dfs.get("Action Items",         pd.DataFrame())
+    opps     = dfs.get("Opportunity Pipeline", pd.DataFrame())
+    deals    = dfs.get("Deal Progress",        pd.DataFrame())
+
+    today = date.today()
+    events: list[dict] = []
+
+    def _co(df, col="Company Name"):
+        if df.empty or col not in df.columns:
+            return pd.DataFrame()
+        return df[df[col] == company]
+
+    for _, r in _co(meetings).iterrows():
+        d = pd.to_datetime(r.get("Meeting Date"), errors="coerce")
+        if pd.isna(d):
+            continue
+        events.append({
+            "date":   d.date(),
+            "icon":   "🤝",
+            "color":  "#1D4ED8",
+            "bg":     "#EFF6FF",
+            "title":  str(r.get("Meeting Type", "Meeting") or "Meeting"),
+            "meta":   str(r.get("Meeting Status", "") or ""),
+            "detail": str(r.get("Key Discussion Points", "") or ""),
+        })
+
+    for _, r in _co(actions).iterrows():
+        d = pd.to_datetime(r.get("Due Date"), errors="coerce")
+        if pd.isna(d):
+            d = pd.to_datetime(r.get("Created Date"), errors="coerce")
+        if pd.isna(d):
+            continue
+        status = str(r.get("Status", "") or "")
+        etype  = str(r.get("Type of Engagement", "Action") or "Action")
+        if status == "Completed":
+            icon, color, bg = "✅", "#059669", "#F0FDF4"
+        elif etype == "Challenge":
+            icon, color, bg = "⚠️", "#DC2626", "#FEF2F2"
+        else:
+            icon, color, bg = "📋", "#6B7280", "#F9FAFB"
+        events.append({
+            "date":   d.date(),
+            "icon":   icon,
+            "color":  color,
+            "bg":     bg,
+            "title":  str(r.get("Action Description", "Action") or "Action")[:80],
+            "meta":   status,
+            "detail": str(r.get("Remarks", "") or ""),
+        })
+
+    for _, r in _co(opps).iterrows():
+        d = pd.to_datetime(r.get("Target Closure Date"), errors="coerce")
+        if pd.isna(d):
+            continue
+        events.append({
+            "date":   d.date(),
+            "icon":   "🎯",
+            "color":  "#D97706",
+            "bg":     "#FFFBEB",
+            "title":  str(r.get("Opportunity Name", "Opportunity") or "Opportunity"),
+            "meta":   str(r.get("Opportunity Stage", "") or ""),
+            "detail": str(r.get("Opportunity Status", "") or ""),
+        })
+
+    for _, r in _co(deals).iterrows():
+        d = pd.to_datetime(r.get("Target Resolution Date"), errors="coerce")
+        if pd.isna(d):
+            continue
+        events.append({
+            "date":   d.date(),
+            "icon":   "📜",
+            "color":  "#7C3AED",
+            "bg":     "#F5F3FF",
+            "title":  str(r.get("Deal Name", "Deal") or "Deal"),
+            "meta":   str(r.get("Deal Stage", "") or ""),
+            "detail": str(r.get("Deal Status", "") or ""),
+        })
+
+    if not events:
+        st.info("No timeline events found for this investor.")
+        return
+
+    events.sort(key=lambda x: x["date"], reverse=True)
+    st.caption(f"{len(events)} events — meetings, actions, opportunities & deals, most recent first")
+
+    html = '<div style="position:relative;padding-left:24px;margin-top:12px;">'
+    html += '<div style="position:absolute;left:9px;top:0;bottom:0;width:2px;background:#E5E7EB;"></div>'
+    prev_year = None
+    for ev in events:
+        yr = ev["date"].year
+        if yr != prev_year:
+            html += (
+                f'<div style="position:relative;margin:14px 0 8px -16px;">'
+                f'<span style="font-size:10px;font-weight:700;color:#9CA3AF;'
+                f'padding:1px 8px;background:#F3F4F6;border-radius:10px;">{yr}</span>'
+                f'</div>'
+            )
+            prev_year = yr
+
+        days_ago = (today - ev["date"]).days
+        when = ("Today" if days_ago == 0 else
+                "Yesterday" if days_ago == 1 else
+                f"In {-days_ago}d" if days_ago < 0 else
+                ev["date"].strftime("%d %b %Y"))
+
+        meta_html = ""
+        if ev["meta"] and ev["meta"] not in ("nan", "None", ""):
+            meta_html = (
+                f'<span style="font-size:9px;font-weight:600;color:{ev["color"]};'
+                f'background:{ev["bg"]};padding:1px 6px;border-radius:4px;margin-left:6px;">'
+                f'{ev["meta"]}</span>'
+            )
+        detail_html = ""
+        if ev["detail"] and ev["detail"] not in ("nan", "None", ""):
+            detail_html = (
+                f'<div style="font-size:11px;color:#6B7280;margin-top:2px;'
+                f'line-height:1.4;">{str(ev["detail"])[:140]}</div>'
+            )
+        html += (
+            f'<div style="position:relative;margin-bottom:8px;">'
+            f'<div style="position:absolute;left:-20px;top:9px;width:12px;height:12px;'
+            f'border-radius:50%;background:{ev["color"]};border:2px solid #fff;'
+            f'box-shadow:0 1px 3px rgba(0,0,0,.15);"></div>'
+            f'<div style="background:{ev["bg"]};border:1px solid rgba(0,0,0,.07);'
+            f'border-radius:8px;padding:7px 10px;">'
+            f'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">'
+            f'<span style="font-size:11px;">{ev["icon"]}</span>'
+            f'<span style="font-size:12px;font-weight:600;color:#1F2937;">{ev["title"]}</span>'
+            f'{meta_html}'
+            f'</div>'
+            f'<div style="font-size:10px;color:#9CA3AF;margin-top:1px;">{when}</div>'
+            f'{detail_html}'
+            f'</div></div>'
+        )
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # ── Investor profile (detail view) ────────────────────────────────────────────
@@ -772,7 +1028,9 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
         linked_challenges   = pd.DataFrame()
         linked_actions_only = linked_actions
 
+    timeline_total = len(linked_meetings) + len(linked_actions_only) + len(linked_challenges) + len(linked_opps) + len(linked_deals)
     tabs = st.tabs([
+        f"Timeline ({timeline_total})",
         f"Opportunities ({len(linked_opps)})",
         f"Action Items ({len(linked_actions_only)})",
         f"Challenges ({len(linked_challenges)})",
@@ -782,6 +1040,9 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
     ])
 
     with tabs[0]:
+        _render_activity_timeline(company, dfs)
+
+    with tabs[1]:
         if linked_opps.empty:
             st.info("No opportunities linked yet.")
         else:
@@ -790,7 +1051,7 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
                                  "Blockers", "Escalation Required"] if c in linked_opps.columns]
             st.dataframe(linked_opps[cols], use_container_width=True, hide_index=True)
 
-    with tabs[1]:
+    with tabs[2]:
         if linked_actions_only.empty:
             st.info("No action items yet.")
         else:
@@ -799,7 +1060,7 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
             df_s = linked_actions_only[cols].sort_values("Due Date") if "Due Date" in linked_actions_only.columns else linked_actions_only[cols]
             st.dataframe(df_s, use_container_width=True, hide_index=True)
 
-    with tabs[2]:
+    with tabs[3]:
         if linked_challenges.empty:
             st.info("No challenges logged.")
         else:
@@ -807,7 +1068,7 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
                                  "Assigned To", "Escalation Flag", "Remarks"] if c in linked_challenges.columns]
             st.dataframe(linked_challenges[cols], use_container_width=True, hide_index=True)
 
-    with tabs[3]:
+    with tabs[4]:
         if linked_meetings.empty:
             st.info("No meetings logged.")
         else:
@@ -817,14 +1078,14 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
             df_s = linked_meetings[cols].sort_values("Meeting Date", ascending=False) if "Meeting Date" in linked_meetings.columns else linked_meetings[cols]
             st.dataframe(df_s, use_container_width=True, hide_index=True)
 
-    with tabs[4]:
+    with tabs[5]:
         if linked_tasks.empty:
             st.info("No RM tasks linked.")
         else:
             cols = [c for c in ["Task ID", "Task Title", "Priority", "Status", "Due Date", "Notes"] if c in linked_tasks.columns]
             st.dataframe(linked_tasks[cols], use_container_width=True, hide_index=True)
 
-    with tabs[5]:
+    with tabs[6]:
         if linked_deals.empty:
             st.info("No deals in progress.")
         else:

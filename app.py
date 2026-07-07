@@ -124,6 +124,21 @@ def render_sidebar():
         <hr style="border-color:rgba(255,255,255,0.2);margin:8px 0 16px 0;">
         """, unsafe_allow_html=True)
 
+        # Global search
+        dfs_for_search = st.session_state.get("dfs")
+        if dfs_for_search is not None:
+            gsq = st.text_input(
+                "Global Search",
+                placeholder="🔍 Search all data…",
+                key="global_search_q",
+                label_visibility="collapsed",
+            )
+            if gsq:
+                st.session_state["_gsq_active"] = gsq.strip()
+            elif "global_search_q" in st.session_state and not st.session_state.get("global_search_q", "").strip():
+                st.session_state.pop("_gsq_active", None)
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
         # Language toggle
         current_lang = lang()
         toggle_label = T("language_toggle")
@@ -305,6 +320,64 @@ def _handle_upload(uploaded_file):
     st.session_state["last_upload_time"] = date.today().strftime("%d %b %Y")
     save_session(dfs)
     st.success(f"✅ {T('success_upload')}: **{uploaded_file.name}**")
+
+
+# ── Global search renderer ────────────────────────────────────────────────────
+def _render_global_search(dfs: dict, query: str):
+    query = query.strip()
+    if not query:
+        return
+
+    st.markdown(
+        f'<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;'
+        f'padding:10px 14px;margin-bottom:16px;">'
+        f'<span style="font-size:13px;font-weight:600;color:#92400e;">🔍 Search results for: </span>'
+        f'<span style="font-size:13px;color:#1c1917;">"{query}"</span>'
+        f'&nbsp;<span style="font-size:11px;color:#9CA3AF;">(clear search box to dismiss)</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    q_low = query.lower()
+    found_any = False
+
+    _SECTIONS = [
+        ("Investor Master",      "🏢 Investors",      ["Company Name", "Sector", "Country", "Relationship Manager", "Account Manager"]),
+        ("Meeting Log",          "🤝 Meetings",        ["Company Name", "Meeting Type", "Meeting Objective", "Key Discussion Points"]),
+        ("Action Items",         "📋 Actions",         ["Company Name", "Action Description", "Assigned To", "Status"]),
+        ("Opportunity Pipeline", "🎯 Opportunities",  ["Company Name", "Opportunity Name", "Opportunity Stage"]),
+        ("Deal Progress",        "📜 Deals",           ["Company Name", "Deal Name", "Deal Stage"]),
+    ]
+
+    for sheet, label, search_cols in _SECTIONS:
+        df = dfs.get(sheet, pd.DataFrame())
+        if df.empty:
+            continue
+        cols_present = [c for c in search_cols if c in df.columns]
+        if not cols_present:
+            continue
+
+        mask = df[cols_present].apply(
+            lambda col: col.fillna("").astype(str).str.lower().str.contains(q_low, regex=False)
+        ).any(axis=1)
+        hits = df[mask]
+        if hits.empty:
+            continue
+
+        found_any = True
+        st.markdown(f"**{label}** — {len(hits)} match{'es' if len(hits) != 1 else ''}")
+
+        display_cols = cols_present[:4]
+        st.dataframe(
+            hits[display_cols].head(8).reset_index(drop=True),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    if not found_any:
+        st.info(f'No results found for "{query}" across any sheet.')
+
+    st.markdown("---")
 
 
 # ── Page: Dashboard ───────────────────────────────────────────────────────────
@@ -640,6 +713,11 @@ def render_export():
 def main():
     page = render_sidebar()
     dfs  = st.session_state["dfs"]
+
+    # Global search banner — shown on top of any page when search is active
+    gsq = st.session_state.get("_gsq_active", "").strip()
+    if gsq and dfs is not None:
+        _render_global_search(dfs, gsq)
 
     if page == "dashboard":
         render_dashboard()
