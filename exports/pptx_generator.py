@@ -1060,8 +1060,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _tot = max(sum(_donut_vals), 1)
         _pct_any  = min(1.0, (_donut_vals[0] + _donut_vals[1]) / _tot)  # completed+in-progress
         _pct_done = min(1.0, _donut_vals[0] / _tot)                     # completed only
-        _ccx = Inches(2.10)   # circle center x (slightly right)
-        _ccy = Inches(4.15)   # circle center y (slightly up)
+        _ccx = Inches(2.30)   # circle center x
+        _ccy = Inches(4.35)   # circle center y
         _CR  = Inches(1.10)   # outer radius
 
         def _oval_c(cx, cy, r, color):
@@ -1099,10 +1099,10 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     # Center label overlaid on doughnut hole
     _add_text_box(slide, f"{pct_s}%",
-                  Inches(1.60), Inches(3.90), Inches(1.0), Inches(0.40),
+                  Inches(1.80), Inches(4.10), Inches(1.0), Inches(0.40),
                   font_size=18, bold=True, color=GREEN, align=PP_ALIGN.CENTER)
     _add_text_box(slide, "complete",
-                  Inches(1.60), Inches(4.27), Inches(1.0), Inches(0.18),
+                  Inches(1.80), Inches(4.47), Inches(1.0), Inches(0.18),
                   font_size=7, color=MGRAY, align=PP_ALIGN.CENTER)
 
     # ── LEFT PANEL: Opportunities list (x constrained to 0.5"–3.0") ──────────
