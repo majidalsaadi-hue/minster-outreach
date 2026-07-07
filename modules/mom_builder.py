@@ -70,42 +70,119 @@ def render(dfs: dict, lang: str):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step A — English meeting summary (reference only)
+# Step A — English meeting summary (type/paste OR upload)
 # ─────────────────────────────────────────────────────────────────────────────
 def _render_step_a():
     st.markdown(
         "<p style='font-size:13px;color:#374151;margin-bottom:12px;'>"
-        "Paste your English meeting notes here for reference. This section "
-        "is for your own context and will be included as an English page "
-        "when you choose the <b>bilingual</b> output mode.</p>",
+        "Provide your English meeting notes by <b>typing / pasting</b> or "
+        "<b>uploading a file</b> (.txt or .docx). The content will be included "
+        "as an English page in bilingual output mode.</p>",
         unsafe_allow_html=True,
     )
 
-    st.session_state["mom_en_notes"] = st.text_area(
-        "English Meeting Notes",
-        value=st.session_state.get("mom_en_notes", ""),
-        height=300,
-        placeholder=(
-            "Paste or type your English meeting summary here…\n\n"
-            "Example:\n"
-            "Meeting date: 29 June 2026\n"
-            "Subject: Sovereign AI Opportunity\n"
-            "Key points discussed:\n"
-            "• Sovereign AI vision to reduce dependency on foreign AI providers\n"
-            "• Government-level sponsorship required\n"
-            "Action items: Siddharth to submit technical proposal before next meeting"
-        ),
-        key="mom_en_notes_input",
+    input_mode = st.radio(
+        "Input method",
+        ["✏️  Type / Paste", "📎  Upload File (.txt or .docx)"],
+        horizontal=True,
+        key="mom_input_mode",
         label_visibility="collapsed",
     )
-    # Sync back
-    st.session_state["mom_en_notes"] = st.session_state.get("mom_en_notes_input",
-                                                              st.session_state["mom_en_notes"])
+
+    if "Upload" in input_mode:
+        uploaded = st.file_uploader(
+            "Upload meeting notes file",
+            type=["txt", "docx"],
+            key="mom_notes_file",
+            label_visibility="collapsed",
+        )
+        if uploaded is not None:
+            extracted = _extract_text_from_file(uploaded)
+            if extracted:
+                st.session_state["mom_en_notes"] = extracted
+                st.success(
+                    f"✅ Extracted {len(extracted.splitlines())} lines from **{uploaded.name}**"
+                )
+
+        # Still show a read-only preview of whatever was loaded
+        if st.session_state.get("mom_en_notes"):
+            st.markdown(
+                "<p style='font-size:12px;color:#6B7280;margin-top:10px;margin-bottom:4px;'>"
+                "Extracted text (edit if needed):</p>",
+                unsafe_allow_html=True,
+            )
+            edited = st.text_area(
+                "Extracted text",
+                value=st.session_state["mom_en_notes"],
+                height=260,
+                key="mom_en_notes_upload_edit",
+                label_visibility="collapsed",
+            )
+            st.session_state["mom_en_notes"] = edited
+        else:
+            st.info("Upload a .txt or .docx file above to load your meeting notes.")
+    else:
+        edited = st.text_area(
+            "English Meeting Notes",
+            value=st.session_state.get("mom_en_notes", ""),
+            height=300,
+            placeholder=(
+                "Paste or type your English meeting summary here…\n\n"
+                "Example:\n"
+                "Meeting date: 29 June 2026\n"
+                "Subject: Sovereign AI Opportunity\n"
+                "Key points discussed:\n"
+                "• Sovereign AI vision to reduce dependency on foreign AI providers\n"
+                "• Government-level sponsorship required\n"
+                "Action items: Siddharth to submit technical proposal before next meeting"
+            ),
+            key="mom_en_notes_paste",
+            label_visibility="collapsed",
+        )
+        st.session_state["mom_en_notes"] = edited
 
     st.info(
         "**Tip:** Fill in the meeting details in **Tab B** to build the structured Arabic document. "
         "Tab C lets you generate Arabic-only or both English + Arabic output."
     )
+
+
+def _extract_text_from_file(uploaded_file) -> str:
+    """Extract plain text from .txt or .docx uploads."""
+    name = uploaded_file.name.lower()
+    try:
+        if name.endswith(".txt"):
+            raw = uploaded_file.read()
+            # Try UTF-8, fall back to latin-1
+            try:
+                return raw.decode("utf-8")
+            except UnicodeDecodeError:
+                return raw.decode("latin-1", errors="replace")
+
+        elif name.endswith(".docx"):
+            try:
+                from docx import Document
+            except ImportError:
+                st.error("python-docx is not installed. Run: pip install python-docx")
+                return ""
+            import io
+            doc = Document(io.BytesIO(uploaded_file.read()))
+            lines = []
+            for para in doc.paragraphs:
+                text = para.text.strip()
+                if text:
+                    lines.append(text)
+            # Also grab table cell text
+            for table in doc.tables:
+                for row in table.rows:
+                    cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                    if cells:
+                        lines.append(" | ".join(cells))
+            return "\n".join(lines)
+
+    except Exception as e:
+        st.error(f"Could not read file: {e}")
+    return ""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
