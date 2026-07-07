@@ -214,6 +214,8 @@ def render_sidebar():
               <div>🤝 {summary.get('meetings',0)} {T('meetings_count')}</div>
               <div>🎯 {summary.get('opportunities',0)} {T('opportunities_count')}</div>
               <div>✅ {summary.get('actions',0)} {T('actions_count')}</div>
+              {"<div>📜 " + str(summary.get('deals',0)) + " deals</div>" if summary.get('deals',0) else ""}
+              {"<div>👤 " + str(summary.get('contacts',0)) + " contacts</div>" if summary.get('contacts',0) else ""}
               <div style="margin-top:4px;color:rgba(255,255,255,0.5);">
                 {T('last_updated')}: {st.session_state.get('last_upload_time','—')}
               </div>

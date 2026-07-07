@@ -121,6 +121,8 @@ def get_summary(dfs: dict) -> dict:
         "opportunities": 0,
         "actions":       0,
         "tasks":         0,
+        "deals":         0,
+        "contacts":      0,
     }
     if "Investor Master" in dfs:
         summary["investors"] = len(dfs["Investor Master"])
@@ -132,6 +134,10 @@ def get_summary(dfs: dict) -> dict:
         summary["actions"] = len(dfs["Action Items"])
     if "RM Tasks" in dfs:
         summary["tasks"] = len(dfs["RM Tasks"])
+    if "Deal Progress" in dfs:
+        summary["deals"] = len(dfs["Deal Progress"])
+    if "Contacts" in dfs:
+        summary["contacts"] = len(dfs["Contacts"])
     return summary
 
 
@@ -403,8 +409,7 @@ def _normalise_progress(val) -> str:
 
 
 def _derive_status_from_progress(progress_str: str) -> str:
-    """Derive a neutral status from the progress percentage.
-    100% → Completed, >5% → In Progress, ≤5% → Due (no negative labels)."""
+    """Derive status from progress percentage: 100% → Completed, >5% → In Progress, ≤5% → Not Started."""
     try:
         pct = float(str(progress_str).rstrip("%"))
     except (ValueError, TypeError):
@@ -414,15 +419,16 @@ def _derive_status_from_progress(progress_str: str) -> str:
     elif pct > 5:
         return "In Progress"
     else:
-        return "Due"
+        return "Not Started"
 
 
 def _normalise_status(val: str) -> str:
     mapping = {
         "inprogress":  "In Progress",
         "in progress": "In Progress",
-        "notstarted":  "Due",
-        "not started": "Due",
+        "notstarted":  "Not Started",
+        "not started": "Not Started",
+        "due":         "Not Started",
         "completed":   "Completed",
         "blocked":     "Blocked",
         "cancelled":   "Cancelled",
