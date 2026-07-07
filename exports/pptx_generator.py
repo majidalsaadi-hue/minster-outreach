@@ -994,91 +994,10 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   P3_W, Inches(0.54), font_size=8.5, color=DARK)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # LEFT: Compact timeline + Full action items table
+    # LEFT: Action items table (Engagement Timeline removed — replaced by Due Dates strip)
     # ══════════════════════════════════════════════════════════════════════════
-    today_d  = date.today()
-    start_dt = today_d - timedelta(days=120)
-    end_dt   = today_d + timedelta(days=45)
-    tot_days = (end_dt - start_dt).days
 
-    AXIS_Y = Inches(2.84)
-    AXIS_L = Inches(0.55)
-    AXIS_W = Inches(4.35)   # constrained to left panel only (before gray splitter at 5.05)
-    DOT_R  = Inches(0.09)
-    SQ     = Inches(0.10)
-
-    def _dx(d):
-        try:
-            if hasattr(d, "date"):
-                d = d.date()
-            elif not isinstance(d, type(today_d)):
-                d = pd.to_datetime(d).date()
-            frac = max(0.0, min(1.0, (d - start_dt).days / tot_days))
-            return AXIS_L + frac * AXIS_W
-        except Exception:
-            return None
-
-    _add_text_box(slide, "Engagement Timeline",
-                  Inches(0.3), Inches(2.41), Inches(4.70), Inches(0.20),
-                  font_size=9, bold=True, color=DARK)
-
-    # Month ticks
-    cur = start_dt.replace(day=1)
-    while cur <= end_dt:
-        mx = _dx(cur)
-        if mx is not None and mx >= AXIS_L:
-            _add_rect(slide, mx, AXIS_Y - Inches(0.08), Inches(0.012), Inches(0.10),
-                      fill_color=_rgb("#BBBBBB"), line_color=_rgb("#BBBBBB"))
-            _add_text_box(
-                slide, _calendar.month_abbr[cur.month],
-                mx - Inches(0.20), AXIS_Y - Inches(0.27), Inches(0.42), Inches(0.17),
-                font_size=6, color=MGRAY, align=PP_ALIGN.CENTER,
-            )
-        if cur.month == 12:
-            cur = cur.replace(year=cur.year + 1, month=1)
-        else:
-            cur = cur.replace(month=cur.month + 1)
-
-    # Axis line
-    _add_rect(slide, AXIS_L, AXIS_Y, AXIS_W, Inches(0.022),
-              fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
-
-    # "Now" marker
-    now_x = _dx(today_d)
-    if now_x:
-        _add_rect(slide, now_x - Inches(0.008), AXIS_Y - Inches(0.18), Inches(0.016), Inches(0.22),
-                  fill_color=GOLD, line_color=GOLD)
-        _add_text_box(slide, "Now", now_x - Inches(0.18), AXIS_Y - Inches(0.30),
-                      Inches(0.38), Inches(0.13), font_size=6, color=GOLD, align=PP_ALIGN.CENTER)
-
-    # Meeting dots ON axis — color by status, tiny date label above
-    _MTG_SC = {
-        "completed": MISA_GREEN, "done": MISA_GREEN, "held": MISA_GREEN,
-        "scheduled": MISA_GOLD,  "upcoming": MISA_GOLD, "planned": MISA_GOLD,
-        "cancelled": "#AAAAAA",  "canceled": "#AAAAAA",
-    }
-    if not meetings.empty and "Meeting Date" in meetings.columns:
-        recent_mtgs = meetings.sort_values("Meeting Date").tail(12).reset_index(drop=True)
-        for idx, (_, mtg) in enumerate(recent_mtgs.iterrows()):
-            raw_date = mtg.get("Meeting Date")
-            if pd.isna(raw_date):
-                continue
-            mx = _dx(raw_date)
-            if mx is None:
-                continue
-            status_lc = str(mtg.get("Meeting Status", "")).lower()
-            dot_c = _rgb(next((v for k, v in _MTG_SC.items() if k in status_lc), MISA_GREEN))
-            try:
-                d_lbl = pd.to_datetime(raw_date).strftime("%d %b")
-            except Exception:
-                d_lbl = str(raw_date)[:8]
-            _add_rect(slide, mx - DOT_R, AXIS_Y - DOT_R, DOT_R * 2, DOT_R * 2,
-                      fill_color=dot_c, line_color=dot_c)
-            lbl_y = Inches(2.33) if idx % 2 == 0 else Inches(2.41)
-            _add_text_box(slide, d_lbl, mx - Inches(0.22), lbl_y,
-                          Inches(0.45), Inches(0.13), font_size=6, color=DARK, align=PP_ALIGN.CENTER)
-
-    # Status colour map — shared by legend and vertical timeline
+    # Status colour map — used by vertical due-date timeline
     _ACT_SC = {
         "Completed":   MISA_GREEN, "In Progress": MISA_GOLD, "Inprogress": MISA_GOLD,
         "Not Started": "#888888",  "Blocked": "#C0392B",      "Cancelled": "#AAAAAA",
@@ -1339,7 +1258,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
                 VTL_X   = Inches(3.10)
                 VTL_W   = Inches(1.85)
-                VTL_TOP = Inches(3.05)
+                VTL_TOP = Inches(2.41)
                 VTL_BOT = Inches(7.00)
                 _vt_h   = VTL_BOT - VTL_TOP
                 _axis_x = VTL_X + Inches(0.60)
