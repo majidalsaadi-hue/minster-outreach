@@ -206,41 +206,96 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             if by > Inches(6.5):
                 break
 
-    # ── Right top 38%: By Sector ──────────────────────────────────────────────
+    # ── Opportunities counter (left side, overall) ───────────────────────────
+    n_total_opps = len(opportunities) if not opportunities.empty else 0
+    n_active_opps = (
+        int((opportunities["Opportunity Status"] == "Active").sum())
+        if not opportunities.empty and "Opportunity Status" in opportunities.columns
+        else n_total_opps
+    )
+    _add_rect(slide, Inches(0.3), Inches(6.18), Inches(3.80), Inches(0.62),
+              fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
+    _add_text_box(slide, str(n_total_opps),
+                  Inches(0.3), Inches(6.20), Inches(3.80), Inches(0.36),
+                  font_size=22, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+    _add_text_box(slide, f"Total Opportunities  |  Active: {n_active_opps}",
+                  Inches(0.3), Inches(6.55), Inches(3.80), Inches(0.20),
+                  font_size=8, color=WHITE, align=PP_ALIGN.CENTER)
+
+    # ── Right: By Sector donut chart ──────────────────────────────────────────
+    _DONUT_PALETTE = ["#1B5C3F", "#2D7A54", "#3D9068", "#C9974A", "#E0B06A", "#888888"]
     SEC_X = Inches(8.35)
     _add_text_box(slide, "By Sector",
-                  SEC_X, Inches(1.80), Inches(4.7), Inches(0.28),
+                  SEC_X, Inches(1.80), Inches(4.7), Inches(0.26),
                   font_size=11, bold=True, color=DARK)
     if not investors.empty and "Sector" in investors.columns:
         sec_counts = investors["Sector"].dropna().value_counts().head(6)
-        max_sec = max(sec_counts.max(), 1)
-        sy = Inches(2.16)
-        for sector_name, cnt in sec_counts.items():
-            bar_w = Inches(4.5 * cnt / max_sec)
-            _add_rect(slide, SEC_X, sy, bar_w, Inches(0.28),
-                      fill_color=GREEN, line_color=GREEN)
-            _add_text_box(slide, f"{str(sector_name)[:18]}: {cnt}",
-                          SEC_X + Inches(0.05), sy,
-                          Inches(4.4), Inches(0.28), font_size=8, color=WHITE)
-            sy += Inches(0.36)
+        try:
+            _sec_data = ChartData()
+            _sec_data.categories = [str(s)[:14] for s in sec_counts.index]
+            _sec_data.add_series("Sectors", tuple(int(v) for v in sec_counts.values))
+            _sec_gfx = slide.shapes.add_chart(
+                XL_CHART_TYPE.DOUGHNUT,
+                Inches(8.40), Inches(2.10), Inches(2.40), Inches(2.15),
+                _sec_data,
+            )
+            _sec_obj = _sec_gfx.chart
+            _sec_obj.has_title = False
+            _sec_obj.has_legend = False
+            for _pi, _pt in enumerate(_sec_obj.series[0].points):
+                _pt.format.fill.solid()
+                _pt.format.fill.fore_color.rgb = _rgb(_DONUT_PALETTE[_pi % len(_DONUT_PALETTE)])
+        except Exception:
+            pass
+        # Text legend beside donut
+        _leg_x = Inches(10.90)
+        _leg_y = Inches(2.15)
+        for _si, (_sname, _scnt) in enumerate(sec_counts.items()):
+            _col = _DONUT_PALETTE[_si % len(_DONUT_PALETTE)]
+            _add_rect(slide, _leg_x, _leg_y + Inches(0.04), Inches(0.09), Inches(0.09),
+                      fill_color=_rgb(_col), line_color=_rgb(_col))
+            _add_text_box(slide, f"{str(_sname)[:14]}: {_scnt}",
+                          _leg_x + Inches(0.13), _leg_y,
+                          Inches(2.25), Inches(0.20), font_size=7.5, color=DARK)
+            _leg_y += Inches(0.26)
 
-    # ── Right bottom 38%: By Country ─────────────────────────────────────────
+    # ── Right: By Country donut chart ─────────────────────────────────────────
     CTY_X = Inches(8.35)
     _add_text_box(slide, "By Country",
-                  CTY_X, Inches(4.55), Inches(4.7), Inches(0.28),
+                  CTY_X, Inches(4.45), Inches(4.7), Inches(0.26),
                   font_size=11, bold=True, color=DARK)
     if not investors.empty and "Country" in investors.columns:
         cty_counts = investors["Country"].dropna().value_counts().head(6)
-        max_cty = max(cty_counts.max(), 1)
-        cy2 = Inches(4.91)
-        for country_name, cnt in cty_counts.items():
-            bar_w = Inches(4.5 * cnt / max_cty)
-            _add_rect(slide, CTY_X, cy2, bar_w, Inches(0.28),
-                      fill_color=GOLD, line_color=GOLD)
-            _add_text_box(slide, f"{str(country_name)[:18]}: {cnt}",
-                          CTY_X + Inches(0.05), cy2,
-                          Inches(4.4), Inches(0.28), font_size=8, color=WHITE)
-            cy2 += Inches(0.36)
+        try:
+            _cty_data = ChartData()
+            _cty_data.categories = [str(c)[:14] for c in cty_counts.index]
+            _cty_data.add_series("Countries", tuple(int(v) for v in cty_counts.values))
+            _cty_gfx = slide.shapes.add_chart(
+                XL_CHART_TYPE.DOUGHNUT,
+                Inches(8.40), Inches(4.72), Inches(2.40), Inches(2.15),
+                _cty_data,
+            )
+            _cty_obj = _cty_gfx.chart
+            _cty_obj.has_title = False
+            _cty_obj.has_legend = False
+            _CTY_PAL = ["#C9974A", "#E0B06A", "#1B5C3F", "#2D7A54", "#888888", "#AAAAAA"]
+            for _pi, _pt in enumerate(_cty_obj.series[0].points):
+                _pt.format.fill.solid()
+                _pt.format.fill.fore_color.rgb = _rgb(_CTY_PAL[_pi % len(_CTY_PAL)])
+        except Exception:
+            pass
+        # Text legend beside donut
+        _leg_x = Inches(10.90)
+        _leg_y = Inches(4.77)
+        _CTY_PAL2 = ["#C9974A", "#E0B06A", "#1B5C3F", "#2D7A54", "#888888", "#AAAAAA"]
+        for _ci, (_cname, _ccnt) in enumerate(cty_counts.items()):
+            _col = _CTY_PAL2[_ci % len(_CTY_PAL2)]
+            _add_rect(slide, _leg_x, _leg_y + Inches(0.04), Inches(0.09), Inches(0.09),
+                      fill_color=_rgb(_col), line_color=_rgb(_col))
+            _add_text_box(slide, f"{str(_cname)[:14]}: {_ccnt}",
+                          _leg_x + Inches(0.13), _leg_y,
+                          Inches(2.25), Inches(0.20), font_size=7.5, color=DARK)
+            _leg_y += Inches(0.26)
 
     # Gold footer
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
@@ -675,7 +730,7 @@ def _slide_investor(prs, inv_row, actions, opportunities, deals, lang):
         f"Est: {_fmt_sar(est) if pd.notna(est) and est else '—'}  |  "
         f"Committed: {_fmt_sar(cmmt) if pd.notna(cmmt) and cmmt else '—'}  |  "
         f"Next Meeting: {nxt if pd.notna(nxt) and nxt else '—'}  |  "
-        f"Minister Action: {min_act}  |  Blocker: {blocker}"
+        f"Immediate Action: {min_act}  |  Blocker: {blocker}"
     )
     _add_text_box(slide, strip_text, Inches(0.35), Inches(1.57),
                   Inches(12.6), Inches(0.28), font_size=8,
@@ -819,13 +874,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   P1_W, Inches(0.22), font_size=9, bold=True, color=_rgb(MISA_GREEN))
     _add_text_box(slide, goal_text, P1_X, BRIEF_Y + Inches(0.30),
                   P1_W, Inches(0.54), font_size=8.5, color=DARK)
-    # Panel 2 — Ministry Strategy
-    _add_text_box(slide, "MINISTRY STRATEGY", P2_X, BRIEF_Y + Inches(0.07),
+    # Panel 2 — Overall Progress
+    _add_text_box(slide, "OVERALL PROGRESS", P2_X, BRIEF_Y + Inches(0.07),
                   P2_W, Inches(0.22), font_size=9, bold=True, color=_rgb(MISA_GOLD))
     _add_text_box(slide, strat_text, P2_X, BRIEF_Y + Inches(0.30),
                   P2_W, Inches(0.54), font_size=8.5, color=DARK)
-    # Panel 3 — Minister Action
-    _add_text_box(slide, "MINISTER ACTION", P3_X, BRIEF_Y + Inches(0.07),
+    # Panel 3 — Immediate Action
+    _add_text_box(slide, "IMMEDIATE ACTION", P3_X, BRIEF_Y + Inches(0.07),
                   P3_W, Inches(0.22), font_size=9, bold=True, color=RED)
     _add_text_box(slide, action_text, P3_X, BRIEF_Y + Inches(0.30),
                   P3_W, Inches(0.54), font_size=8.5, color=DARK)
@@ -840,7 +895,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     AXIS_Y = Inches(2.84)
     AXIS_L = Inches(0.55)
-    AXIS_W = Inches(9.20)
+    AXIS_W = Inches(4.35)   # constrained to left panel only (before gray splitter at 5.05)
     DOT_R  = Inches(0.09)
     SQ     = Inches(0.10)
 
@@ -856,7 +911,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             return None
 
     _add_text_box(slide, "Engagement Timeline",
-                  Inches(0.3), Inches(2.41), Inches(9.8), Inches(0.20),
+                  Inches(0.3), Inches(2.41), Inches(4.70), Inches(0.20),
                   font_size=9, bold=True, color=DARK)
 
     # Month ticks
@@ -928,9 +983,10 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             ax = _dx(act["_dt"])
             if ax is None:
                 continue
-            sq_y = AXIS_Y + Inches(0.04) + (ai % 2) * Inches(0.14)
             scol = _rgb(_ACT_SC.get(str(act.get("Status", "")), "#888888"))
-            _add_rect(slide, ax - SQ / 2, sq_y, SQ, SQ * 0.85,
+            # Vertical tick marks extending downward — taller than old squares
+            _add_rect(slide, ax - Inches(0.015), AXIS_Y + Inches(0.02),
+                      Inches(0.03), Inches(0.26),
                       fill_color=scol, line_color=scol)
 
     # ── Compact legend — right of timeline, two tidy columns ─────────────────
@@ -989,7 +1045,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _chart_data.add_series("Status", tuple(_donut_vals))
         _chart_gfx = slide.shapes.add_chart(
             XL_CHART_TYPE.DOUGHNUT,
-            Inches(0.2), Inches(3.3), Inches(2.5), Inches(2.5),
+            Inches(0.5), Inches(3.3), Inches(2.5), Inches(2.5),
             _chart_data,
         )
         _chart_obj = _chart_gfx.chart
@@ -1007,17 +1063,17 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     # Center label overlaid on doughnut hole
     _add_text_box(slide, f"{pct_s}%",
-                  Inches(0.95), Inches(4.25), Inches(1.0), Inches(0.40),
+                  Inches(1.25), Inches(4.25), Inches(1.0), Inches(0.40),
                   font_size=18, bold=True, color=GREEN, align=PP_ALIGN.CENTER)
     _add_text_box(slide, "complete",
-                  Inches(0.95), Inches(4.65), Inches(1.0), Inches(0.18),
+                  Inches(1.25), Inches(4.65), Inches(1.0), Inches(0.18),
                   font_size=7, color=MGRAY, align=PP_ALIGN.CENTER)
 
     # Text legend below chart
     _add_text_box(
         slide,
         f"■ Completed: {n_done_s}  ■ In Progress: {n_prog_s}  ■ Not Started: {n_due_s}",
-        Inches(0.2), Inches(5.85), Inches(4.7), Inches(0.22),
+        Inches(0.5), Inches(5.85), Inches(4.5), Inches(0.22),
         font_size=7.5, color=DARK,
     )
 
@@ -1026,11 +1082,11 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _n_active_opps = int((opps["Opportunity Status"] == "Active").sum()) \
         if not opps.empty and "Opportunity Status" in opps.columns else _n_opps_left
     _add_text_box(slide, f"Opportunities ({_n_opps_left})",
-                  Inches(0.2), Inches(6.08), Inches(4.7), Inches(0.26),
+                  Inches(0.5), Inches(6.08), Inches(4.5), Inches(0.26),
                   font_size=10, bold=True, color=GREEN)
     if _n_active_opps > 0:
         _add_text_box(slide, f"Active: {_n_active_opps}",
-                      Inches(3.20), Inches(6.10), Inches(1.70), Inches(0.22),
+                      Inches(3.30), Inches(6.10), Inches(1.70), Inches(0.22),
                       font_size=8, color=_rgb(MISA_GOLD), align=PP_ALIGN.RIGHT)
     _opp_item_y = Inches(6.38)
     if not opps.empty and "Opportunity Name" in opps.columns:
@@ -1041,17 +1097,17 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             if str(r.get("Opportunity Name", "") or "").strip() not in ("nan", "")
         ]
         for _oname, _ostage in _opp_names_list:
-            _add_rect(slide, Inches(0.20), _opp_item_y + Inches(0.06),
+            _add_rect(slide, Inches(0.50), _opp_item_y + Inches(0.06),
                       Inches(0.09), Inches(0.09),
                       fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
             _stage_txt = f"  [{_ostage}]" if _ostage else ""
             _add_text_box(slide, f"{_oname[:44]}{_stage_txt}",
-                          Inches(0.34), _opp_item_y, Inches(4.56), Inches(0.22),
+                          Inches(0.64), _opp_item_y, Inches(4.26), Inches(0.22),
                           font_size=8, color=DARK)
             _opp_item_y += Inches(0.23)
     else:
         _add_text_box(slide, "No opportunities recorded.",
-                      Inches(0.2), _opp_item_y, Inches(4.7), Inches(0.22),
+                      Inches(0.5), _opp_item_y, Inches(4.5), Inches(0.22),
                       font_size=8, color=MGRAY)
 
     # Thin vertical divider between left and right panels
@@ -1077,7 +1133,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     def _render_tbl_new(df, tbl_y, title, hdr_color, max_r=MAX_R):
         CX = [TBL_X + sum(CW_NEW[:j]) for j in range(len(CW_NEW))]
-        col_hdrs = ["#", title, "Owner", "Status", "%"]
+        col_hdrs = ["#", title, "Owner", "Update the Status", "%"]
         for hdr, cx, cw in zip(col_hdrs, CX, CW_NEW):
             _add_rect(slide, cx, tbl_y, cw, HDR_H, fill_color=hdr_color, line_color=hdr_color)
             _add_text_box(slide, hdr, cx + Inches(0.02), tbl_y + Inches(0.04),
@@ -1459,7 +1515,7 @@ def _co_slide_opps_deals(prs, company, inv_row, opps, deals, acts, lang):
     # Sidebar title band
     _add_rect(slide, SB_X, Inches(1.73), SB_W, Inches(0.30),
               fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
-    _add_text_box(slide, "MINISTRY STRATEGY",
+    _add_text_box(slide, "OVERALL PROGRESS",
                   SB_X + Inches(0.10), Inches(1.77),
                   SB_W - Inches(0.20), Inches(0.22),
                   font_size=9, bold=True, color=WHITE)
