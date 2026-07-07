@@ -57,6 +57,8 @@ def load_session() -> dict | None:
                 dfs[sheet] = df
         if "RM Tasks" not in dfs:
             dfs["RM Tasks"] = _empty_tasks_df()
+        if "Contacts" not in dfs:
+            dfs["Contacts"] = _empty_contacts_df()
         return dfs if dfs else None
     except Exception:
         return None
@@ -148,6 +150,8 @@ def _load_standard(raw: pd.ExcelFile) -> dict:
             dfs[sheet] = df
     if "RM Tasks" not in dfs:
         dfs["RM Tasks"] = _empty_tasks_df()
+    if "Contacts" not in dfs:
+        dfs["Contacts"] = _empty_contacts_df()
     return dfs
 
 
@@ -318,6 +322,7 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
         "Opportunity Pipeline": opps_df,
         "Action Items":         actions_df,
         "RM Tasks":             _empty_tasks_df(),
+        "Contacts":             _empty_contacts_df(),
     }
 
 
@@ -471,6 +476,12 @@ def _empty_actions_df() -> pd.DataFrame:
 
 def _empty_tasks_df() -> pd.DataFrame:
     cols = [c for spec in [SCHEMA["RM Tasks"]]
+            for c in spec["required"] + spec["optional"]]
+    return pd.DataFrame(columns=cols)
+
+
+def _empty_contacts_df() -> pd.DataFrame:
+    cols = [c for spec in [SCHEMA["Contacts"]]
             for c in spec["required"] + spec["optional"]]
     return pd.DataFrame(columns=cols)
 

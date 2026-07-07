@@ -527,7 +527,7 @@ def _write_tracker_sheet(ws, company: str, inv_row, actions: pd.DataFrame,
     # ── Company card rows 12-16 ───────────────────────────────────────────────
     am  = str(inv.get("Account Manager",      "") or "")
     rm  = str(inv.get("Relationship Manager", "") or "")
-    out = str(inv.get("Outreach Manager",     "") or "") or "Majed Alsaadi"
+    out = str(inv.get("Outreach Manager",     "") or "") or am or rm or "—"
 
     rep_name  = str(inv.get("Company Rep",   "") or "")
     rep_title = str(inv.get("Rep Position",  "") or "")

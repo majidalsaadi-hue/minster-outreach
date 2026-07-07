@@ -45,6 +45,9 @@ from modules.meetings      import render as render_meetings
 from modules.opportunities import render as render_opportunities
 from modules.actions       import render as render_actions, render_action_summary_widget
 from modules.tasks         import render as render_tasks
+from modules.contacts      import render as render_contacts
+from modules.deals         import render as render_deals
+from modules.company_directory import render as render_company_directory
 from modules.report_builder      import render as render_report_builder
 from modules.evaluation          import render as render_evaluation
 
@@ -153,11 +156,14 @@ def render_sidebar():
             T("nav_dashboard"):         "dashboard",
             T("nav_outreach"):          "outreach",
             T("nav_investors"):         "investors",
+            T("nav_meetings"):          "meetings",
             T("nav_opportunities"):     "opportunities",
             T("nav_report_builder"):    "report_builder",
             T("nav_evaluation"):        "evaluation",
             T("nav_actions"):           "actions",
             T("nav_tasks"):             "tasks",
+            "Contacts":                 "contacts",
+            "Deals":                    "deals",
             T("nav_export"):            "export",
         }
         selected_label = st.radio(
@@ -859,6 +865,18 @@ def main():
             _require_data()
         else:
             render_tasks(dfs, lang())
+
+    elif page == "contacts":
+        if dfs is None:
+            _require_data()
+        else:
+            render_contacts(dfs, lang())
+
+    elif page == "deals":
+        if dfs is None:
+            _require_data()
+        else:
+            render_deals(dfs, lang())
 
     elif page == "export":
         render_export()

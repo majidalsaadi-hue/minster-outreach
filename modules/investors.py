@@ -1028,9 +1028,15 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
         linked_challenges   = pd.DataFrame()
         linked_actions_only = linked_actions
 
+    contacts_df = dfs.get("Contacts", pd.DataFrame())
+    linked_contacts = contacts_df[contacts_df["Company Name"] == company].reset_index(drop=True) if (
+        not contacts_df.empty and "Company Name" in contacts_df.columns
+    ) else pd.DataFrame()
+
     timeline_total = len(linked_meetings) + len(linked_actions_only) + len(linked_challenges) + len(linked_opps) + len(linked_deals)
     tabs = st.tabs([
         f"Timeline ({timeline_total})",
+        f"Contacts ({len(linked_contacts)})",
         f"Opportunities ({len(linked_opps)})",
         f"Action Items ({len(linked_actions_only)})",
         f"Challenges ({len(linked_challenges)})",
@@ -1043,6 +1049,10 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
         _render_activity_timeline(company, dfs)
 
     with tabs[1]:
+        from modules.contacts import render_for_company as _render_contacts_for_company
+        _render_contacts_for_company(company, dfs)
+
+    with tabs[2]:
         if linked_opps.empty:
             st.info("No opportunities linked yet.")
         else:
@@ -1051,7 +1061,7 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
                                  "Blockers", "Escalation Required"] if c in linked_opps.columns]
             st.dataframe(linked_opps[cols], use_container_width=True, hide_index=True)
 
-    with tabs[2]:
+    with tabs[3]:
         if linked_actions_only.empty:
             st.info("No action items yet.")
         else:
@@ -1060,7 +1070,7 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
             df_s = linked_actions_only[cols].sort_values("Due Date") if "Due Date" in linked_actions_only.columns else linked_actions_only[cols]
             st.dataframe(df_s, use_container_width=True, hide_index=True)
 
-    with tabs[3]:
+    with tabs[4]:
         if linked_challenges.empty:
             st.info("No challenges logged.")
         else:
@@ -1068,7 +1078,7 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
                                  "Assigned To", "Escalation Flag", "Remarks"] if c in linked_challenges.columns]
             st.dataframe(linked_challenges[cols], use_container_width=True, hide_index=True)
 
-    with tabs[4]:
+    with tabs[5]:
         if linked_meetings.empty:
             st.info("No meetings logged.")
         else:
@@ -1078,14 +1088,14 @@ def _render_investor_profile(company: str, dfs: dict, lang: str):
             df_s = linked_meetings[cols].sort_values("Meeting Date", ascending=False) if "Meeting Date" in linked_meetings.columns else linked_meetings[cols]
             st.dataframe(df_s, use_container_width=True, hide_index=True)
 
-    with tabs[5]:
+    with tabs[6]:
         if linked_tasks.empty:
             st.info("No RM tasks linked.")
         else:
             cols = [c for c in ["Task ID", "Task Title", "Priority", "Status", "Due Date", "Notes"] if c in linked_tasks.columns]
             st.dataframe(linked_tasks[cols], use_container_width=True, hide_index=True)
 
-    with tabs[6]:
+    with tabs[7]:
         if linked_deals.empty:
             st.info("No deals in progress.")
         else:

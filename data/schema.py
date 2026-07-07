@@ -149,6 +149,19 @@ SCHEMA = {
             "Last Updated":           "date",
         },
     },
+
+    "Contacts": {
+        "required": [
+            "Contact ID", "Company Name", "Full Name",
+        ],
+        "optional": [
+            "Title", "Department", "Email", "Phone", "LinkedIn",
+            "Contact Type", "Notes", "Last Updated",
+        ],
+        "dtypes": {
+            "Last Updated": "date",
+        },
+    },
 }
 
 # Legacy sheet names from the original tracker — used to detect old-format uploads
