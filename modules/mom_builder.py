@@ -20,6 +20,71 @@ _SK = {
     "next_steps":   "mom_next_steps",
 }
 
+# Flexible column aliases for Excel action-item imports
+_ACTION_COL_ALIASES = {
+    "num":         ["id", "#", "no", "num", "number", "م"],
+    "item":        ["action item", "action", "task", "description", "بند العمل", "بند", "activity"],
+    "owner":       ["assigned to", "owner", "responsible", "assignee", "المسؤول", "rep"],
+    "deliverable": ["deliverable", "output", "remarks", "am input", "notes", "المخرج"],
+    "due":         ["due date", "due", "deadline", "target date", "تاريخ الاستحقاق"],
+    "measure":     ["success measure", "measure", "progress", "kpi", "مقياس النجاح"],
+}
+
+
+def _map_action_columns(df_cols: list) -> dict:
+    """Return {field: actual_col_name} for columns found in df."""
+    import re
+    mapping = {}
+    cols_lower = {c.strip().lower(): c for c in df_cols}
+    for field, aliases in _ACTION_COL_ALIASES.items():
+        for alias in aliases:
+            if alias in cols_lower:
+                mapping[field] = cols_lower[alias]
+                break
+        if field not in mapping:
+            # partial match
+            for alias in aliases:
+                for col_l, col_orig in cols_lower.items():
+                    if alias in col_l or col_l in alias:
+                        mapping[field] = col_orig
+                        break
+                if field in mapping:
+                    break
+    return mapping
+
+
+def _df_to_actions(df, sheet_name: str = "") -> list:
+    """Convert a DataFrame row-set to mom_actions list."""
+    import pandas as pd
+    df = df.fillna("").astype(str)
+    # Drop fully empty rows
+    df = df[df.apply(lambda r: r.str.strip().any(), axis=1)].reset_index(drop=True)
+    if df.empty:
+        return []
+
+    col_map = _map_action_columns(list(df.columns))
+    actions = []
+    for idx, row in df.iterrows():
+        num_val = str(row[col_map["num"]]).strip() if "num" in col_map else str(idx + 1)
+        if not num_val or num_val in ("nan", ""):
+            num_val = str(idx + 1)
+        item_val = str(row[col_map["item"]]).strip() if "item" in col_map else ""
+        if not item_val or item_val in ("nan", ""):
+            continue  # skip rows with no action text
+        actions.append({
+            "num":         num_val,
+            "item":        item_val,
+            "owner":       str(row[col_map["owner"]]).strip()       if "owner"       in col_map else "",
+            "deliverable": str(row[col_map["deliverable"]]).strip() if "deliverable" in col_map else "",
+            "due":         str(row[col_map["due"]]).strip()         if "due"         in col_map else "",
+            "measure":     str(row[col_map["measure"]]).strip()     if "measure"     in col_map else "",
+        })
+        # Clean "nan" strings
+        for k in actions[-1]:
+            if actions[-1][k] in ("nan", "NaN", "None"):
+                actions[-1][k] = ""
+    return actions
+
 def _init_state():
     defaults = {
         "mom_attendees":   [{"name": "", "role": ""}],
@@ -63,7 +128,7 @@ def render(dfs: dict, lang: str):
         _render_step_a()
 
     with tab_b:
-        _render_step_b()
+        _render_step_b(dfs)
 
     with tab_c:
         _render_step_c()
@@ -371,7 +436,7 @@ def _apply_parsed_data(parsed: dict):
 # ─────────────────────────────────────────────────────────────────────────────
 # Step B — Structured meeting details (Arabic input fields)
 # ─────────────────────────────────────────────────────────────────────────────
-def _render_step_b():
+def _render_step_b(dfs: dict = None):
     st.markdown(
         "<p style='font-size:13px;color:#374151;margin-bottom:8px;'>"
         "Upload a meeting notes file to auto-fill all fields, or fill them in manually below.</p>",
@@ -484,6 +549,83 @@ def _render_step_b():
 
     # ── Action Items ──────────────────────────────────────────────────────────
     _section_header("✅ Action Items", "بنود العمل")
+
+    # ── Import from Excel / CRM ───────────────────────────────────────────────
+    with st.expander("📥 Import Action Items from Excel or CRM", expanded=False):
+        import_tab_excel, import_tab_crm = st.tabs(["Upload Excel File", "From CRM Action Items"])
+
+        with import_tab_excel:
+            st.markdown(
+                "<p style='font-size:12px;color:#374151;'>"
+                "Upload an Excel file containing your action items table. "
+                "The importer recognises common column names: "
+                "<em>Action Item, Assigned To, Due Date, Deliverable, Progress, etc.</em></p>",
+                unsafe_allow_html=True,
+            )
+            import_file = st.file_uploader(
+                "Action items Excel",
+                type=["xlsx", "xls"],
+                key="mom_action_import_file",
+                label_visibility="collapsed",
+            )
+            if import_file is not None:
+                import io as _io
+                import pandas as pd
+                try:
+                    xl = pd.ExcelFile(_io.BytesIO(import_file.read()))
+                    sheet_names = xl.sheet_names
+                    selected_sheet = st.selectbox(
+                        "Select sheet",
+                        sheet_names,
+                        key="mom_action_import_sheet",
+                    )
+                    df_preview = xl.parse(selected_sheet)
+                    st.dataframe(df_preview.head(8), use_container_width=True, hide_index=True)
+                    col_map_preview = _map_action_columns(list(df_preview.columns))
+                    if col_map_preview.get("item"):
+                        st.success(
+                            f"Detected columns → "
+                            f"**Action Item**: `{col_map_preview.get('item','—')}` · "
+                            f"**Owner**: `{col_map_preview.get('owner','—')}` · "
+                            f"**Due Date**: `{col_map_preview.get('due','—')}`"
+                        )
+                        if st.button("⬇ Import into MoM", key="mom_do_import_excel"):
+                            df_full = xl.parse(selected_sheet)
+                            imported = _df_to_actions(df_full, selected_sheet)
+                            if imported:
+                                st.session_state["mom_actions"] = imported
+                                st.success(f"✅ Imported **{len(imported)}** action items from *{selected_sheet}*.")
+                                st.rerun()
+                            else:
+                                st.warning("No action items found — check that the sheet has an 'Action Item' column.")
+                    else:
+                        st.warning(
+                            "Could not detect an 'Action Item' column. "
+                            "Rename the column to 'Action Item' or 'Task' and re-upload."
+                        )
+                except Exception as exc:
+                    st.error(f"Could not read file: {exc}")
+
+        with import_tab_crm:
+            action_df = (dfs or {}).get("Action Items") if dfs else None
+            if action_df is not None and not action_df.empty:
+                # Company filter
+                companies = ["All"] + sorted(action_df["Company Name"].dropna().unique().tolist()) \
+                    if "Company Name" in action_df.columns else ["All"]
+                selected_co = st.selectbox("Filter by company", companies, key="mom_crm_ai_company")
+                filtered = action_df if selected_co == "All" else \
+                    action_df[action_df["Company Name"] == selected_co]
+                st.dataframe(filtered.head(20), use_container_width=True, hide_index=True)
+                if st.button("⬇ Import from CRM", key="mom_do_import_crm"):
+                    imported = _df_to_actions(filtered)
+                    if imported:
+                        st.session_state["mom_actions"] = imported
+                        st.success(f"✅ Imported **{len(imported)}** action items from CRM.")
+                        st.rerun()
+                    else:
+                        st.warning("No matching action items found.")
+            else:
+                st.info("No Action Items data available in the current CRM session.")
 
     actions = st.session_state["mom_actions"]
     # Header labels once
