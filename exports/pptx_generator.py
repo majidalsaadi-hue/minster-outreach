@@ -276,19 +276,21 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                   Inches(10.3), Inches(0.30), Inches(2.8), Inches(0.30),
                   font_size=9, color=GOLD, align=PP_ALIGN.RIGHT)
 
-    # ── KPI strip (4 cards) ───────────────────────────────────────────────────
+    # ── KPI strip (5 cards including overall progress) ───────────────────────
     total_cos    = len(investors)
     total_acts   = len(actions)
     n_done_a     = int(actions["Status"].str.lower().str.contains("complet").sum()) if not actions.empty and "Status" in actions.columns else 0
     n_prog_a     = int(actions["Status"].isin(["In Progress", "Inprogress"]).sum()) if not actions.empty and "Status" in actions.columns else 0
+    _ovr_pct     = round((n_done_a + n_prog_a) / max(total_acts, 1) * 100)
 
     kpi_data = [
-        ("Total Companies",   str(total_cos),   MISA_GREEN),
-        ("Total Actions",     str(total_acts),  MISA_GOLD),
-        ("Completed Actions", str(n_done_a),    MISA_GREEN),
-        ("In Progress",       str(n_prog_a),    MISA_GOLD),
+        ("Total Companies",   str(total_cos),         MISA_GREEN),
+        ("Total Actions",     str(total_acts),         MISA_GOLD),
+        ("Completed",         str(n_done_a),           MISA_GREEN),
+        ("In Progress",       str(n_prog_a),           MISA_GOLD),
+        ("Overall Progress",  f"{_ovr_pct}%",          MISA_GREEN),
     ]
-    kcard_w = Inches(3.13)
+    kcard_w = Inches(2.47)
     kcard_h = Inches(0.72)
     for i, (lbl, val, col) in enumerate(kpi_data):
         kx = Inches(0.3) + i * (kcard_w + Inches(0.08))
@@ -301,7 +303,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
 
     # ── Left 60%: Actions Progress by Company ────────────────────────────────
     _add_text_box(slide, "Actions Progress by Company",
-                  Inches(0.3), Inches(1.80), Inches(7.8), Inches(0.28),
+                  Inches(0.3), Inches(1.80), Inches(7.8), Inches(0.24),
                   font_size=11, bold=True, color=DARK)
 
     if not actions.empty and "Company Name" in actions.columns and "Status" in actions.columns:
@@ -311,14 +313,29 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             done_g  = int(grp["Status"].str.lower().str.contains("complet").sum())
             prog_g  = int(grp["Status"].isin(["In Progress", "Inprogress"]).sum())
             ns_g    = max(total_g - done_g - prog_g, 0)
-            pct_g   = round(done_g / total_g * 100) if total_g > 0 else 0
+            pct_g   = round((done_g + prog_g) / total_g * 100) if total_g > 0 else 0
             co_stats[co_name_g] = (pct_g, done_g, prog_g, ns_g, total_g)
 
-        sorted_cos = sorted(co_stats.items(), key=lambda x: x[1][0], reverse=True)[:8]
+        # Average of per-company progress %
+        _avg_co_pct = round(sum(v[0] for v in co_stats.values()) / max(len(co_stats), 1)) if co_stats else _ovr_pct
         MAX_BAR_W = Inches(5.4)
-        by = Inches(2.16)
-        bar_h   = Inches(0.34)
-        bar_gap = Inches(0.10)
+        by = Inches(2.06)
+        bar_h   = Inches(0.30)
+        bar_gap = Inches(0.08)
+
+        # Overall average row
+        _add_text_box(slide, "OVERALL AVG", Inches(0.3), by,
+                      Inches(2.0), Inches(0.22), font_size=8, bold=True, color=GREEN)
+        bx = Inches(2.35)
+        _add_rect(slide, bx, by + Inches(0.03), MAX_BAR_W, bar_h,
+                  fill_color=_rgb("#E0E0E0"), line_color=_rgb("#E0E0E0"))
+        _add_rect(slide, bx, by + Inches(0.03), MAX_BAR_W * _avg_co_pct / 100, bar_h,
+                  fill_color=GREEN, line_color=GREEN)
+        _add_text_box(slide, f"{_avg_co_pct}%", bx + MAX_BAR_W + Inches(0.08), by,
+                      Inches(0.5), Inches(0.22), font_size=8, bold=True, color=GREEN)
+        by += bar_h + Inches(0.14)
+
+        sorted_cos = sorted(co_stats.items(), key=lambda x: x[1][0], reverse=True)[:8]
 
         for co_name_b, (pct_g, done_g, prog_g, ns_g, total_g) in sorted_cos:
             _add_text_box(slide, str(co_name_b)[:24], Inches(0.3), by,
@@ -999,8 +1016,12 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   font_size=26, bold=True, color=WHITE)
     _add_text_box(slide,
                   f"Investor Status Report — {date.today().strftime('%d %B %Y')}",
-                  Inches(8.8), Inches(0.30), Inches(4.2), Inches(0.40),
+                  Inches(8.8), Inches(0.20), Inches(4.2), Inches(0.30),
                   font_size=8, color=_rgb("CCCCCC"), align=PP_ALIGN.RIGHT)
+    _add_text_box(slide,
+                  "Ministry of Investment  ·  Minister Office  ·  Executive Outreach  ·  Man-marking Weekly Report",
+                  Inches(0.3), Inches(0.64), Inches(13.0), Inches(0.16),
+                  font_size=6.5, color=GOLD)
 
     # ── White metadata band ──────────────────────────────────────────
     _add_rect(slide, Inches(0), Inches(0.82), Inches(13.33), Inches(0.58),
