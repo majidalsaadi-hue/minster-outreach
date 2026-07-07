@@ -310,21 +310,51 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             if by > Inches(6.5):
                 break
 
-    # ── Opportunities counter (left side, overall) ───────────────────────────
+    # ── Opportunities by Sector (left side bottom) ──────────────────────────
     n_total_opps = len(opportunities) if not opportunities.empty else 0
     n_active_opps = (
         int((opportunities["Opportunity Status"] == "Active").sum())
         if not opportunities.empty and "Opportunity Status" in opportunities.columns
         else n_total_opps
     )
-    _add_rect(slide, Inches(0.3), Inches(6.18), Inches(3.80), Inches(0.62),
-              fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
-    _add_text_box(slide, str(n_total_opps),
-                  Inches(0.3), Inches(6.20), Inches(3.80), Inches(0.36),
-                  font_size=22, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-    _add_text_box(slide, f"Total Opportunities  |  Active: {n_active_opps}",
-                  Inches(0.3), Inches(6.55), Inches(3.80), Inches(0.20),
-                  font_size=8, color=WHITE, align=PP_ALIGN.CENTER)
+    OPP_SEC_X = Inches(0.3)
+    OPP_SEC_Y = Inches(6.08)
+    _add_text_box(slide, "Opportunities by Sector",
+                  OPP_SEC_X, OPP_SEC_Y, Inches(2.60), Inches(0.22),
+                  font_size=9, bold=True, color=GREEN)
+    _add_text_box(slide, f"{n_total_opps} total  |  active: {n_active_opps}",
+                  OPP_SEC_X + Inches(2.65), OPP_SEC_Y, Inches(1.15), Inches(0.22),
+                  font_size=7.5, color=_rgb(MISA_GOLD), align=PP_ALIGN.RIGHT)
+    # Build sector counts by joining opportunities → investor sector
+    _sec_opp_counts = pd.Series(dtype=int)
+    if (not opportunities.empty and not investors.empty
+            and "Company Name" in opportunities.columns
+            and "Company Name" in investors.columns
+            and "Sector" in investors.columns):
+        _opp_merged = opportunities.merge(
+            investors[["Company Name", "Sector"]], on="Company Name", how="left")
+        _sec_opp_counts = _opp_merged["Sector"].fillna("Unknown").value_counts().head(5)
+    elif n_total_opps > 0:
+        _sec_opp_counts = pd.Series({"All Sectors": n_total_opps})
+    _SEC_OPP_COLORS = [MISA_GREEN, MISA_GOLD, "#2D7A54", "#E0B06A", "#888888"]
+    _MAX_BAR_OPP = Inches(1.50)
+    _sec_opp_y = OPP_SEC_Y + Inches(0.26)
+    for _si, (_sname, _scnt) in enumerate(_sec_opp_counts.items()):
+        _col = _SEC_OPP_COLORS[_si % len(_SEC_OPP_COLORS)]
+        _bar_frac = _scnt / max(int(_sec_opp_counts.max()), 1)
+        _add_rect(slide, OPP_SEC_X, _sec_opp_y + Inches(0.04), Inches(0.08), Inches(0.08),
+                  fill_color=_rgb(_col), line_color=_rgb(_col))
+        _add_text_box(slide, str(_sname)[:16], OPP_SEC_X + Inches(0.13), _sec_opp_y,
+                      Inches(1.35), Inches(0.18), font_size=7.5, color=DARK)
+        _add_rect(slide, OPP_SEC_X + Inches(1.55), _sec_opp_y + Inches(0.04),
+                  _MAX_BAR_OPP * _bar_frac, Inches(0.12),
+                  fill_color=_rgb(_col), line_color=_rgb(_col))
+        _add_text_box(slide, str(_scnt),
+                      OPP_SEC_X + Inches(1.55) + _MAX_BAR_OPP + Inches(0.06), _sec_opp_y,
+                      Inches(0.30), Inches(0.18), font_size=7.5, bold=True, color=DARK)
+        _sec_opp_y += Inches(0.18)
+        if _sec_opp_y > Inches(6.92):
+            break
 
     # ── Right: By Sector donut chart ──────────────────────────────────────────
     _DONUT_PALETTE = ["#1B5C3F", "#2D7A54", "#3D9068", "#C9974A", "#E0B06A", "#888888"]
@@ -1034,7 +1064,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     n_done_s = int(acts["Status"].str.lower().str.contains("complet").sum()) if not acts.empty and "Status" in acts.columns else 0
     n_prog_s = int(acts["Status"].isin(["In Progress","Inprogress"]).sum()) if not acts.empty and "Status" in acts.columns else 0
     n_due_s  = max(n_total - n_done_s - n_prog_s, 0)
-    pct_s    = round(n_done_s / n_total * 100) if n_total > 0 else 0
+    pct_s    = round((n_done_s + n_prog_s) / n_total * 100) if n_total > 0 else 0
 
     if not acts.empty and "Status" in acts.columns:
         pend_df = acts[~acts["Status"].isin(["Completed", "Cancelled"])].copy()
@@ -1101,7 +1131,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, f"{pct_s}%",
                   Inches(1.80), Inches(4.10), Inches(1.0), Inches(0.40),
                   font_size=18, bold=True, color=GREEN, align=PP_ALIGN.CENTER)
-    _add_text_box(slide, "complete",
+    _add_text_box(slide, "progress",
                   Inches(1.80), Inches(4.47), Inches(1.0), Inches(0.18),
                   font_size=7, color=MGRAY, align=PP_ALIGN.CENTER)
 
@@ -1110,13 +1140,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _n_active_opps = int((opps["Opportunity Status"] == "Active").sum()) \
         if not opps.empty and "Opportunity Status" in opps.columns else _n_opps_left
     _add_text_box(slide, f"Opportunities ({_n_opps_left})",
-                  Inches(0.5), Inches(6.08), Inches(2.50), Inches(0.26),
-                  font_size=9, bold=True, color=GREEN)
+                  Inches(0.5), Inches(6.08), Inches(3.50), Inches(0.28),
+                  font_size=11, bold=True, color=GREEN)
     if _n_active_opps > 0:
         _add_text_box(slide, f"Active: {_n_active_opps}",
-                      Inches(1.80), Inches(6.10), Inches(1.20), Inches(0.22),
+                      Inches(3.40), Inches(6.10), Inches(1.20), Inches(0.22),
                       font_size=8, color=_rgb(MISA_GOLD), align=PP_ALIGN.RIGHT)
-    _opp_item_y = Inches(6.38)
+    _opp_item_y = Inches(6.40)
     if not opps.empty and "Opportunity Name" in opps.columns:
         _opp_names_list = [
             (str(r.get("Opportunity Name", "") or "").strip(),
@@ -1129,13 +1159,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       Inches(0.09), Inches(0.09),
                       fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
             _stage_txt = f"  [{_ostage}]" if _ostage else ""
-            _add_text_box(slide, f"{_oname[:30]}{_stage_txt}",
-                          Inches(0.64), _opp_item_y, Inches(2.35), Inches(0.22),
+            _add_text_box(slide, f"{_oname[:45]}{_stage_txt}",
+                          Inches(0.64), _opp_item_y, Inches(3.90), Inches(0.22),
                           font_size=8, color=DARK)
             _opp_item_y += Inches(0.23)
     else:
         _add_text_box(slide, "No opportunities recorded.",
-                      Inches(0.5), _opp_item_y, Inches(2.50), Inches(0.22),
+                      Inches(0.5), _opp_item_y, Inches(3.90), Inches(0.22),
                       font_size=8, color=MGRAY)
 
     # Thin vertical divider between left and right panels
@@ -1278,8 +1308,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                     # Tick mark below axis
                     _add_rect(slide, _mx, HX_AX_Y, Inches(0.008), Inches(0.08),
                               fill_color=_rgb("#AAAAAA"), line_color=_rgb("#AAAAAA"))
-                    # Month label below the tick — always shown, skip alternates only when very crowded
-                    if _mo_count % _show_every == 1:
+                    # Month label — show all when ≤12 months, every other when >12
+                    if _mo_count % _show_every == 0:
                         _add_text_box(slide, _mo.strftime("%b"), _mx - Inches(0.18),
                                       HX_AX_Y + Inches(0.09), Inches(0.38), Inches(0.16),
                                       font_size=7, color=_rgb("#555555"), align=PP_ALIGN.CENTER)
