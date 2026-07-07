@@ -421,9 +421,9 @@ def _render_step_b():
     )
 
     st.session_state["mom_subject"] = st.text_input(
-        "Subject / الموضوع",
+        "Subject",
         value=st.session_state.get("mom_subject", ""),
-        placeholder="e.g. فرصة الذكاء الاصطناعي السيادي للمملكة العربية السعودية",
+        placeholder="e.g. Sovereign AI Opportunity for Saudi Arabia",
         key="mom_subj_inp",
     )
 
@@ -434,14 +434,14 @@ def _render_step_b():
     for i, att in enumerate(attendees):
         ac1, ac2, ac3 = st.columns([3, 3, 0.6])
         attendees[i]["name"] = ac1.text_input(
-            "Name / الاسم", value=att["name"],
+            "Name", value=att["name"],
             key=f"att_name_{i}", label_visibility="collapsed" if i > 0 else "visible",
-            placeholder="الاسم الكامل"
+            placeholder="Full Name"
         )
         attendees[i]["role"] = ac2.text_input(
-            "Role / المنصب", value=att["role"],
+            "Role", value=att["role"],
             key=f"att_role_{i}", label_visibility="collapsed" if i > 0 else "visible",
-            placeholder="المسمى الوظيفي / الدور"
+            placeholder="Title / Role"
         )
         if ac3.button("✕", key=f"del_att_{i}", help="Remove row") and len(attendees) > 1:
             attendees.pop(i)
@@ -455,10 +455,10 @@ def _render_step_b():
     _section_header("🎯 Meeting Objective", "هدف الاجتماع")
 
     st.session_state["mom_objective"] = st.text_area(
-        "Objective / الهدف",
+        "Objective",
         value=st.session_state.get("mom_objective", ""),
         height=90,
-        placeholder="مناقشة المبادرة المقترحة وتقييم مدى انطباقها…",
+        placeholder="Describe the meeting objective…",
         key="mom_obj_inp",
         label_visibility="collapsed",
     )
@@ -472,7 +472,7 @@ def _render_step_b():
         disc[i] = dc1.text_input(
             f"Point {i+1}", value=pt,
             key=f"disc_{i}", label_visibility="collapsed",
-            placeholder=f"النقطة {i+1}…",
+            placeholder=f"Discussion point {i+1}…",
         )
         if dc2.button("✕", key=f"del_disc_{i}", help="Remove") and len(disc) > 1:
             disc.pop(i)
@@ -489,11 +489,11 @@ def _render_step_b():
     # Header labels once
     ah1, ah2, ah3, ah4, ah5, ah6, _del = st.columns([0.4, 3.2, 2, 2, 2, 2, 0.5])
     ah1.markdown("<small style='color:#6B7280;'>#</small>", unsafe_allow_html=True)
-    ah2.markdown("<small style='color:#6B7280;'>Action Item / بند العمل</small>", unsafe_allow_html=True)
-    ah3.markdown("<small style='color:#6B7280;'>Owner / المسؤول</small>", unsafe_allow_html=True)
-    ah4.markdown("<small style='color:#6B7280;'>Deliverable / المخرج</small>", unsafe_allow_html=True)
-    ah5.markdown("<small style='color:#6B7280;'>Due Date / الموعد</small>", unsafe_allow_html=True)
-    ah6.markdown("<small style='color:#6B7280;'>Success Measure / مقياس النجاح</small>", unsafe_allow_html=True)
+    ah2.markdown("<small style='color:#6B7280;'>Action Item</small>", unsafe_allow_html=True)
+    ah3.markdown("<small style='color:#6B7280;'>Owner</small>", unsafe_allow_html=True)
+    ah4.markdown("<small style='color:#6B7280;'>Deliverable</small>", unsafe_allow_html=True)
+    ah5.markdown("<small style='color:#6B7280;'>Due Date</small>", unsafe_allow_html=True)
+    ah6.markdown("<small style='color:#6B7280;'>Success Measure</small>", unsafe_allow_html=True)
 
     for i, act in enumerate(actions):
         ac1, ac2, ac3, ac4, ac5, ac6, ac_del = st.columns([0.4, 3.2, 2, 2, 2, 2, 0.5])
@@ -501,19 +501,19 @@ def _render_step_b():
                                             label_visibility="collapsed")
         actions[i]["item"] = ac2.text_input("", value=act["item"],
                                              key=f"act_item_{i}", label_visibility="collapsed",
-                                             placeholder="وصف البند…")
+                                             placeholder="Describe the action…")
         actions[i]["owner"] = ac3.text_input("", value=act["owner"],
                                               key=f"act_owner_{i}", label_visibility="collapsed",
-                                              placeholder="المسؤول")
+                                              placeholder="Owner name")
         actions[i]["deliverable"] = ac4.text_input("", value=act["deliverable"],
                                                     key=f"act_del_{i}", label_visibility="collapsed",
-                                                    placeholder="المخرج")
+                                                    placeholder="Expected output")
         actions[i]["due"] = ac5.text_input("", value=act["due"],
                                             key=f"act_due_{i}", label_visibility="collapsed",
-                                            placeholder="قبل الاجتماع التالي")
+                                            placeholder="Before next meeting")
         actions[i]["measure"] = ac6.text_input("", value=act["measure"],
                                                 key=f"act_meas_{i}", label_visibility="collapsed",
-                                                placeholder="مقياس النجاح")
+                                                placeholder="How success is measured")
         if ac_del.button("✕", key=f"del_act_{i}", help="Remove") and len(actions) > 1:
             actions.pop(i)
             st.rerun()
@@ -532,7 +532,7 @@ def _render_step_b():
         steps[i] = sc1.text_input(
             f"Step {i+1}", value=step,
             key=f"step_{i}", label_visibility="collapsed",
-            placeholder=f"الخطوة {i+1}…",
+            placeholder=f"Next step {i+1}…",
         )
         if sc2.button("✕", key=f"del_step_{i}", help="Remove") and len(steps) > 1:
             steps.pop(i)
@@ -546,10 +546,10 @@ def _render_step_b():
     _section_header("⚡ Immediate Priority", "الأولوية الفورية")
 
     st.session_state["mom_priority"] = st.text_area(
-        "Priority / الأولوية",
+        "Immediate Priority",
         value=st.session_state.get("mom_priority", ""),
         height=80,
-        placeholder="الأولوية الفورية: استلام ومراجعة المقترح التقني التفصيلي…",
+        placeholder="e.g. Receive and review the detailed technical proposal before wider stakeholder engagement",
         key="mom_prio_inp",
         label_visibility="collapsed",
     )
@@ -557,11 +557,11 @@ def _render_step_b():
     st.success("✅ All sections saved automatically. Go to **Tab C → Generate Minutes** when ready.")
 
 
-def _section_header(en: str, ar: str):
+def _section_header(en: str, ar: str = ""):
     st.markdown(
         f"<div style='background:{_GREEN};color:#fff;padding:6px 12px;"
         f"border-radius:6px;margin:16px 0 8px 0;font-size:13px;font-weight:700;'>"
-        f"{en} &nbsp;<span style='color:#C9974A;font-size:12px;'>{ar}</span></div>",
+        f"{en}</div>",
         unsafe_allow_html=True,
     )
 
