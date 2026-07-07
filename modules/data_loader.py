@@ -203,12 +203,17 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
         sector    = _find_header_value(df_raw, 11, 18, ["sector"])
         last_upd  = _find_header_value(df_raw, 11, 18, ["last updated"])
         next_mtg  = _find_header_value(df_raw, 11, 18, ["next meeting"])
+        min_act   = _find_header_value(df_raw, 11, 22, ["minister action", "immediate action", "minister action required"])
+        blocker   = _find_header_value(df_raw, 11, 22, ["blocker", "blocker level"])
+        priority_hdr = _find_header_value(df_raw, 11, 18, ["priority"])
 
         # Override sheet-name-derived company with the name in the Excel header
         if company_name_xl:
             company = _sstr(company_name_xl)
 
         inv_id = f"INV-{investor_counter:03d}"
+        _min_act_str  = _sstr(min_act)  if min_act  else "None Required"
+        _blocker_str  = _sstr(blocker)  if blocker  else "None"
         investor_rows.append({
             "Investor ID":                inv_id,
             "Company Name":               company,
@@ -232,6 +237,8 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
             "Rep Position":               _sstr(rep_pos),
             "Rep Email":                  _clean_email(rep_email),
             "Rep Phone":                  _sstr(rep_phone),
+            "Minister Action Required":   _min_act_str,
+            "Blocker Level":              _blocker_str,
         })
 
         # ── Extract opportunities from header block (rows 14-19, col H) ──────
@@ -283,11 +290,13 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
             except (ValueError, TypeError):
                 continue
 
-            desc     = _safe_get(row, col_map, "Action Item", "")
-            eng_type = _safe_get(row, col_map, "Type of Engagement", "")
-            sector   = _safe_get(row, col_map, "Sector", "")
-            progress = _normalise_progress(_safe_get(row, col_map, "Progress", 0))
-            status   = _derive_status_from_progress(progress)
+            desc       = _safe_get(row, col_map, "Action Item", "")
+            eng_type   = _safe_get(row, col_map, "Type of Engagement", "")
+            sector     = _safe_get(row, col_map, "Sector", "")
+            progress   = _normalise_progress(_safe_get(row, col_map, "Progress", 0))
+            raw_status = _sstr(_safe_get(row, col_map, "Status", ""))
+            # Use the explicit Status cell if present; otherwise derive from progress
+            status     = _normalise_status(raw_status) if raw_status else _derive_status_from_progress(progress)
 
             action_rows.append({
                 "Action ID":          f"ACT-{inv_id}-{action_num:03d}",
@@ -339,18 +348,18 @@ def _build_legacy_col_map(cols: list[str]) -> dict:
     mapping = {}
     lookup = {c.lower().strip(): c for c in cols}
     candidates = {
-        "ID":                ["id"],
-        "Action Item":       ["action item"],
-        "Assigned to":       ["assigned to"],
+        "ID":                ["id", "#", "no", "num"],
+        "Action Item":       ["action item", "action", "task", "description"],
+        "Assigned to":       ["assigned to", "owner", "responsible"],
         "Sector":            ["sector"],
-        "Type of Engagement":["type of engagement"],
+        "Type of Engagement":["type of engagement", "type", "engagement type"],
         "Start Date":        ["start date"],
-        "Due Date":          ["due date"],
+        "Due Date":          ["due date", "deadline", "target date"],
         "Priority":          ["priority"],
-        "Progress":          ["progress"],
-        "Status":            ["status"],
-        "Remarks":           ["remarks"],
-        "AM Input":          ["am input"],
+        "Progress":          ["progress", "completion", "complete"],
+        "Status":            ["status", "update status", "update the status"],
+        "Remarks":           ["remarks", "notes", "comments"],
+        "AM Input":          ["am input", "am notes", "account manager input"],
     }
     for logical, options in candidates.items():
         for opt in options:
@@ -400,7 +409,8 @@ def _to_date(val) -> date | None:
 
 def _normalise_progress(val) -> str:
     try:
-        f = float(val)
+        s = str(val).replace("%", "").strip() if val is not None else "0"
+        f = float(s)
     except (TypeError, ValueError):
         return "0%"
     pct = round(f * 100) if f <= 1.0 else round(f)
