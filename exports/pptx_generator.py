@@ -970,24 +970,11 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _add_text_box(slide, d_lbl, mx - Inches(0.22), lbl_y,
                           Inches(0.45), Inches(0.13), font_size=6, color=DARK, align=PP_ALIGN.CENTER)
 
-    # Action item due-date markers BELOW axis
+    # Status colour map — shared by legend and vertical timeline
     _ACT_SC = {
         "Completed":   MISA_GREEN, "In Progress": MISA_GOLD, "Inprogress": MISA_GOLD,
         "Not Started": "#888888",  "Blocked": "#C0392B",      "Cancelled": "#AAAAAA",
     }
-    if not acts.empty and "Due Date" in acts.columns:
-        act_tl = acts.copy()
-        act_tl["_dt"] = pd.to_datetime(act_tl["Due Date"], errors="coerce")
-        act_tl = act_tl[act_tl["_dt"].notna()].sort_values("_dt")
-        for ai, (_, act) in enumerate(act_tl.iterrows()):
-            ax = _dx(act["_dt"])
-            if ax is None:
-                continue
-            scol = _rgb(_ACT_SC.get(str(act.get("Status", "")), "#888888"))
-            # Vertical tick marks extending downward — taller than old squares
-            _add_rect(slide, ax - Inches(0.015), AXIS_Y + Inches(0.02),
-                      Inches(0.03), Inches(0.26),
-                      fill_color=scol, line_color=scol)
 
     # ── Compact legend — right of timeline, two tidy columns ─────────────────
     LG_X1 = Inches(9.85)   # Meeting types
@@ -1121,7 +1108,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(
         slide,
         f"Action Items — {n_total} total | {_n_pend_label} pending / in progress",
-        Inches(5.1), Inches(2.42), Inches(8.10), Inches(0.22),
+        Inches(5.1), Inches(2.42), Inches(6.70), Inches(0.22),
         font_size=9, bold=True, color=DARK,
     )
     TBL_X  = Inches(5.1)
@@ -1129,7 +1116,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     HDR_H  = Inches(0.32)
     ROW_H  = Inches(0.46)
     MAX_R  = 4
-    CW_NEW = [Inches(w) for w in [0.30, 3.60, 1.50, 1.00, 0.75]]
+    CW_NEW = [Inches(w) for w in [0.30, 3.20, 1.50, 1.00, 0.75]]
 
     def _render_tbl_new(df, tbl_y, title, hdr_color, max_r=MAX_R):
         CX = [TBL_X + sum(CW_NEW[:j]) for j in range(len(CW_NEW))]
@@ -1182,10 +1169,10 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             }
             _dot_col = _rgb(_ST_DOT.get(status, "#888888"))
             _add_rect(slide, CX[3], ry, CW_NEW[3], ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
-            _add_rect(slide, CX[3] + Inches(0.07), ry + Inches(0.16), Inches(0.10), Inches(0.10),
+            _add_rect(slide, CX[3] + Inches(0.05), ry + Inches(0.18), Inches(0.10), Inches(0.10),
                       fill_color=_dot_col, line_color=_dot_col)
-            _add_text_box(slide, status[:12], CX[3] + Inches(0.20), ry + Inches(0.07),
-                          CW_NEW[3] - Inches(0.22), Inches(0.22),
+            _add_text_box(slide, status[:12], CX[3] + Inches(0.17), ry + Inches(0.13),
+                          CW_NEW[3] - Inches(0.20), Inches(0.22),
                           font_size=8, color=DARK)
             # Col 4: progress bar + % label
             px, pcw = CX[4], CW_NEW[4]
@@ -1210,6 +1197,76 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     tbl1_end = _render_tbl_new(pend_df, HDR_Y, "Pending / In Progress", GREEN, max_r=4)
     _render_tbl_new(done_df, tbl1_end + Inches(0.15), "Completed", _rgb("#2D7A54"), max_r=3)
+
+    # ── Vertical due-date timeline strip (far right of action table) ──────────
+    if not acts.empty and "Due Date" in acts.columns:
+        _act_tl = acts.copy()
+        _act_tl["_dt"] = pd.to_datetime(_act_tl["Due Date"], errors="coerce")
+        _act_tl = _act_tl[_act_tl["_dt"].notna()].sort_values("_dt")
+        if not _act_tl.empty:
+            _today = date.today()
+            _vt_min_dt = _act_tl["_dt"].min().date()
+            _vt_max_dt = _act_tl["_dt"].max().date()
+            _vt_min_dt = _vt_min_dt.replace(day=1)
+            _ld = _calendar.monthrange(_vt_max_dt.year, _vt_max_dt.month)[1]
+            _vt_max_dt = _vt_max_dt.replace(day=_ld)
+            if _today < _vt_min_dt:
+                _vt_min_dt = _today.replace(day=1)
+            if _today > _vt_max_dt:
+                _ld2 = _calendar.monthrange(_today.year, _today.month)[1]
+                _vt_max_dt = _today.replace(day=_ld2)
+            _span = max((_vt_max_dt - _vt_min_dt).days, 1)
+
+            VTL_X   = Inches(11.95)
+            VTL_W   = Inches(1.25)
+            VTL_TOP = Inches(2.58)
+            VTL_BOT = Inches(6.98)
+            _vt_h   = VTL_BOT - VTL_TOP
+            _axis_x = VTL_X + Inches(0.42)
+
+            def _vy(d):
+                if hasattr(d, "date") and callable(d.date):
+                    d = d.date()
+                frac = max(0.0, min(1.0, (d - _vt_min_dt).days / _span))
+                return VTL_TOP + frac * _vt_h
+
+            _add_rect(slide, VTL_X, VTL_TOP, VTL_W, _vt_h,
+                      fill_color=_rgb("#F5F5F0"), line_color=_rgb("#DDDDDD"))
+            _add_text_box(slide, "Action Due Dates", VTL_X, VTL_TOP,
+                          VTL_W, Inches(0.20),
+                          font_size=7, bold=True, color=DARK, align=PP_ALIGN.CENTER)
+            _add_rect(slide, _axis_x, VTL_TOP + Inches(0.22),
+                      Inches(0.008), _vt_h - Inches(0.22),
+                      fill_color=_rgb("#BBBBBB"), line_color=_rgb("#BBBBBB"))
+            _mo = _vt_min_dt.replace(day=1)
+            while _mo <= _vt_max_dt:
+                _my = _vy(_mo)
+                _add_rect(slide, _axis_x - Inches(0.08), _my,
+                          Inches(0.08), Inches(0.008),
+                          fill_color=_rgb("#AAAAAA"), line_color=_rgb("#AAAAAA"))
+                _add_text_box(slide, _mo.strftime("%b '%y"), VTL_X, _my - Inches(0.07),
+                              Inches(0.40), Inches(0.13),
+                              font_size=5.5, color=_rgb("#777777"), align=PP_ALIGN.RIGHT)
+                _mo = (_mo.replace(year=_mo.year + 1, month=1)
+                       if _mo.month == 12
+                       else _mo.replace(month=_mo.month + 1))
+            _now_y = _vy(_today)
+            _add_rect(slide, VTL_X + Inches(0.04), _now_y,
+                      VTL_W - Inches(0.08), Inches(0.012),
+                      fill_color=GOLD, line_color=GOLD)
+            _add_text_box(slide, "NOW", _axis_x + Inches(0.02), _now_y - Inches(0.10),
+                          Inches(0.35), Inches(0.12),
+                          font_size=5.5, bold=True, color=GOLD)
+            for _ai, (_, _arow) in enumerate(_act_tl.iterrows()):
+                _ady = _vy(_arow["_dt"])
+                _ast = str(_arow.get("Status", ""))
+                _asc = _rgb(_ACT_SC.get(_ast, "#888888"))
+                _add_rect(slide, _axis_x + Inches(0.01), _ady - Inches(0.025),
+                          Inches(0.22), Inches(0.05),
+                          fill_color=_asc, line_color=_asc)
+                _add_text_box(slide, str(_ai + 1), _axis_x + Inches(0.24),
+                              _ady - Inches(0.07), Inches(0.22), Inches(0.13),
+                              font_size=5.5, color=DARK)
 
     # ── Gold footer ───────────────────────────────────────────────────────────
     _add_rect(slide, Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
