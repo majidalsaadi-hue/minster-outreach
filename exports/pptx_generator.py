@@ -112,6 +112,110 @@ def generate_pptx_company(dfs: dict, company: str, lang: str = "en") -> bytes:
     return buf.getvalue()
 
 
+def _co_summary_slide(prs, company, inv_row, actions, opportunities, meetings, lang):
+    """Lightweight one-slide company summary for the all-companies dashboard.
+    Uses only rectangles and text boxes — no embedded charts, no network calls."""
+    slide = _blank_slide(prs)
+    _mv = lambda row, col, default="": (row.get(col, default) or default) if not (hasattr(row, "empty") and row.empty) else default
+
+    # Header
+    _add_rect(slide, Inches(0), Inches(0), SLIDE_W, Inches(0.82), fill_color=GREEN, line_color=GREEN)
+    _add_text_box(slide, company, Inches(0.3), Inches(0.08), Inches(9.5), Inches(0.66),
+                  font_size=18, bold=True, color=WHITE)
+    sector  = _mv(inv_row, "Sector", "")
+    country = _mv(inv_row, "Country", "")
+    tier    = _mv(inv_row, "Tier", "")
+    meta    = "  |  ".join(x for x in [sector, country, tier] if x)
+    if meta:
+        _add_text_box(slide, meta, Inches(0.3), Inches(0.60), Inches(9.5), Inches(0.20),
+                      font_size=8, color=_rgb("#C8E6D4"))
+
+    # Action items summary (left panel)
+    co_acts = (actions[actions["Company Name"] == company]
+               if not actions.empty and "Company Name" in actions.columns
+               else pd.DataFrame())
+    n_total = len(co_acts)
+    n_done  = int(co_acts["Status"].str.lower().str.contains("complet").sum()) if not co_acts.empty and "Status" in co_acts.columns else 0
+    n_prog  = int(co_acts["Status"].isin(["In Progress", "Inprogress"]).sum()) if not co_acts.empty and "Status" in co_acts.columns else 0
+    pct     = round(n_done / n_total * 100) if n_total else 0
+
+    _add_text_box(slide, "Action Items", Inches(0.3), Inches(1.0), Inches(4.5), Inches(0.25),
+                  font_size=10, bold=True, color=DARK)
+    _add_text_box(slide, f"{n_total} total  |  {n_done} completed  |  {n_prog} in progress  |  {pct}% done",
+                  Inches(0.3), Inches(1.28), Inches(6.0), Inches(0.22), font_size=8.5, color=MGRAY)
+
+    # Progress bar
+    _add_rect(slide, Inches(0.3), Inches(1.56), Inches(6.0), Inches(0.18),
+              fill_color=_rgb("#E0E0E0"), line_color=_rgb("#E0E0E0"))
+    if pct > 0:
+        _add_rect(slide, Inches(0.3), Inches(1.56), Inches(6.0) * pct / 100, Inches(0.18),
+                  fill_color=GREEN, line_color=GREEN)
+
+    # Top action items (up to 8)
+    _ay = Inches(1.90)
+    pend = co_acts[~co_acts["Status"].isin(["Completed", "Cancelled"])].head(8) if not co_acts.empty else pd.DataFrame()
+    for i, (_, row) in enumerate(pend.iterrows()):
+        desc   = str(row.get("Action Description", "") or "")[:80]
+        status = str(row.get("Status", "") or "")
+        owner  = str(row.get("Assigned To", "") or "")[:20]
+        alt    = _rgb("#F7F7F2") if i % 2 == 0 else WHITE
+        _add_rect(slide, Inches(0.3), _ay, Inches(9.0), Inches(0.38),
+                  fill_color=alt, line_color=_rgb("#DDDDDD"))
+        _add_text_box(slide, f"{i+1}. {desc}", Inches(0.35), _ay + Inches(0.04),
+                      Inches(5.8), Inches(0.28), font_size=8, color=DARK)
+        _add_text_box(slide, owner, Inches(6.2), _ay + Inches(0.04),
+                      Inches(1.5), Inches(0.28), font_size=8, color=MGRAY)
+        _add_text_box(slide, status[:14], Inches(7.75), _ay + Inches(0.04),
+                      Inches(1.5), Inches(0.28), font_size=8, color=DARK)
+        _ay += Inches(0.40)
+        if _ay > Inches(6.8):
+            break
+
+    # Opportunities (right panel strip)
+    co_opps = (opportunities[opportunities["Company Name"] == company]
+               if not opportunities.empty and "Company Name" in opportunities.columns
+               else pd.DataFrame())
+    n_opps = len(co_opps)
+    _add_rect(slide, Inches(9.3), Inches(1.0), Inches(3.8), Inches(5.8),
+              fill_color=_rgb("#F5F5F0"), line_color=_rgb("#DDDDDD"))
+    _add_text_box(slide, f"Opportunities ({n_opps})",
+                  Inches(9.4), Inches(1.05), Inches(3.6), Inches(0.26),
+                  font_size=9, bold=True, color=GREEN)
+    _oy = Inches(1.38)
+    if not co_opps.empty and "Opportunity Name" in co_opps.columns:
+        for _, orow in co_opps.head(8).iterrows():
+            oname  = str(orow.get("Opportunity Name", "") or "")[:45]
+            ostage = str(orow.get("Opportunity Stage", "") or "")[:18]
+            if not oname or oname == "nan":
+                continue
+            _add_text_box(slide, f"• {oname}", Inches(9.4), _oy, Inches(3.6), Inches(0.20),
+                          font_size=7.5, color=DARK)
+            if ostage and ostage != "nan":
+                _add_text_box(slide, ostage, Inches(9.4), _oy + Inches(0.19), Inches(3.6), Inches(0.16),
+                              font_size=6.5, color=MGRAY)
+                _oy += Inches(0.38)
+            else:
+                _oy += Inches(0.22)
+            if _oy > Inches(6.6):
+                break
+
+    # Minister action / blocker
+    min_act = _mv(inv_row, "Minister Action Required", "") or _mv(inv_row, "Immediate Action", "")
+    if min_act and str(min_act) not in ("nan", ""):
+        _add_rect(slide, Inches(0.3), Inches(6.85), Inches(8.9), Inches(0.30),
+                  fill_color=_rgb("#C0392B"), line_color=_rgb("#C0392B"))
+        _add_text_box(slide, f"Immediate Action: {str(min_act)[:120]}",
+                      Inches(0.35), Inches(6.87), Inches(8.8), Inches(0.24),
+                      font_size=7.5, bold=True, color=WHITE)
+
+    # Gold footer
+    _add_rect(slide, Inches(0), Inches(7.05), SLIDE_W, Inches(0.45),
+              fill_color=GOLD, line_color=GOLD)
+    _add_text_box(slide, "CONFIDENTIAL | Ministry of Investment — وزارة الاستثمار",
+                  Inches(0), Inches(7.05), SLIDE_W, Inches(0.45),
+                  font_size=10, color=WHITE, align=PP_ALIGN.CENTER)
+
+
 def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
     """
     Strategic all-companies dashboard deck.
@@ -304,29 +408,16 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                   Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
                   font_size=10, color=WHITE, align=PP_ALIGN.CENTER)
 
-    # ── Slides 2+: one per company ────────────────────────────────────────────
+    # ── Slides 2+: one compact summary slide per company ─────────────────────
     if not investors.empty and "Company Name" in investors.columns:
         for _, inv in investors.iterrows():
             co = inv.get("Company Name", "")
             if not co:
                 continue
-            inv_acts = (actions[actions["Company Name"] == co]
-                        if not actions.empty and "Company Name" in actions.columns
-                        else pd.DataFrame())
-            inv_opps = (opportunities[opportunities["Company Name"] == co]
-                        if not opportunities.empty and "Company Name" in opportunities.columns
-                        else pd.DataFrame())
-            inv_mtgs = (meetings[meetings["Company Name"] == co]
-                        if not meetings.empty and "Company Name" in meetings.columns
-                        else pd.DataFrame())
-            inv_dls  = (deals[deals["Company Name"] == co]
-                        if not deals.empty and "Company Name" in deals.columns
-                        else pd.DataFrame())
             try:
-                _co_slide_cover_profile(prs, co, inv, inv_opps, inv_acts, inv_mtgs, inv_dls, lang,
-                                        _skip_logos=True, _skip_charts=True)
+                _co_summary_slide(prs, co, inv, actions, opportunities, meetings, lang)
             except Exception:
-                pass  # skip one bad company rather than halting the whole deck
+                pass
 
     buf = io.BytesIO()
     prs.save(buf)
