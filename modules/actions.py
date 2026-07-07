@@ -183,13 +183,25 @@ def render(dfs: dict, lang: str):
             for i, d in enumerate(due_dt)
         ]
 
+    # Status dot — small colored circle indicating state at a glance
+    _STATUS_DOT = {
+        "Completed":   "🟢",
+        "In Progress": "🟡",
+        "Not Started": "⚫",
+        "Blocked":     "🔴",
+        "Cancelled":   "⚪",
+    }
+    if "Status" in display.columns:
+        display["●"] = display["Status"].map(lambda s: _STATUS_DOT.get(str(s).strip(), "⚫"))
+
     edit_cols = [c for c in [
-        "⚠", "Action ID", "Company Name", "Action Description",
+        "●", "⚠", "Action ID", "Company Name", "Action Description",
         "Assigned To", "Type of Engagement", "Priority",
         "Status", "Progress", "Escalation Flag", "Remarks", "AM Input",
     ] if c in display.columns]
 
     col_cfg = {
+        "●":                  st.column_config.TextColumn("", width="small", disabled=True),
         "⚠":                  st.column_config.TextColumn("⚠", width="small", disabled=True),
         "Action ID":          st.column_config.TextColumn("ID", width="small", disabled=True),
         "Company Name":       st.column_config.TextColumn("Company", disabled=True),

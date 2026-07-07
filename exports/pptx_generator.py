@@ -268,7 +268,6 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                         if not deals.empty and "Company Name" in deals.columns
                         else pd.DataFrame())
             _co_slide_cover_profile(prs, co, inv, inv_opps, inv_acts, inv_mtgs, inv_dls, lang)
-            _co_slide_opps_deals(prs, co, inv, inv_opps, inv_dls, inv_acts, lang)
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -1093,11 +1092,18 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _add_rect(slide, CX[2], ry, CW_NEW[2], ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
             _add_text_box(slide, owner, CX[2] + Inches(0.03), ry + Inches(0.07),
                           CW_NEW[2] - Inches(0.05), Inches(0.22), font_size=8.5, color=DARK)
-            # Col 3: status text
+            # Col 3: status — small colored dot + text
+            _ST_DOT = {
+                "Completed": MISA_GREEN, "In Progress": MISA_GOLD, "Inprogress": MISA_GOLD,
+                "Not Started": "#888888", "Blocked": "#C0392B", "Cancelled": "#AAAAAA",
+            }
+            _dot_col = _rgb(_ST_DOT.get(status, "#888888"))
             _add_rect(slide, CX[3], ry, CW_NEW[3], ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
-            _add_text_box(slide, status[:14], CX[3] + Inches(0.03), ry + Inches(0.07),
-                          CW_NEW[3] - Inches(0.05), Inches(0.22),
-                          font_size=8.5, color=DARK, align=PP_ALIGN.CENTER)
+            _add_rect(slide, CX[3] + Inches(0.07), ry + Inches(0.16), Inches(0.10), Inches(0.10),
+                      fill_color=_dot_col, line_color=_dot_col)
+            _add_text_box(slide, status[:12], CX[3] + Inches(0.20), ry + Inches(0.07),
+                          CW_NEW[3] - Inches(0.22), Inches(0.22),
+                          font_size=8, color=DARK)
             # Col 4: progress bar + % label
             px, pcw = CX[4], CW_NEW[4]
             _add_rect(slide, px, ry, pcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
