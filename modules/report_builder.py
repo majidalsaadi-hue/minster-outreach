@@ -454,9 +454,9 @@ def render(dfs: dict, lang: str):
         r2c1, r2c2 = st.columns(2)
         with r2c1:
             st.session_state["rb_arm"] = st.text_input(
-                "ARM (Account Relationship Manager)",
+                "Account Manager (AM)",
                 value=st.session_state["rb_arm"],
-                placeholder="e.g. Dana Aljarbu", key="rb_arm_inp")
+                placeholder="e.g. Waleed AlShehri", key="rb_arm_inp")
         with r2c2:
             st.session_state["rb_exec_rm"] = st.text_input(
                 "Executive RM (Minister's Office)",
@@ -598,9 +598,14 @@ def render(dfs: dict, lang: str):
                         updated_xl = s["rb_excel_bytes"]
                         _log("No new action items — returning existing Excel tracker.", 50)
 
-                # 2 — Word letter
+                # 2 — Word letter (company)
                 _log("Generating company letter (.docx)…", 55)
                 letter_bytes = _build_letter_docx(cfg, actions)
+
+                # 2b — Internal AM letter
+                _log("Generating internal AM letter (.docx)…", 62)
+                am_letter_bytes = _build_internal_am_letter_docx(cfg, actions)
+                st.session_state["rb_am_letter_bytes"] = am_letter_bytes
 
                 # 3 — CRM sync (actions)
                 _log("Syncing action items to CRM…", 75)
@@ -633,7 +638,7 @@ def render(dfs: dict, lang: str):
 
                 prog.progress(100)
                 status.success(
-                    f"✓ Pipeline complete — 3 outputs ready"
+                    f"✓ Pipeline complete — 3 outputs ready (Excel + Company Letter + AM Letter)"
                     + (f"  |  {opp_count} opportunit{'y' if opp_count == 1 else 'ies'} synced" if opp_count else "")
                 )
 
@@ -641,6 +646,7 @@ def render(dfs: dict, lang: str):
                     "actions":      actions,
                     "xl_bytes":     updated_xl,
                     "letter":       letter_bytes,
+                    "am_letter":    am_letter_bytes,
                     "company":      company,
                     "meeting_date": mtg_date,
                     "opp_count":    opp_count,
@@ -788,7 +794,7 @@ def render(dfs: dict, lang: str):
         b4, b5 = st.columns(2)
         with b4:
             st.session_state["rb_ar_arm"] = st.text_input(
-                "ARM name", value=st.session_state.get("rb_arm") or st.session_state["rb_ar_arm"],
+                "Account Manager (AM)", value=st.session_state.get("rb_arm") or st.session_state["rb_ar_arm"],
                 key="rb_ar_arm_inp")
         with b5:
             st.session_state["rb_ar_exec_rm"] = st.text_input(
@@ -978,6 +984,7 @@ def _render_output(result: dict):
     actions    = result["actions"]
     xl_bytes   = result["xl_bytes"]
     letter     = result["letter"]
+    am_letter  = result.get("am_letter") or st.session_state.get("rb_am_letter_bytes")
     company    = result["company"]
     mtg_date   = result["meeting_date"]
     fname_base = f"{company.replace(' ','_')}_{mtg_date.replace(' ','_')}"
@@ -993,12 +1000,12 @@ def _render_output(result: dict):
     # ── Downloads ─────────────────────────────────────────────────────────────
     with st.container(border=True):
         st.markdown("#### ⬇ Downloads")
-        dc1, dc2 = st.columns(2)
+        dc1, dc2, dc3 = st.columns(3)
 
         with dc1:
             if xl_bytes:
                 st.download_button(
-                    "📊  Download updated Excel tracker",
+                    "📊  Excel Tracker",
                     data=xl_bytes,
                     file_name=f"ActionTracker_{fname_base}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1010,16 +1017,29 @@ def _render_output(result: dict):
         with dc2:
             if letter:
                 st.download_button(
-                    "📄  Download company letter (.docx)",
+                    "📄  Company Letter",
                     data=letter,
                     file_name=f"Letter_{fname_base}.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     use_container_width=True, key="rb_dl_letter",
                 )
 
+        with dc3:
+            if am_letter:
+                st.download_button(
+                    "📧  Internal AM Letter",
+                    data=am_letter,
+                    file_name=f"AM_Letter_{fname_base}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True, key="rb_dl_am_letter",
+                )
+            else:
+                st.caption("AM letter will appear here after generation")
+
         opp_count = result.get("opp_count", 0)
-        if xl_bytes and letter:
-            msg = "✓ Both files are ready. Action items have been synced to CRM."
+        ready_items = sum([bool(xl_bytes), bool(letter), bool(am_letter)])
+        if ready_items > 0:
+            msg = f"✓ {ready_items} output{'s' if ready_items > 1 else ''} ready. Action items synced to CRM."
             if opp_count:
                 msg += f" **{opp_count} opportunit{'y' if opp_count == 1 else 'ies'}** added to Opportunity Pipeline."
             st.success(msg)
@@ -2908,14 +2928,14 @@ def _build_english_minutes_docx(cfg: dict, content: dict) -> bytes:
     ref_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     _run(ref_p, "CONFIDENTIAL", bold=True, size_pt=10, color=GOLD_HEX)
     _run(ref_p, f"    {mtg_date}", size_pt=10, color="555555")
-    ref_str = f"MISA/{company.replace(' ','')}/{yr_mon}"
-    _run(ref_p, f"    {ref_str}", size_pt=10, color="888888")
+    ref_str = f"MISA / {company} / {yr_mon}"
+    _run(ref_p, f"    Ref: {ref_str}", size_pt=10, color="888888")
 
     _para()
 
     subj_p = doc.add_paragraph()
     _run(subj_p, "Subject: ", bold=True, size_pt=11.5)
-    _run(subj_p, subject_en or f"Meeting with {company}", size_pt=11.5)
+    _run(subj_p, subject_en or f"Meeting with {company}", bold=True, size_pt=11.5)
 
     _para()
 
