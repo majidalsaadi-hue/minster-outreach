@@ -151,17 +151,25 @@ def render_action_advisor(dfs: dict, lang: str):
                 update_txt = " · ".join(parts)
             days_late = (today - d).days
             if days_late > 0:
-                late_label = f"{days_late}d overdue" if days_late <= 60 else f"{days_late // 30}mo overdue"
+                if prog_pct is not None:
+                    tag_label = f"{prog_pct}%"
+                    tag_color = "#D97706" if prog_pct < 50 else "#1B5C3F"
+                elif status and status.lower() not in ("", "none", "nan"):
+                    tag_label = status.upper()
+                    tag_color = "#6B7280" if "not" in status.lower() else "#D97706"
+                else:
+                    tag_label = "NOT STARTED"
+                    tag_color = "#6B7280"
                 items.append({
                     "score":    120 + days_late * 3,
                     "urgency":  "critical",
-                    "tag":      f"OVERDUE · {late_label.upper()}",
-                    "tag_color":"#C0392B",
+                    "tag":      tag_label,
+                    "tag_color":tag_color,
                     "company":  company,
                     "action":   desc or "Complete pending action",
-                    "detail":   f"Was due {d.strftime('%d %b %Y')} · {owner}",
+                    "detail":   f"Due {d.strftime('%d %b %Y')} · {owner}",
                     "update":   update_txt,
-                    "icon":     "🔴",
+                    "icon":     "🟠",
                 })
             elif (d - today).days == 0:
                 items.append({
