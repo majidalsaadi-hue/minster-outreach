@@ -92,9 +92,10 @@ def _render_step_a():
     if "Upload" in input_mode:
         uploaded = st.file_uploader(
             "Upload meeting notes file",
-            type=["txt", "docx"],
+            type=["txt", "docx", "pdf", "pptx", "xlsx", "csv", "md", "rtf"],
             key="mom_notes_file",
             label_visibility="collapsed",
+            help="Supported: .txt .docx .pdf .pptx .xlsx .csv .md .rtf",
         )
         if uploaded is not None:
             extracted = _extract_text_from_file(uploaded)
@@ -148,31 +149,24 @@ def _render_step_a():
 
 
 def _extract_text_from_file(uploaded_file) -> str:
-    """Extract plain text from .txt or .docx uploads."""
+    """Extract plain text from any supported file format."""
+    import io as _io
     name = uploaded_file.name.lower()
+    raw  = uploaded_file.read()
+
     try:
-        if name.endswith(".txt"):
-            raw = uploaded_file.read()
-            # Try UTF-8, fall back to latin-1
+        # ── Plain text variants ───────────────────────────────────────────────
+        if name.endswith((".txt", ".md", ".rtf")):
             try:
                 return raw.decode("utf-8")
             except UnicodeDecodeError:
                 return raw.decode("latin-1", errors="replace")
 
+        # ── Word document (.docx) ─────────────────────────────────────────────
         elif name.endswith(".docx"):
-            try:
-                from docx import Document
-            except ImportError:
-                st.error("python-docx is not installed. Run: pip install python-docx")
-                return ""
-            import io
-            doc = Document(io.BytesIO(uploaded_file.read()))
-            lines = []
-            for para in doc.paragraphs:
-                text = para.text.strip()
-                if text:
-                    lines.append(text)
-            # Also grab table cell text
+            from docx import Document
+            doc   = Document(_io.BytesIO(raw))
+            lines = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
             for table in doc.tables:
                 for row in table.rows:
                     cells = [c.text.strip() for c in row.cells if c.text.strip()]
@@ -180,8 +174,70 @@ def _extract_text_from_file(uploaded_file) -> str:
                         lines.append(" | ".join(cells))
             return "\n".join(lines)
 
+        # ── PDF (.pdf) ────────────────────────────────────────────────────────
+        elif name.endswith(".pdf"):
+            try:
+                from pypdf import PdfReader
+            except ImportError:
+                st.error("pypdf not installed. Run: pip install pypdf")
+                return ""
+            reader = PdfReader(_io.BytesIO(raw))
+            pages  = []
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages.append(f"--- Page {i+1} ---\n{text.strip()}")
+            return "\n\n".join(pages)
+
+        # ── PowerPoint (.pptx) ────────────────────────────────────────────────
+        elif name.endswith(".pptx"):
+            from pptx import Presentation
+            prs   = Presentation(_io.BytesIO(raw))
+            lines = []
+            for slide_num, slide in enumerate(prs.slides, 1):
+                slide_texts = []
+                for shape in slide.shapes:
+                    if shape.has_text_frame:
+                        for para in shape.text_frame.paragraphs:
+                            t = para.text.strip()
+                            if t:
+                                slide_texts.append(t)
+                if slide_texts:
+                    lines.append(f"--- Slide {slide_num} ---")
+                    lines.extend(slide_texts)
+            return "\n".join(lines)
+
+        # ── Excel (.xlsx / .xls) ──────────────────────────────────────────────
+        elif name.endswith((".xlsx", ".xls")):
+            import pandas as pd
+            xl     = pd.ExcelFile(_io.BytesIO(raw))
+            blocks = []
+            for sheet in xl.sheet_names:
+                df = xl.parse(sheet).fillna("").astype(str)
+                df = df[df.apply(lambda r: r.str.strip().any(), axis=1)]
+                if df.empty:
+                    continue
+                blocks.append(f"--- Sheet: {sheet} ---")
+                blocks.append(df.to_string(index=False))
+            return "\n\n".join(blocks)
+
+        # ── CSV (.csv) ────────────────────────────────────────────────────────
+        elif name.endswith(".csv"):
+            import pandas as pd
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                text = raw.decode("latin-1", errors="replace")
+            import io as _sio
+            df = pd.read_csv(_sio.StringIO(text)).fillna("").astype(str)
+            return df.to_string(index=False)
+
+        else:
+            st.warning(f"Unsupported file type: {name.split('.')[-1]}")
+
     except Exception as e:
-        st.error(f"Could not read file: {e}")
+        st.error(f"Could not read **{uploaded_file.name}**: {e}")
+
     return ""
 
 
