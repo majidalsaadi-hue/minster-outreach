@@ -323,7 +323,8 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                         if not deals.empty and "Company Name" in deals.columns
                         else pd.DataFrame())
             try:
-                _co_slide_cover_profile(prs, co, inv, inv_opps, inv_acts, inv_mtgs, inv_dls, lang)
+                _co_slide_cover_profile(prs, co, inv, inv_opps, inv_acts, inv_mtgs, inv_dls, lang,
+                                        _skip_logos=True)
             except Exception:
                 pass  # skip one bad company rather than halting the whole deck
 
@@ -808,7 +809,7 @@ def _slide_investor(prs, inv_row, actions, opportunities, deals, lang):
 # COMPANY DECK — slide builders (3 slides)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, lang):
+def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, lang, _skip_logos=False):
     """Slide 1 (merged 1+3): Header + metadata + Brief strip + compact timeline + full action items table (L) + status/deals/KPI (R)."""
     slide = _blank_slide(prs)
 
@@ -817,7 +818,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
               fill_color=GREEN, line_color=GREEN)
     # Try to show company logo in header
     _s1_name_x = Inches(0.3)
-    if not inv_row.empty:
+    if not inv_row.empty and not _skip_logos:
         _s1_logo_b = _fetch_logo_bytes(company, _mv(inv_row, "Website", ""))
         if _s1_logo_b:
             try:
