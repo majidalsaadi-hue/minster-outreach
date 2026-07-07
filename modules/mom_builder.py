@@ -230,13 +230,37 @@ def _extract_text_from_file(uploaded_file) -> str:
         # ── Word document (.docx) ─────────────────────────────────────────────
         elif name.endswith(".docx"):
             from docx import Document
+            from docx.oxml.ns import qn as _qn
             doc   = Document(_io.BytesIO(raw))
-            lines = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-            for table in doc.tables:
-                for row in table.rows:
-                    cells = [c.text.strip() for c in row.cells if c.text.strip()]
-                    if cells:
-                        lines.append(" | ".join(cells))
+            lines = []
+            # Iterate body elements in document order so tables appear
+            # immediately after their preceding section heading
+            for child in doc.element.body:
+                tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                if tag == "p":
+                    from docx.text.paragraph import Paragraph as _Para
+                    para = _Para(child, doc)
+                    txt = para.text.strip()
+                    if txt:
+                        lines.append(txt)
+                elif tag == "tbl":
+                    from docx.table import Table as _Tbl
+                    tbl = _Tbl(child, doc)
+                    seen_rows: set = set()
+                    for row in tbl.rows:
+                        cells = []
+                        seen_in_row: list = []
+                        for c in row.cells:
+                            # Collapse internal newlines so multi-line cells
+                            # don't split across extracted lines
+                            t = " ".join(c.text.strip().split())
+                            if t and t not in seen_in_row:
+                                seen_in_row.append(t)
+                        if seen_in_row:
+                            row_key = " | ".join(seen_in_row)
+                            if row_key not in seen_rows:
+                                seen_rows.add(row_key)
+                                lines.append(row_key)
             return "\n".join(lines)
 
         # ── PDF (.pdf) ────────────────────────────────────────────────────────
@@ -318,7 +342,7 @@ def _parse_mom_text(text: str) -> dict:
         "objective":  ["meeting objective", "هدف الاجتماع"],
         "discussion": ["key discussion points", "محاور النقاش", "discussion points"],
         "actions":    ["action items", "بنود العمل"],
-        "next_steps": ["summary of next steps", "ملخص الخطوات", "next steps"],
+        "next_steps": ["summary of next steps", "ملخص الخطوات التالية", "ملخص الخطوات"],
         "priority":   ["immediate priority", "الأولوية الفورية"],
     }
 
@@ -360,7 +384,13 @@ def _parse_mom_text(text: str) -> dict:
 
     # ── Attendees ─────────────────────────────────────────────────────────────
     for line in section_lines("attendees"):
-        if re.match(r'^(?:name|الاسم)', line, re.IGNORECASE):
+        if re.match(r'^(?:name|role|الاسم|المنصب)', line, re.IGNORECASE):
+            continue
+        # Pipe-separated (from docx table extraction)
+        if ' | ' in line:
+            parts = [p.strip() for p in line.split(' | ')]
+            if len(parts) >= 2 and parts[0]:
+                result["attendees"].append({"name": parts[0], "role": parts[1]})
             continue
         parts = re.split(r'\s{2,}|\t', line.strip())
         if len(parts) >= 2:
@@ -381,9 +411,30 @@ def _parse_mom_text(text: str) -> dict:
     skip_header = True
     for line in section_lines("actions"):
         ll = line.lower()
-        if skip_header and any(h in ll for h in ["#", "action item", "بند", "م", "owner"]):
+        if skip_header and any(h in ll for h in ["action item", "بند العمل", "م", "owner"]):
             skip_header = False; continue
         skip_header = False
+
+        # Pipe-separated rows from docx table extraction: # | item | owner | deliverable | due | measure
+        if ' | ' in line:
+            parts = [p.strip() for p in line.split(' | ')]
+            if not parts or not parts[0]:
+                continue
+            # skip header row
+            if parts[0].lower() in ('#', 'م', 'no', 'id'):
+                continue
+            num_val = parts[0] if re.match(r'^\d+$', parts[0]) else str(len(result["actions"]) + 1)
+            idx = 1 if re.match(r'^\d+$', parts[0]) else 0
+            result["actions"].append({
+                "num":         num_val,
+                "item":        parts[idx]     if len(parts) > idx     else "",
+                "owner":       parts[idx+1]   if len(parts) > idx+1   else "",
+                "deliverable": parts[idx+2]   if len(parts) > idx+2   else "",
+                "due":         parts[idx+3]   if len(parts) > idx+3   else "",
+                "measure":     parts[idx+4]   if len(parts) > idx+4   else "",
+            })
+            continue
+
         parts = re.split(r'\t|\s{2,}', line.strip())
         if not parts or not parts[0].strip():
             continue
@@ -728,6 +779,20 @@ def _render_step_c():
 
     col_prev, col_dl = st.columns([1, 1])
     data = _collect_data()
+
+    # Inform the user if Tab A notes were auto-parsed to fill Tab B fields
+    has_b_data = (
+        data["objective"].strip()
+        or any(a.get("item") for a in data["actions"])
+        or any(str(p).strip() for p in data["disc_points"])
+    )
+    if has_b_data and not st.session_state.get("mom_objective", "").strip() \
+            and not any(a.get("item") for a in st.session_state.get("mom_actions", [])):
+        st.info(
+            "💡 Tab B fields were empty — your meeting notes were auto-parsed to populate "
+            "this document. Open **Tab B** to review and adjust the extracted content."
+        )
+
     html_bytes = _build_html(data, mode=mode_key)
     fname_map = {"en": "MoM_English.html", "ar": "MoM_Arabic.html", "bilingual": "MoM_Bilingual.html"}
 
@@ -769,7 +834,7 @@ def _render_step_c():
 # Data collection helper
 # ─────────────────────────────────────────────────────────────────────────────
 def _collect_data() -> dict:
-    return {
+    data = {
         "date":         st.session_state.get("mom_date",        date.today().strftime("%d %B %Y")),
         "ref":          st.session_state.get("mom_ref",         ""),
         "subject":      st.session_state.get("mom_subject",     ""),
@@ -782,6 +847,31 @@ def _collect_data() -> dict:
         "next_steps":   st.session_state.get("mom_next_steps",  []),
         "en_notes":     st.session_state.get("mom_en_notes",    ""),
     }
+    # Auto-parse Tab A notes when Tab B fields are empty
+    # so going straight Tab A → Tab C still produces a structured document
+    has_structured = (
+        data["objective"].strip()
+        or any(a.get("item") for a in data["actions"])
+        or any(str(p).strip() for p in data["disc_points"])
+        or any(a.get("name") for a in data["attendees"])
+    )
+    if not has_structured and data["en_notes"].strip():
+        parsed = _parse_mom_text(data["en_notes"])
+        if parsed.get("subject") and not data["subject"]:
+            data["subject"] = parsed["subject"]
+        if parsed.get("objective"):
+            data["objective"] = parsed["objective"]
+        if parsed.get("attendees"):
+            data["attendees"] = parsed["attendees"]
+        if parsed.get("disc_points"):
+            data["disc_points"] = parsed["disc_points"]
+        if parsed.get("actions"):
+            data["actions"] = parsed["actions"]
+        if parsed.get("next_steps"):
+            data["next_steps"] = parsed["next_steps"]
+        if parsed.get("priority") and not data["priority"]:
+            data["priority"] = parsed["priority"]
+    return data
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1042,9 +1132,17 @@ def _arabic_page(data: dict) -> str:
   <div class="section">
     <div class="section-title">بنود العمل</div>
     <table>
+      <colgroup>
+        <col style="width:4%">
+        <col style="width:34%">
+        <col style="width:15%">
+        <col style="width:20%">
+        <col style="width:13%">
+        <col style="width:14%">
+      </colgroup>
       <thead>
         <tr>
-          <th style="width:28px;">م</th>
+          <th style="text-align:center;">م</th>
           <th>بند العمل</th>
           <th>المسؤول</th>
           <th>المخرج</th>
@@ -1098,23 +1196,6 @@ def _english_page(data: dict) -> str:
     step_items = "".join(
         f"<li>{_e(s)}</li>" for s in data["next_steps"] if str(s).strip()
     )
-    # Raw notes fallback — shown only when structured fields are mostly empty
-    has_structured = any([
-        any(a.get("item") for a in data["actions"]),
-        any(str(p).strip() for p in data["disc_points"]),
-        data.get("objective", "").strip(),
-    ])
-    en_notes_html = ""
-    if not has_structured and data.get("en_notes", "").strip():
-        for line in data["en_notes"].splitlines():
-            s = line.strip()
-            if not s:
-                en_notes_html += "<br>"
-            elif s.startswith(("• ", "- ", "* ")):
-                en_notes_html += f"<li>{_e(s[2:])}</li>"
-            else:
-                en_notes_html += f"<p style='margin:4px 0;'>{_e(s)}</p>"
-
     return f"""
 <div class="page en">
   <!-- Header -->
@@ -1139,6 +1220,7 @@ def _english_page(data: dict) -> str:
   <div class="section">
     <div class="section-title">Attendees</div>
     <table>
+      <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
       <thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Role</th></tr></thead>
       <tbody>{att_rows or "<tr><td colspan='2' style='color:#9ca3af;text-align:center;'>—</td></tr>"}</tbody>
     </table>
@@ -1147,7 +1229,7 @@ def _english_page(data: dict) -> str:
   <!-- Meeting Objective -->
   <div class="section">
     <div class="section-title">Meeting Objective</div>
-    <div class="section-body">{_e(data['objective']) or (en_notes_html or "<span style='color:#9ca3af;'>—</span>")}</div>
+    <div class="section-body">{_e(data['objective']) or "<span style='color:#9ca3af;'>—</span>"}</div>
   </div>
 
   <!-- Key Discussion Points -->
@@ -1160,9 +1242,17 @@ def _english_page(data: dict) -> str:
   <div class="section">
     <div class="section-title">Action Items</div>
     <table>
+      <colgroup>
+        <col style="width:4%">
+        <col style="width:34%">
+        <col style="width:15%">
+        <col style="width:20%">
+        <col style="width:13%">
+        <col style="width:14%">
+      </colgroup>
       <thead>
         <tr>
-          <th style="width:28px;text-align:left;">#</th>
+          <th style="text-align:center;">#</th>
           <th style="text-align:left;">Action Item</th>
           <th style="text-align:left;">Owner</th>
           <th style="text-align:left;">Deliverable</th>
