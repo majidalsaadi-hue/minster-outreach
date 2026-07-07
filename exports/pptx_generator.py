@@ -362,9 +362,9 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             and "Company Name" in opportunities.columns
             and "Company Name" in investors.columns
             and "Sector" in investors.columns):
-        _opp_merged = opportunities.merge(
-            investors[["Company Name", "Sector"]], on="Company Name", how="left")
-        _sec_opp_counts = _opp_merged["Sector"].fillna("Unknown").value_counts().head(5)
+        _inv_sec = investors[["Company Name", "Sector"]].rename(columns={"Sector": "_inv_sector"})
+        _opp_merged = opportunities.merge(_inv_sec, on="Company Name", how="left")
+        _sec_opp_counts = _opp_merged["_inv_sector"].fillna("Unknown").value_counts().head(5)
     elif n_total_opps > 0:
         _sec_opp_counts = pd.Series({"All Sectors": n_total_opps})
     _SEC_OPP_COLORS = [MISA_GREEN, MISA_GOLD, "#2D7A54", "#E0B06A", "#888888"]
