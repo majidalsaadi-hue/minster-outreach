@@ -314,12 +314,68 @@ def _handle_upload(uploaded_file):
     if warnings:
         st.warning("Schema warnings:\n" + "\n".join(f"• {w}" for w in warnings))
 
+    # Preserve existing RM Tasks if the uploaded Excel has no Tasks sheet
+    existing_dfs = st.session_state.get("dfs") or {}
+    existing_tasks = existing_dfs.get("RM Tasks", pd.DataFrame())
+    uploaded_tasks = dfs.get("RM Tasks", pd.DataFrame())
+    if not existing_tasks.empty and uploaded_tasks.empty:
+        dfs["RM Tasks"] = existing_tasks
+
     st.session_state["dfs"]              = dfs
     st.session_state["summary"]          = get_summary(dfs)
     st.session_state["last_upload_name"] = uploaded_file.name
     st.session_state["last_upload_time"] = date.today().strftime("%d %b %Y")
     save_session(dfs)
     st.success(f"✅ {T('success_upload')}: **{uploaded_file.name}**")
+
+
+# ── Overdue action banner ─────────────────────────────────────────────────────
+def _render_overdue_banner(dfs: dict):
+    actions = dfs.get("Action Items", pd.DataFrame())
+    if actions.empty or "Due Date" not in actions.columns or "Status" not in actions.columns:
+        return
+
+    today = date.today()
+    pending = actions[~actions["Status"].str.lower().str.contains("complet|cancel", na=False)]
+    if pending.empty:
+        return
+
+    dates = pd.to_datetime(pending["Due Date"], errors="coerce")
+    overdue = pending[dates.notna() & (dates.dt.date < today)]
+    if overdue.empty:
+        return
+
+    n = len(overdue)
+    # Show top 3 most overdue
+    top = overdue.copy()
+    top["_days"] = (pd.to_datetime(today) - pd.to_datetime(top["Due Date"], errors="coerce")).dt.days
+    top = top.nlargest(3, "_days")
+    items_html = "".join(
+        f'<span style="background:rgba(255,255,255,0.25);border-radius:4px;'
+        f'padding:2px 8px;margin-right:6px;font-size:11px;">'
+        f'{str(r.get("Company Name","?"))[:20]} · {str(r.get("Action Description","?"))[:35]}…'
+        f' ({int(r["_days"])}d)</span>'
+        for _, r in top.iterrows()
+    )
+    dismiss_key = f"_overdue_dismissed_{date.today().isoformat()}"
+    if st.session_state.get(dismiss_key):
+        return
+
+    col_banner, col_x = st.columns([10, 1])
+    with col_banner:
+        st.markdown(
+            f'<div style="background:#DC2626;color:#fff;border-radius:8px;'
+            f'padding:8px 14px;margin-bottom:10px;display:flex;'
+            f'align-items:center;flex-wrap:wrap;gap:6px;">'
+            f'<span style="font-size:13px;font-weight:700;">🔴 {n} overdue action{"s" if n!=1 else ""}</span>'
+            f'&nbsp;{items_html}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    with col_x:
+        if st.button("✕", key=f"dismiss_overdue_{date.today().isoformat()}", help="Dismiss for today"):
+            st.session_state[dismiss_key] = True
+            st.rerun()
 
 
 # ── Global search renderer ────────────────────────────────────────────────────
@@ -405,47 +461,78 @@ def render_dashboard():
         _render_no_data_welcome()
         return
 
-    # ── Company filter + action summary bar ───────────────────────────────
+    # ── Filters bar (company + date range) ────────────────────────────────
     _inv = dfs.get("Investor Master", pd.DataFrame())
     _act = dfs.get("Action Items", pd.DataFrame())
+    _mtg = dfs.get("Meeting Log",   pd.DataFrame())
     _companies = sorted(_inv["Company Name"].dropna().unique().tolist()) if "Company Name" in _inv.columns else []
 
-    filter_col, summary_col = st.columns([2, 3])
-    with filter_col:
+    fc1, fc2, fc3, fc4 = st.columns([2, 1.2, 1.2, 0.6])
+    with fc1:
         selected_company = st.selectbox(
             "View company:",
             ["All Companies"] + _companies,
             key="dash_company_filter",
         )
-    with summary_col:
-        if not _act.empty and "Status" in _act.columns:
-            _act_f = _act if selected_company == "All Companies" else (
-                _act[_act["Company Name"] == selected_company] if "Company Name" in _act.columns else _act
-            )
-            _n_tot  = len(_act_f)
-            _n_done = int(_act_f["Status"].str.lower().str.contains("complet", na=False).sum())
-            _n_prog = int(_act_f["Status"].str.lower().str.contains("in progress|inprogress", na=False).sum())
-            _n_due  = max(_n_tot - _n_done - _n_prog, 0)
-            _next_due = ""
-            if "Due Date" in _act_f.columns:
-                _pending = _act_f[~_act_f["Status"].str.lower().str.contains("complet", na=False)]
-                _dates   = pd.to_datetime(_pending["Due Date"], errors="coerce").dropna()
-                _future  = _dates[_dates >= pd.Timestamp(date.today())]
-                if not _future.empty:
-                    _next_due = " · Next due " + _future.min().strftime("%d %b").lstrip("0")
-            st.markdown(
-                f"<div style='margin-top:28px;font-size:13px;color:#555;'>"
-                f"<b>{_n_tot}</b> actions total — "
-                f"<span style='color:#1B5C3F'><b>{_n_done}</b> completed</span> · "
-                f"<span style='color:#C9974A'><b>{_n_prog}</b> in progress</span> · "
-                f"<b>{_n_due}</b> due{_next_due}"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
+    with fc2:
+        dash_from = st.date_input("From", value=None, key="dash_date_from", label_visibility="visible")
+    with fc3:
+        dash_to   = st.date_input("To",   value=None, key="dash_date_to",   label_visibility="visible")
+    with fc4:
+        if st.button("Clear", key="dash_date_clear", help="Reset date range"):
+            st.session_state["dash_date_from"] = None
+            st.session_state["dash_date_to"]   = None
+            st.rerun()
 
-    # Build filtered view
+    # Action summary strip (uses unfiltered actions for overall counts)
+    if not _act.empty and "Status" in _act.columns:
+        _act_f = _act if selected_company == "All Companies" else (
+            _act[_act["Company Name"] == selected_company] if "Company Name" in _act.columns else _act
+        )
+        _n_tot  = len(_act_f)
+        _n_done = int(_act_f["Status"].str.lower().str.contains("complet", na=False).sum())
+        _n_prog = int(_act_f["Status"].str.lower().str.contains("in progress|inprogress", na=False).sum())
+        _n_due  = max(_n_tot - _n_done - _n_prog, 0)
+        _next_due = ""
+        if "Due Date" in _act_f.columns:
+            _pending = _act_f[~_act_f["Status"].str.lower().str.contains("complet", na=False)]
+            _dates   = pd.to_datetime(_pending["Due Date"], errors="coerce").dropna()
+            _future  = _dates[_dates >= pd.Timestamp(date.today())]
+            if not _future.empty:
+                _next_due = " · Next due " + _future.min().strftime("%d %b").lstrip("0")
+        _range_note = ""
+        if dash_from or dash_to:
+            _range_note = (
+                f' &nbsp;·&nbsp; <span style="color:#7C3AED;">📅 '
+                f'{"From " + dash_from.strftime("%d %b") if dash_from else ""}'
+                f'{" – " if dash_from and dash_to else ""}'
+                f'{"To " + dash_to.strftime("%d %b") if dash_to else ""}'
+                f'</span>'
+            )
+        st.markdown(
+            f"<div style='font-size:13px;color:#555;margin-bottom:4px;'>"
+            f"<b>{_n_tot}</b> actions total — "
+            f"<span style='color:#1B5C3F'><b>{_n_done}</b> completed</span> · "
+            f"<span style='color:#C9974A'><b>{_n_prog}</b> in progress</span> · "
+            f"<b>{_n_due}</b> due{_next_due}{_range_note}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Build filtered view (company + optional date range)
+    def _filter_by_date(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
+        if df.empty or date_col not in df.columns:
+            return df
+        d_col = pd.to_datetime(df[date_col], errors="coerce")
+        mask = pd.Series(True, index=df.index)
+        if dash_from:
+            mask &= d_col.dt.date >= dash_from
+        if dash_to:
+            mask &= d_col.dt.date <= dash_to
+        return df[mask].reset_index(drop=True)
+
     if selected_company == "All Companies":
-        view_dfs = dfs
+        view_dfs = dict(dfs)
     else:
         view_dfs = {}
         for sheet, df in dfs.items():
@@ -453,6 +540,10 @@ def render_dashboard():
                 view_dfs[sheet] = df[df["Company Name"] == selected_company].reset_index(drop=True)
             else:
                 view_dfs[sheet] = df
+
+    if dash_from or dash_to:
+        view_dfs["Meeting Log"]  = _filter_by_date(view_dfs.get("Meeting Log",  pd.DataFrame()), "Meeting Date")
+        view_dfs["Action Items"] = _filter_by_date(view_dfs.get("Action Items", pd.DataFrame()), "Due Date")
 
     # ── Today's Briefing — action advisor + progress chart ───────────────
     adv_col, chart_col = st.columns([3, 1])
@@ -718,6 +809,10 @@ def main():
     gsq = st.session_state.get("_gsq_active", "").strip()
     if gsq and dfs is not None:
         _render_global_search(dfs, gsq)
+
+    # Overdue action banner
+    if dfs is not None and page != "dashboard":
+        _render_overdue_banner(dfs)
 
     if page == "dashboard":
         render_dashboard()
