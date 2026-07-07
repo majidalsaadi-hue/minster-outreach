@@ -52,20 +52,24 @@ from modules.report_builder      import render as render_report_builder
 from modules.evaluation          import render as render_evaluation
 from modules.mom_builder         import render as render_mom_builder
 
+_PPTX_IMPORT_ERROR = None
 try:
     from exports.pptx_generator import generate_pptx, generate_pptx_company, generate_pptx_all_companies_dashboard
     _PPTX_AVAILABLE = True
-except Exception:
+except Exception as _e:
     _PPTX_AVAILABLE = False
+    _PPTX_IMPORT_ERROR = str(_e)
     generate_pptx                       = None
     generate_pptx_company               = None
     generate_pptx_all_companies_dashboard = None
 
+_PDF_IMPORT_ERROR = None
 try:
     from exports.pdf_generator import generate_pdf
     _PDF_AVAILABLE = True
-except Exception:
+except Exception as _e:
     _PDF_AVAILABLE = False
+    _PDF_IMPORT_ERROR = str(_e)
     generate_pdf = None
 
 from exports.excel_exporter import export_status_excel, generate_template
@@ -644,7 +648,8 @@ def render_export():
         """, unsafe_allow_html=True)
         report_lang_pptx = st.selectbox("Language", ["English", "Arabic"], key="pptx_lang")
         if not _PPTX_AVAILABLE:
-            st.warning("PPTX export requires python-pptx. Run: python -m pip install python-pptx")
+            err_detail = f" — {_PPTX_IMPORT_ERROR}" if _PPTX_IMPORT_ERROR else ""
+            st.warning(f"PPTX generator failed to load{err_detail}")
         elif st.button(T("generate_report") + " (PPTX)", use_container_width=True, disabled=(dfs is None)):
             with st.spinner(T("generating")):
                 pptx_lang = "ar" if report_lang_pptx == "Arabic" else "en"
@@ -760,7 +765,8 @@ def render_export():
         selected_co = cc1.selectbox("Select Company", companies, key="pptx_company_select")
         co_lang     = cc2.selectbox("Language", ["English", "Arabic"], key="pptx_company_lang")
         if not _PPTX_AVAILABLE:
-            st.warning("PPTX export requires python-pptx. Run: python -m pip install python-pptx")
+            err_detail = f" — {_PPTX_IMPORT_ERROR}" if _PPTX_IMPORT_ERROR else ""
+            st.warning(f"PPTX generator failed to load{err_detail}")
         elif st.button("Generate Company PPTX", use_container_width=False, disabled=(dfs is None)):
             with st.spinner(T("generating")):
                 co_lang_code = "ar" if co_lang == "Arabic" else "en"
@@ -784,7 +790,8 @@ def render_export():
     </div>""", unsafe_allow_html=True)
     all_lang_pptx = st.selectbox("Language", ["English", "Arabic"], key="pptx_all_lang")
     if generate_pptx_all_companies_dashboard is None:
-        st.warning("PPTX export requires python-pptx.")
+        err_detail = f" — {_PPTX_IMPORT_ERROR}" if _PPTX_IMPORT_ERROR else ""
+        st.warning(f"PPTX generator failed to load{err_detail}")
     elif st.button("📥 Generate All Companies Dashboard", use_container_width=True, disabled=(dfs is None)):
         with st.spinner("Building all-companies dashboard…"):
             all_lang_code = "ar" if all_lang_pptx == "Arabic" else "en"
