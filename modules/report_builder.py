@@ -459,9 +459,9 @@ def render(dfs: dict, lang: str):
                 placeholder="e.g. Waleed AlShehri", key="rb_arm_inp")
         with r2c2:
             st.session_state["rb_exec_rm"] = st.text_input(
-                "Executive RM (Minister's Office)",
+                "Relationship Manager (RM) — Minister's Office",
                 value=st.session_state["rb_exec_rm"],
-                placeholder="e.g. Sara Al-Sayed", key="rb_exec_inp")
+                placeholder="e.g. Sultana Alsegaih", key="rb_exec_inp")
 
         r3c1, r3c2 = st.columns(2)
         with r3c1:
@@ -2574,7 +2574,7 @@ Rules:
 - discussion_points: 4–8 key points, each a full Arabic sentence
 - action_items: one entry per distinct task mentioned
 - attendees: include all named people from both sides (MISA and {company})
-- If ARM is "{arm}" or Exec RM is "{exec_rm}", include them in attendees as MISA staff
+- If AM (Account Manager) is "{arm}" or RM (Relationship Manager) is "{exec_rm}", include them in attendees as MISA staff
 - task_en: English translation of the action (used for the Excel tracker)
 - All other text values MUST be in Arabic (names may stay in original script)
 - Respond ONLY with the JSON object — no markdown fences, no explanation
@@ -3109,7 +3109,7 @@ def _build_internal_am_letter_docx(cfg: dict, actions_df: pd.DataFrame) -> bytes
     ref_p = doc.add_paragraph()
     _run(ref_p, "Date: ", bold=True, size_pt=10, color="555555")
     _run(ref_p, mtg, size_pt=10, color="555555")
-    _run(ref_p, f"     |     Ref: MISA/{co.replace(' ','')}/AM-INTERNAL/{yr_mon}",
+    _run(ref_p, f"     |     Ref: MISA / {co} / AM-INTERNAL / {yr_mon}",
          size_pt=10, color="999999")
 
     _para()
