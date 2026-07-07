@@ -601,22 +601,28 @@ def render_export():
     else:
         st.info("Upload data first to generate company reports.")
 
-    # ── All-Companies Dashboard PowerPoint ───────────────────────────────────
+    # ── All-companies dashboard ─────────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### 📊 All Companies Dashboard")
-    st.caption("One summary slide (KPIs + actions by company + sector + country) followed by one slide per company.")
-
-    if not _PPTX_AVAILABLE:
-        st.warning("PPTX export requires python-pptx. Run: python -m pip install python-pptx")
-    elif st.button("Generate All Companies Dashboard", use_container_width=False, disabled=(dfs is None)):
-        with st.spinner(T("generating")):
-            all_co_pptx = generate_pptx_all_companies_dashboard(dfs or {}, lang="en")
-        all_co_filename = f"MoI_AllCompanies_Dashboard_{date.today().strftime('%Y-%m-%d')}.pptx"
+    st.markdown("""<div style="font-size:13px;color:#374151">
+        Strategic infographic deck — cover page with sector/country/progress charts,
+        then one page per company.
+    </div>""", unsafe_allow_html=True)
+    all_lang_pptx = st.selectbox("Language", ["English", "Arabic"], key="pptx_all_lang")
+    if generate_pptx_all_companies_dashboard is None:
+        st.warning("PPTX export requires python-pptx.")
+    elif st.button("📥 Generate All Companies Dashboard", use_container_width=True, disabled=(dfs is None)):
+        with st.spinner("Building all-companies dashboard…"):
+            all_lang_code = "ar" if all_lang_pptx == "Arabic" else "en"
+            all_pptx = generate_pptx_all_companies_dashboard(dfs or {}, lang=all_lang_code)
+        all_filename = f"MoI_AllCompanies_Dashboard_{date.today().strftime('%Y-%m-%d')}.pptx"
         st.download_button(
-            "Download — All Companies Dashboard",
-            data=all_co_pptx,
-            file_name=all_co_filename,
+            "⬇️ Download All Companies Dashboard (.pptx)",
+            data=all_pptx,
+            file_name=all_filename,
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            use_container_width=True,
+            key="dl_all_companies_pptx",
         )
 
     # ── Export notes ──────────────────────────────────────────────────────────
