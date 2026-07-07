@@ -1011,19 +1011,19 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         ("Completed mtg", MISA_GREEN), ("Scheduled", MISA_GOLD), ("Cancelled", "#AAAAAA"),
     ]
     for ri, (lbl, col) in enumerate(_mtg_items):
-        lx = Inches(5.45) + ri * Inches(1.10)
+        lx = Inches(5.75) + ri * Inches(1.10)
         _add_rect(slide, lx, _LG_Y + Inches(0.06), _LG_SQ, _LG_SQ,
                   fill_color=_rgb(col), line_color=_rgb(col))
         _add_text_box(slide, lbl, lx + Inches(0.12), _LG_Y,
                       Inches(1.00), Inches(0.20), font_size=6.5, color=MGRAY)
-    _add_text_box(slide, "|", Inches(8.76), _LG_Y, Inches(0.15), Inches(0.20),
+    _add_text_box(slide, "|", Inches(9.06), _LG_Y, Inches(0.15), Inches(0.20),
                   font_size=6.5, color=MGRAY, align=PP_ALIGN.CENTER)
     _act_items = [
         ("Done", MISA_GREEN), ("In Progress", MISA_GOLD),
         ("Pending", "#888888"), ("Blocked", "#C0392B"),
     ]
     for ri, (lbl, col) in enumerate(_act_items):
-        lx = Inches(8.92) + ri * Inches(0.82)
+        lx = Inches(9.22) + ri * Inches(0.82)
         _add_rect(slide, lx, _LG_Y + Inches(0.06), _LG_SQ, _LG_SQ,
                   fill_color=_rgb(col), line_color=_rgb(col))
         _add_text_box(slide, lbl, lx + Inches(0.12), _LG_Y,
@@ -1060,8 +1060,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _tot = max(sum(_donut_vals), 1)
         _pct_any  = min(1.0, (_donut_vals[0] + _donut_vals[1]) / _tot)  # completed+in-progress
         _pct_done = min(1.0, _donut_vals[0] / _tot)                     # completed only
-        _ccx = Inches(1.75)   # circle center x
-        _ccy = Inches(4.40)   # circle center y
+        _ccx = Inches(2.10)   # circle center x (slightly right)
+        _ccy = Inches(4.15)   # circle center y (slightly up)
         _CR  = Inches(1.10)   # outer radius
 
         def _oval_c(cx, cy, r, color):
@@ -1081,7 +1081,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _chart_data.add_series("Status", tuple(_donut_vals))
             _chart_gfx = slide.shapes.add_chart(
                 XL_CHART_TYPE.DOUGHNUT,
-                Inches(0.5), Inches(3.3), Inches(2.5), Inches(2.20),
+                Inches(0.5), Inches(3.05), Inches(2.5), Inches(2.20),
                 _chart_data,
             )
             _chart_obj = _chart_gfx.chart
@@ -1099,10 +1099,10 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     # Center label overlaid on doughnut hole
     _add_text_box(slide, f"{pct_s}%",
-                  Inches(1.25), Inches(4.15), Inches(1.0), Inches(0.40),
+                  Inches(1.60), Inches(3.90), Inches(1.0), Inches(0.40),
                   font_size=18, bold=True, color=GREEN, align=PP_ALIGN.CENTER)
     _add_text_box(slide, "complete",
-                  Inches(1.25), Inches(4.52), Inches(1.0), Inches(0.18),
+                  Inches(1.60), Inches(4.27), Inches(1.0), Inches(0.18),
                   font_size=7, color=MGRAY, align=PP_ALIGN.CENTER)
 
     # ── LEFT PANEL: Opportunities list (x constrained to 0.5"–3.0") ──────────
@@ -1139,14 +1139,14 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       font_size=8, color=MGRAY)
 
     # Thin vertical divider between left and right panels
-    _add_rect(slide, Inches(5.40), Inches(2.42), Inches(0.015), Inches(4.60),
+    _add_rect(slide, Inches(5.70), Inches(2.42), Inches(0.015), Inches(4.60),
               fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
 
     # ── RIGHT PANEL: Two stacked action tables ────────────────────────────────
     _n_pend_label = len(pend_df)
     _n_done_label = len(done_df)
     # Heading moved to vertical strip on far right (see below after timeline)
-    TBL_X  = Inches(5.42)
+    TBL_X  = Inches(5.72)
     HDR_Y  = Inches(2.94)
     HDR_H  = Inches(0.32)
     ROW_H  = Inches(0.46)
@@ -1248,10 +1248,10 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 _span = max((_vt_max_dt - _vt_min_dt).days, 1)
 
                 HX_L    = Inches(0.45)
-                HX_W    = Inches(4.85)
-                HX_BG_Y = Inches(5.58)
-                HX_BG_H = Inches(0.42)
-                HX_AX_Y = HX_BG_Y + Inches(0.16)
+                HX_W    = Inches(5.20)
+                HX_BG_Y = Inches(2.42)
+                HX_BG_H = Inches(0.44)
+                HX_AX_Y = HX_BG_Y + Inches(0.26)
 
                 def _hx(d):
                     if hasattr(d, "date") and callable(d.date):
