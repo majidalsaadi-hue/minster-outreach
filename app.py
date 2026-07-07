@@ -50,6 +50,7 @@ from modules.deals         import render as render_deals
 from modules.company_directory import render as render_company_directory
 from modules.report_builder      import render as render_report_builder
 from modules.evaluation          import render as render_evaluation
+from modules.mom_builder         import render as render_mom_builder
 
 try:
     from exports.pptx_generator import generate_pptx, generate_pptx_company, generate_pptx_all_companies_dashboard
@@ -164,6 +165,7 @@ def render_sidebar():
             T("nav_tasks"):             "tasks",
             "Contacts":                 "contacts",
             "Deals":                    "deals",
+            "📄 MoM Builder":           "mom_builder",
             T("nav_export"):            "export",
         }
         selected_label = st.radio(
@@ -879,6 +881,9 @@ def main():
             _require_data()
         else:
             render_deals(dfs, lang())
+
+    elif page == "mom_builder":
+        render_mom_builder(dfs or {}, lang())
 
     elif page == "export":
         render_export()
