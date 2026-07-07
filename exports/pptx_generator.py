@@ -408,14 +408,27 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                   Inches(0), Inches(7.05), Inches(13.33), Inches(0.45),
                   font_size=10, color=WHITE, align=PP_ALIGN.CENTER)
 
-    # ── Slides 2+: one compact summary slide per company ─────────────────────
+    # ── Slides 2+: one per company (full design, logos + charts skipped for speed)
     if not investors.empty and "Company Name" in investors.columns:
         for _, inv in investors.iterrows():
             co = inv.get("Company Name", "")
             if not co:
                 continue
+            inv_acts = (actions[actions["Company Name"] == co]
+                        if not actions.empty and "Company Name" in actions.columns
+                        else pd.DataFrame())
+            inv_opps = (opportunities[opportunities["Company Name"] == co]
+                        if not opportunities.empty and "Company Name" in opportunities.columns
+                        else pd.DataFrame())
+            inv_mtgs = (meetings[meetings["Company Name"] == co]
+                        if not meetings.empty and "Company Name" in meetings.columns
+                        else pd.DataFrame())
+            inv_dls  = (deals[deals["Company Name"] == co]
+                        if not deals.empty and "Company Name" in deals.columns
+                        else pd.DataFrame())
             try:
-                _co_summary_slide(prs, co, inv, actions, opportunities, meetings, lang)
+                _co_slide_cover_profile(prs, co, inv, inv_opps, inv_acts, inv_mtgs, inv_dls, lang,
+                                        _skip_logos=True, _skip_charts=True)
             except Exception:
                 pass
 
