@@ -1250,8 +1250,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 HX_L    = Inches(0.45)
                 HX_W    = Inches(5.20)
                 HX_BG_Y = Inches(2.42)
-                HX_BG_H = Inches(0.44)
-                HX_AX_Y = HX_BG_Y + Inches(0.26)
+                HX_BG_H = Inches(0.56)          # taller strip to fit month labels
+                HX_AX_Y = HX_BG_Y + Inches(0.30)  # axis at 2.72" — room above for dots+numbers
 
                 def _hx(d):
                     if hasattr(d, "date") and callable(d.date):
@@ -1275,12 +1275,14 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 while _mo <= _vt_max_dt and _mo_count < 24:
                     _mo_count += 1
                     _mx = _hx(_mo)
+                    # Tick mark below axis
                     _add_rect(slide, _mx, HX_AX_Y, Inches(0.008), Inches(0.08),
                               fill_color=_rgb("#AAAAAA"), line_color=_rgb("#AAAAAA"))
+                    # Month label below the tick — always shown, skip alternates only when very crowded
                     if _mo_count % _show_every == 1:
-                        _add_text_box(slide, _mo.strftime("%b"), _mx - Inches(0.15),
-                                      HX_AX_Y + Inches(0.09), Inches(0.32), Inches(0.12),
-                                      font_size=5.5, color=_rgb("#777777"), align=PP_ALIGN.CENTER)
+                        _add_text_box(slide, _mo.strftime("%b"), _mx - Inches(0.18),
+                                      HX_AX_Y + Inches(0.09), Inches(0.38), Inches(0.16),
+                                      font_size=7, color=_rgb("#555555"), align=PP_ALIGN.CENTER)
                     _mo = (_mo.replace(year=_mo.year + 1, month=1)
                            if _mo.month == 12
                            else _mo.replace(month=_mo.month + 1))
