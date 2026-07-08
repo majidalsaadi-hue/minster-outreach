@@ -1350,39 +1350,41 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 _add_text_box(slide, note[:55], CX[3] + Inches(0.05), ry + Inches(0.07),
                               CW_NEW[3] - Inches(0.08), Inches(0.32),
                               font_size=7.5, color=DARK)
-            # Col 4: date labels + progress bar + % label
+            # Col 4: progress bar + date endpoints below + % label
             px, pcw = CX[4], CW_NEW[4]
             _add_rect(slide, px, ry, pcw, ROW_H, fill_color=alt, line_color=_rgb("#DDDDDD"))
-            # Date labels above bar
-            def _fmt_dt(v):
-                try:
-                    d = pd.to_datetime(v, errors="coerce")
-                    return d.strftime("%b '%y") if pd.notna(d) else ""
-                except Exception:
-                    return ""
-            _start_raw = row.get("Start Date", row.get("Created Date", None))
-            _due_raw   = row.get("Due Date", None)
-            _s_lbl = _fmt_dt(_start_raw)
-            _d_lbl = _fmt_dt(_due_raw)
-            if _s_lbl:
-                _add_text_box(slide, _s_lbl, px + Inches(0.02), ry + Inches(0.01),
-                              pcw * 0.55, Inches(0.09),
-                              font_size=5, color=_rgb("#888888"))
-            if _d_lbl:
-                _add_text_box(slide, _d_lbl, px + pcw * 0.45, ry + Inches(0.01),
-                              pcw * 0.55, Inches(0.09),
-                              font_size=5, color=_rgb("#888888"), align=PP_ALIGN.RIGHT)
-            # Bar
-            bx, by = px + Inches(0.03), ry + Inches(0.12)
-            bw, bh = pcw - Inches(0.06), Inches(0.07)
+            # Bar at top of cell
+            bx, by = px + Inches(0.03), ry + Inches(0.05)
+            bw, bh = pcw - Inches(0.06), Inches(0.08)
             _add_rect(slide, bx, by, bw, bh, fill_color=_rgb("#E0E0E0"), line_color=_rgb("#E0E0E0"))
             if prog_val > 0:
                 fc2 = (_rgb(MISA_GREEN) if prog_val >= 1.0
                        else (_rgb(MISA_GOLD) if prog_val >= 0.5 else _rgb("#888888")))
                 _add_rect(slide, bx, by, max(bw * prog_val, Inches(0.02)), bh,
                           fill_color=fc2, line_color=fc2)
+            # Date labels below bar: start date left-aligned, due date right-aligned
+            def _fmt_dt(v):
+                try:
+                    d = pd.to_datetime(v, errors="coerce")
+                    return d.strftime("%d %b") if pd.notna(d) else ""
+                except Exception:
+                    return ""
+            _start_raw = row.get("Start Date", row.get("Created Date", None))
+            _due_raw   = row.get("Due Date", None)
+            _s_lbl = _fmt_dt(_start_raw)
+            _d_lbl = _fmt_dt(_due_raw)
+            _date_y = ry + Inches(0.15)
+            if _s_lbl:
+                _add_text_box(slide, _s_lbl, px + Inches(0.02), _date_y,
+                              pcw - Inches(0.04), Inches(0.10),
+                              font_size=5.5, color=_rgb("#777777"))
+            if _d_lbl:
+                _add_text_box(slide, _d_lbl, px + Inches(0.02), _date_y,
+                              pcw - Inches(0.04), Inches(0.10),
+                              font_size=5.5, color=_rgb("#777777"), align=PP_ALIGN.RIGHT)
+            # % label centered below dates
             _add_text_box(slide, "100%" if is_done else f"{int(prog_val * 100)}%",
-                          px, ry + Inches(0.26), pcw, Inches(0.18),
+                          px, ry + Inches(0.28), pcw, Inches(0.16),
                           font_size=8, color=DARK, align=PP_ALIGN.CENTER)
         if len(df) > max_r:
             overflow_y = tbl_y + HDR_H + max_r * ROW_H
