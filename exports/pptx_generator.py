@@ -1205,8 +1205,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _tot = max(sum(_donut_vals), 1)
         _pct_any  = min(1.0, (_donut_vals[0] + _donut_vals[1]) / _tot)  # completed+in-progress
         _pct_done = min(1.0, _donut_vals[0] / _tot)                     # completed only
-        _ccx = Inches(2.30)   # circle center x
-        _ccy = Inches(4.35)   # circle center y
+        _ccx = Inches(3.00)   # circle center x — centered in left panel
+        _ccy = Inches(4.65)   # circle center y
         _CR  = Inches(1.10)   # outer radius
 
         def _oval_c(cx, cy, r, color):
@@ -1244,10 +1244,10 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     # Center label overlaid on doughnut hole
     _add_text_box(slide, f"{pct_s}%",
-                  Inches(1.80), Inches(4.10), Inches(1.0), Inches(0.40),
+                  Inches(2.50), Inches(4.42), Inches(1.0), Inches(0.40),
                   font_size=18, bold=True, color=GREEN, align=PP_ALIGN.CENTER)
     _add_text_box(slide, "progress",
-                  Inches(1.80), Inches(4.47), Inches(1.0), Inches(0.18),
+                  Inches(2.50), Inches(4.79), Inches(1.0), Inches(0.18),
                   font_size=7, color=MGRAY, align=PP_ALIGN.CENTER)
 
     # ── LEFT PANEL: Opportunities list (x constrained to 0.5"–3.0") ──────────
@@ -1421,9 +1421,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
                 HX_L    = Inches(0.45)
                 HX_W    = Inches(5.20)
-                HX_BG_Y = Inches(2.42)
-                HX_BG_H = Inches(0.64)          # taller strip to fit month labels
-                HX_AX_Y = HX_BG_Y + Inches(0.34)  # axis — room above for dots+numbers
+                HX_BG_Y = Inches(2.56)
+                HX_BG_H = Inches(0.68)          # taller strip to fit month labels
+                HX_AX_Y = HX_BG_Y + Inches(0.38)  # axis — room above for dots+numbers
 
                 def _hx(d):
                     if hasattr(d, "date") and callable(d.date):
@@ -1441,7 +1441,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
                 _n_months = max(1, (_vt_max_dt.year - _vt_min_dt.year) * 12
                                 + (_vt_max_dt.month - _vt_min_dt.month))
-                _show_every = 1 if _n_months <= 12 else 2
+                _show_every = 1 if _n_months <= 6 else 2
                 _mo = _vt_min_dt.replace(day=1)
                 _mo_count = 0
                 while _mo <= _vt_max_dt and _mo_count < 24:
@@ -1452,9 +1452,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                               fill_color=_rgb("#AAAAAA"), line_color=_rgb("#AAAAAA"))
                     # Month label — show all when ≤12 months, every other when >12
                     if _mo_count % _show_every == 0:
-                        _add_text_box(slide, _mo.strftime("%b"), _mx - Inches(0.18),
-                                      HX_AX_Y + Inches(0.09), Inches(0.38), Inches(0.16),
-                                      font_size=7, color=_rgb("#555555"), align=PP_ALIGN.CENTER)
+                        _add_text_box(slide, _mo.strftime("%b"), _mx - Inches(0.22),
+                                      HX_AX_Y + Inches(0.09), Inches(0.46), Inches(0.18),
+                                      font_size=8.5, color=_rgb("#444444"), align=PP_ALIGN.CENTER)
                     _mo = (_mo.replace(year=_mo.year + 1, month=1)
                            if _mo.month == 12
                            else _mo.replace(month=_mo.month + 1))
