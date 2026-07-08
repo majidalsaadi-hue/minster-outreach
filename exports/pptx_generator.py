@@ -1142,19 +1142,19 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         ("Completed mtg", MISA_GREEN), ("Scheduled", MISA_GOLD), ("Cancelled", "#AAAAAA"),
     ]
     for ri, (lbl, col) in enumerate(_mtg_items):
-        lx = Inches(5.75) + ri * Inches(1.10)
+        lx = Inches(6.04) + ri * Inches(1.10)
         _add_rect(slide, lx, _LG_Y + Inches(0.06), _LG_SQ, _LG_SQ,
                   fill_color=_rgb(col), line_color=_rgb(col))
         _add_text_box(slide, lbl, lx + Inches(0.12), _LG_Y,
                       Inches(1.00), Inches(0.20), font_size=6.5, color=MGRAY)
-    _add_text_box(slide, "|", Inches(9.06), _LG_Y, Inches(0.15), Inches(0.20),
+    _add_text_box(slide, "|", Inches(9.35), _LG_Y, Inches(0.15), Inches(0.20),
                   font_size=6.5, color=MGRAY, align=PP_ALIGN.CENTER)
     _act_items = [
         ("Done", MISA_GREEN), ("In Progress", MISA_GOLD),
         ("Pending", "#888888"), ("Blocked", "#C0392B"),
     ]
     for ri, (lbl, col) in enumerate(_act_items):
-        lx = Inches(9.22) + ri * Inches(0.82)
+        lx = Inches(9.51) + ri * Inches(0.82)
         _add_rect(slide, lx, _LG_Y + Inches(0.06), _LG_SQ, _LG_SQ,
                   fill_color=_rgb(col), line_color=_rgb(col))
         _add_text_box(slide, lbl, lx + Inches(0.12), _LG_Y,
@@ -1460,12 +1460,12 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                            else _mo.replace(month=_mo.month + 1))
 
                 _now_x = _hx(_today)
-                _add_rect(slide, _now_x - Inches(0.005), HX_AX_Y - Inches(0.10),
-                          Inches(0.010), Inches(0.20),
+                _add_rect(slide, _now_x - Inches(0.008), HX_AX_Y - Inches(0.16),
+                          Inches(0.016), Inches(0.32),
                           fill_color=GOLD, line_color=GOLD)
-                _add_text_box(slide, "NOW", _now_x - Inches(0.15), HX_AX_Y - Inches(0.18),
-                              Inches(0.32), Inches(0.10),
-                              font_size=5.5, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+                _add_text_box(slide, "NOW", _now_x - Inches(0.22), HX_AX_Y - Inches(0.28),
+                              Inches(0.44), Inches(0.14),
+                              font_size=8, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
 
                 for _ai, (_, _arow) in enumerate(_act_tl.iterrows()):
                     _adx = _hx(_arow["_dt"])
