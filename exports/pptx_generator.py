@@ -1289,14 +1289,14 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       font_size=8, color=MGRAY)
 
     # Thin vertical divider between left and right panels
-    _add_rect(slide, Inches(5.70), Inches(2.42), Inches(0.015), Inches(4.60),
+    _add_rect(slide, Inches(5.98), Inches(2.42), Inches(0.015), Inches(4.60),
               fill_color=_rgb("#DDDDDD"), line_color=_rgb("#DDDDDD"))
 
     # ── RIGHT PANEL: Two stacked action tables ────────────────────────────────
     _n_pend_label = len(pend_df)
     _n_done_label = len(done_df)
     # Heading moved to vertical strip on far right (see below after timeline)
-    TBL_X  = Inches(5.72)
+    TBL_X  = Inches(6.00)
     HDR_Y  = Inches(2.94)
     HDR_H  = Inches(0.32)
     ROW_H  = Inches(0.46)
@@ -1422,8 +1422,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 HX_L    = Inches(0.45)
                 HX_W    = Inches(5.20)
                 HX_BG_Y = Inches(2.42)
-                HX_BG_H = Inches(0.56)          # taller strip to fit month labels
-                HX_AX_Y = HX_BG_Y + Inches(0.30)  # axis at 2.72" — room above for dots+numbers
+                HX_BG_H = Inches(0.64)          # taller strip to fit month labels
+                HX_AX_Y = HX_BG_Y + Inches(0.34)  # axis — room above for dots+numbers
 
                 def _hx(d):
                     if hasattr(d, "date") and callable(d.date):
