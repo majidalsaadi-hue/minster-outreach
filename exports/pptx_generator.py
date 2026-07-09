@@ -1185,14 +1185,14 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_rect(slide, Inches(0), META_Y, Inches(19.375), META_H,
               fill_color=WHITE, line_color=WHITE)
     meta_fields = [
-        ("Country",              _mv(inv_row, "Country",              "—")),
-        ("Sector",               _mv(inv_row, "Sector",               "—")),
-        ("Journey Stage",        _mv(inv_row, "Journey Stage",        "—")),
-        ("Relationship Manager", _mv(inv_row, "Relationship Manager", "—")),
-        ("Account Manager",      _mv(inv_row, "Account Manager",      "TBD")),
+        ("COUNTRY",              _mv(inv_row, "Country",              "—"), "⊕"),
+        ("SECTOR",               _mv(inv_row, "Sector",               "—"), "≡"),
+        ("JOURNEY STAGE",        _mv(inv_row, "Journey Stage",        "—"), "◷"),
+        ("RM",                   _mv(inv_row, "Relationship Manager", "—"), "♟"),
+        ("AM",                   _mv(inv_row, "Account Manager",      "TBD"), "♟"),
     ]
     _meta_field_w = Inches(19.375) / 5
-    for _mi, (_mlbl, _mval) in enumerate(meta_fields):
+    for _mi, (_mlbl, _mval, _micon) in enumerate(meta_fields):
         _mx = _mi * _meta_field_w
         # Oval icon
         _icon_r = Inches(0.208)
@@ -1203,6 +1203,11 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _icon_shape.fill.solid()
         _icon_shape.fill.fore_color.rgb = _rgb("#0B4A2F")
         _icon_shape.line.fill.background()
+        # Icon character centred in the oval
+        _add_text_box(slide, _micon,
+                      _icx - _icon_r, _icy - _icon_r,
+                      _icon_r * 2, _icon_r * 2,
+                      font_size=11, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
         # Label
         _add_text_box(slide, _mlbl,
                       _icx + _icon_r + Inches(0.083), META_Y + Inches(0.10),
