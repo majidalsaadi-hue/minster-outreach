@@ -345,22 +345,32 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
     _ovr_pct     = round((n_done_a + n_prog_a) / max(total_acts, 1) * 100)
 
     kpi_data = [
-        ("Total Companies",   str(total_cos),         MISA_GREEN),
-        ("Total Actions",     str(total_acts),         MISA_GOLD),
-        ("Completed",         str(n_done_a),           MISA_GREEN),
-        ("In Progress",       str(n_prog_a),           MISA_GOLD),
-        ("Overall Progress",  f"{_ovr_pct}%",          MISA_GREEN),
+        ("Total Companies",  str(total_cos),   MISA_GREEN, "⊞"),
+        ("Total Actions",    str(total_acts),  MISA_GOLD,  "✓"),
+        ("Completed",        str(n_done_a),    MISA_GREEN, "★"),
+        ("In Progress",      str(n_prog_a),    MISA_GOLD,  "↺"),
+        ("Overall Progress", f"{_ovr_pct}%",   MISA_GREEN, "↗"),
     ]
     kcard_w = Inches(3.70)
     kcard_h = Inches(1.00)
-    for i, (lbl, val, col) in enumerate(kpi_data):
+    _dsq = Inches(0.54)  # icon square size
+    for i, (lbl, val, col, icon) in enumerate(kpi_data):
         kx = Inches(0.42) + i * (kcard_w + Inches(0.10))
         _add_rect(slide, kx, Inches(0.90), kcard_w, kcard_h,
                   fill_color=_rgb(col), line_color=_rgb(col))
-        _add_text_box(slide, val, kx, Inches(0.92), kcard_w, Inches(0.50),
-                      font_size=28, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-        _add_text_box(slide, lbl, kx, Inches(1.40), kcard_w, Inches(0.34),
-                      font_size=11, color=WHITE, align=PP_ALIGN.CENTER)
+        # Rounded square icon on left side of card
+        _ksq = slide.shapes.add_shape(5, kx + Inches(0.12), Inches(0.935), _dsq, _dsq)
+        _ksq.fill.solid()
+        _ksq.fill.fore_color.rgb = _rgb("#0F3D2A") if col == MISA_GREEN else _rgb("#A8793A")
+        _ksq.line.fill.background()
+        _add_text_box(slide, icon, kx + Inches(0.12), Inches(0.935), _dsq, _dsq,
+                      font_size=18, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        _txt_kx = kx + _dsq + Inches(0.18)
+        _txt_kw = kcard_w - _dsq - Inches(0.22)
+        _add_text_box(slide, val, _txt_kx, Inches(0.92), _txt_kw, Inches(0.50),
+                      font_size=26, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        _add_text_box(slide, lbl, _txt_kx, Inches(1.40), _txt_kw, Inches(0.34),
+                      font_size=10, color=WHITE, align=PP_ALIGN.CENTER)
 
     # ── Left 60%: Actions Progress by Company ────────────────────────────────
     _add_text_box(slide, "Actions Progress by Company",
@@ -539,6 +549,63 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                           _leg_x + Inches(0.13), _leg_y,
                           Inches(2.25), Inches(0.20), font_size=7.5, color=DARK)
             _leg_y += Inches(0.26)
+
+    # ── IMPORTANT ACTIVATES: high-priority actions strip ─────────────────────
+    _IA_X = Inches(3.90)
+    _IA_Y = Inches(9.20)
+    _IA_W = Inches(8.10)
+    _IA_H = Inches(1.55)
+    _add_rect(slide, _IA_X, _IA_Y, _IA_W, _IA_H,
+              fill_color=_rgb("#FAF7EE"), line_color=_rgb("#E0DDD4"))
+    _add_rect(slide, _IA_X, _IA_Y, _IA_W, Inches(0.042),
+              fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
+    _add_text_box(slide, "IMPORTANT ACTIVATES",
+                  _IA_X + Inches(0.15), _IA_Y + Inches(0.07),
+                  Inches(3.0), Inches(0.22),
+                  font_size=9, bold=True, color=_rgb("#0B4A2F"))
+    _ia_acts = pd.DataFrame()
+    try:
+        if not actions.empty and "Status" in actions.columns:
+            _ia_pending = actions[~actions["Status"].isin(["Completed", "Cancelled"])]
+            if "Priority" in actions.columns:
+                _ia_high = _ia_pending[_ia_pending["Priority"].isin(["High", "Very High"])]
+                _ia_acts = _ia_high.head(6) if not _ia_high.empty else _ia_pending.head(6)
+            else:
+                _ia_acts = _ia_pending.head(6)
+    except Exception:
+        pass
+    _ia_row_y = _IA_Y + Inches(0.32)
+    if not _ia_acts.empty:
+        for _, _ia_r in _ia_acts.iterrows():
+            if _ia_row_y + Inches(0.22) > _IA_Y + _IA_H - Inches(0.05):
+                break
+            _ia_desc = str(_ia_r.get("Action Description", "") or "")[:58]
+            _ia_co   = str(_ia_r.get("Company Name", "") or "")[:20]
+            try:
+                _ia_due_raw = _ia_r.get("Due Date", "")
+                _ia_due_dt  = pd.to_datetime(_ia_due_raw, errors="coerce")
+                _ia_due = _ia_due_dt.strftime("%d %b") if pd.notna(_ia_due_dt) else ""
+            except Exception:
+                _ia_due = ""
+            _bul = slide.shapes.add_shape(9,
+                _IA_X + Inches(0.14), _ia_row_y + Inches(0.04),
+                Inches(0.10), Inches(0.10))
+            _bul.fill.solid(); _bul.fill.fore_color.rgb = _rgb("#1B5C3F"); _bul.line.fill.background()
+            _ia_line = _ia_desc
+            if _ia_co:
+                _ia_line += f"  ·  {_ia_co}"
+            if _ia_due:
+                _ia_line += f"  ·  {_ia_due}"
+            _add_text_box(slide, _ia_line,
+                          _IA_X + Inches(0.30), _ia_row_y,
+                          _IA_W - Inches(0.38), Inches(0.20),
+                          font_size=8.0, color=_rgb("#2B2B2B"))
+            _ia_row_y += Inches(0.23)
+    else:
+        _add_text_box(slide, "No high-priority actions pending.",
+                      _IA_X + Inches(0.15), _ia_row_y,
+                      _IA_W - Inches(0.22), Inches(0.22),
+                      font_size=8.5, color=_rgb("#888888"))
 
     # Dark green footer
     _add_rect(slide, Inches(0), Inches(10.833), Inches(20.0), Inches(0.417),
@@ -1161,161 +1228,208 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     # Strategic brief
     goal_text, strat_text, action_text = _build_strategic_brief(acts, opps, meetings, inv_row)
 
-    # ── 3 KPI cards at y=2.374" ──────────────────────────────────────────────
-    KPI_Y   = Inches(2.374)
-    KPI_H   = Inches(1.563)
-    KPI_GAP = Inches(0.208)
-    KPI_W   = Inches(4.219)  # (9.479 - 2*0.417 - 2*0.208) / 3 ≈ 2.593" but let's use proportional
+    # ── 3 KPI cards — full slide width ───────────────────────────────────────
+    KPI_Y    = Inches(2.374)
+    KPI_H    = Inches(1.563)
+    KPI_GAP  = Inches(0.208)
+    _KPI_TOT = Inches(19.375) - Inches(0.417) - Inches(0.208)
+    KPI_W    = (_KPI_TOT - 2 * KPI_GAP) / 3    # ~6.11" each
 
-    # Card 1: Strategic Goal (green icon)
+    def _kpi_sq_icon(sx, sy, size, hex_col, char):
+        sq = slide.shapes.add_shape(5, sx, sy, size, size)
+        sq.fill.solid(); sq.fill.fore_color.rgb = _rgb(hex_col)
+        sq.line.fill.background()
+        _add_text_box(slide, char, sx, sy, size, size,
+                      font_size=20, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+
+    _SQ = Inches(0.65)
+
+    # Card 1: Strategic Goal (dark green)
     C1_X = Inches(0.417)
     _add_rect(slide, C1_X, KPI_Y, KPI_W, KPI_H,
               fill_color=WHITE, line_color=_rgb("#E0E0DC"))
     _add_rect(slide, C1_X, KPI_Y, KPI_W, Inches(0.042),
               fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
-    _icon_r2 = Inches(0.260)
-    _ic2x = C1_X + Inches(0.350)
-    _ic2y = KPI_Y + Inches(0.450)
-    _ic2 = slide.shapes.add_shape(9, _ic2x - _icon_r2, _ic2y - _icon_r2, _icon_r2*2, _icon_r2*2)
-    _ic2.fill.solid(); _ic2.fill.fore_color.rgb = _rgb("#0B4A2F"); _ic2.line.fill.background()
+    _kpi_sq_icon(C1_X + Inches(0.22), KPI_Y + Inches(0.44), _SQ, "#0B4A2F", "◎")
     _add_text_box(slide, "STRATEGIC GOAL",
-                  C1_X + Inches(0.80), KPI_Y + Inches(0.12),
-                  KPI_W - Inches(0.95), Inches(0.24),
+                  C1_X + Inches(1.05), KPI_Y + Inches(0.10),
+                  KPI_W - Inches(1.20), Inches(0.24),
                   font_size=9, bold=True, color=_rgb("#0B4A2F"))
-    _add_text_box(slide, goal_text[:120],
-                  C1_X + Inches(0.12), KPI_Y + Inches(0.50),
-                  KPI_W - Inches(0.20), Inches(0.90),
-                  font_size=9, color=_rgb("#2B2B2B"))
+    _add_text_box(slide, goal_text[:220],
+                  C1_X + Inches(0.18), KPI_Y + Inches(0.50),
+                  KPI_W - Inches(0.32), Inches(0.95),
+                  font_size=8.5, color=_rgb("#2B2B2B"))
 
-    # Card 2: Overall Progress (gold icon + big %)
+    # Card 2: Overall Progress (gold background) — big %, subtitle, mini bar
     C2_X = C1_X + KPI_W + KPI_GAP
     _add_rect(slide, C2_X, KPI_Y, KPI_W, KPI_H,
-              fill_color=WHITE, line_color=_rgb("#E0E0DC"))
-    _add_rect(slide, C2_X, KPI_Y, KPI_W, Inches(0.042),
               fill_color=_rgb("#C89B3C"), line_color=_rgb("#C89B3C"))
-    _ic3 = slide.shapes.add_shape(9, C2_X + Inches(0.090) - _icon_r2, KPI_Y + Inches(0.450) - _icon_r2,
-                                   _icon_r2*2, _icon_r2*2)
-    _ic3.fill.solid(); _ic3.fill.fore_color.rgb = _rgb("#C89B3C"); _ic3.line.fill.background()
+    _kpi_sq_icon(C2_X + Inches(0.22), KPI_Y + Inches(0.18), _SQ, "#A07828", "↗")
     _add_text_box(slide, "OVERALL PROGRESS",
-                  C2_X + Inches(0.80), KPI_Y + Inches(0.12),
-                  KPI_W - Inches(0.95), Inches(0.24),
-                  font_size=9, bold=True, color=_rgb("#C89B3C"))
+                  C2_X + Inches(1.05), KPI_Y + Inches(0.10),
+                  KPI_W - Inches(1.20), Inches(0.24),
+                  font_size=9, bold=True, color=WHITE)
     _add_text_box(slide, f"{pct_s}%",
-                  C2_X + Inches(0.12), KPI_Y + Inches(0.40),
-                  KPI_W - Inches(0.20), Inches(0.90),
-                  font_size=45, bold=True, color=_rgb("#C89B3C"), align=PP_ALIGN.CENTER)
+                  C2_X + Inches(1.00), KPI_Y + Inches(0.28),
+                  Inches(2.60), Inches(0.90),
+                  font_size=52, bold=True, color=WHITE)
+    _add_text_box(slide, f"{n_done_s + n_prog_s} of {n_total} actions active",
+                  C2_X + Inches(1.00), KPI_Y + Inches(1.10),
+                  KPI_W - Inches(1.20), Inches(0.22),
+                  font_size=8.5, color=WHITE)
+    _pb_x = C2_X + Inches(1.00)
+    _pb_y = KPI_Y + KPI_H - Inches(0.23)
+    _pb_w = KPI_W - Inches(1.20)
+    _add_rect(slide, _pb_x, _pb_y, _pb_w, Inches(0.07),
+              fill_color=_rgb("#A07828"), line_color=_rgb("#A07828"))
+    _add_rect(slide, _pb_x, _pb_y, max(_pb_w * pct_s / 100, Inches(0.02)), Inches(0.07),
+              fill_color=WHITE, line_color=WHITE)
 
-    # Card 3: Immediate Action (red icon + HIGH badge)
+    # Card 3: Immediate Action (red) — ALL CAPS text + Priority badge top-right
     C3_X = C2_X + KPI_W + KPI_GAP
     _add_rect(slide, C3_X, KPI_Y, KPI_W, KPI_H,
               fill_color=WHITE, line_color=_rgb("#E0E0DC"))
     _add_rect(slide, C3_X, KPI_Y, KPI_W, Inches(0.042),
               fill_color=_rgb("#C0392B"), line_color=_rgb("#C0392B"))
-    _ic4 = slide.shapes.add_shape(9, C3_X + Inches(0.090) - _icon_r2, KPI_Y + Inches(0.450) - _icon_r2,
-                                   _icon_r2*2, _icon_r2*2)
-    _ic4.fill.solid(); _ic4.fill.fore_color.rgb = _rgb("#C0392B"); _ic4.line.fill.background()
+    _kpi_sq_icon(C3_X + Inches(0.22), KPI_Y + Inches(0.44), _SQ, "#C0392B", "⚠")
     _add_text_box(slide, "IMMEDIATE ACTION",
-                  C3_X + Inches(0.80), KPI_Y + Inches(0.12),
-                  KPI_W - Inches(0.95), Inches(0.24),
+                  C3_X + Inches(1.05), KPI_Y + Inches(0.10),
+                  KPI_W - Inches(2.80), Inches(0.24),
                   font_size=9, bold=True, color=_rgb("#C0392B"))
-    # HIGH badge
-    _add_rect(slide, C3_X + Inches(0.12), KPI_Y + Inches(0.50),
-              Inches(0.55), Inches(0.25),
+    # Priority badge — top right
+    _add_rect(slide, C3_X + KPI_W - Inches(1.30), KPI_Y + Inches(0.07),
+              Inches(1.15), Inches(0.32),
               fill_color=_rgb("#C0392B"), line_color=_rgb("#C0392B"))
-    _add_text_box(slide, "HIGH", C3_X + Inches(0.12), KPI_Y + Inches(0.50),
-                  Inches(0.55), Inches(0.25),
-                  font_size=8, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-    _add_text_box(slide, action_text[:100],
-                  C3_X + Inches(0.12), KPI_Y + Inches(0.82),
-                  KPI_W - Inches(0.20), Inches(0.60),
-                  font_size=8.5, color=_rgb("#2B2B2B"))
+    _add_text_box(slide, "Priority",
+                  C3_X + KPI_W - Inches(1.30), KPI_Y + Inches(0.07),
+                  Inches(1.15), Inches(0.15),
+                  font_size=6, color=WHITE, align=PP_ALIGN.CENTER)
+    _add_text_box(slide, "HIGH",
+                  C3_X + KPI_W - Inches(1.30), KPI_Y + Inches(0.19),
+                  Inches(1.15), Inches(0.18),
+                  font_size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+    _add_text_box(slide, (action_text or "No immediate action required.").upper()[:200],
+                  C3_X + Inches(0.18), KPI_Y + Inches(0.50),
+                  KPI_W - Inches(0.32), Inches(0.95),
+                  font_size=8.5, bold=True, color=_rgb("#2B2B2B"))
 
-    # ── Journey Timeline: y=4.145", w=8.854" (left side) ────────────────────
-    TL_X    = Inches(0.417)
-    TL_Y    = Inches(4.145)
-    TL_W    = Inches(8.854)
-    TL_H    = Inches(1.771)
+    # ── Journey Timeline: y=4.145", w=8.854" — meetings as milestones ────────
+    TL_X = Inches(0.417)
+    TL_Y = Inches(4.145)
+    TL_W = Inches(8.854)
+    TL_H = Inches(1.771)
     _add_rect(slide, TL_X, TL_Y, TL_W, TL_H,
               fill_color=WHITE, line_color=_rgb("#E0E0DC"))
     _add_rect(slide, TL_X, TL_Y, TL_W, Inches(0.042),
               fill_color=_rgb("#C89B3C"), line_color=_rgb("#C89B3C"))
-    _add_text_box(slide, "Journey Timeline",
+    _add_text_box(slide, "JOURNEY TIMELINE",
                   TL_X + Inches(0.15), TL_Y + Inches(0.08),
-                  Inches(3.0), Inches(0.22),
+                  Inches(3.5), Inches(0.22),
                   font_size=9, bold=True, color=_rgb("#0B4A2F"))
 
-    # Timeline axis
-    AX_Y = TL_Y + Inches(1.10)
-    _add_rect(slide, TL_X + Inches(0.15), AX_Y, TL_W - Inches(0.30), Inches(0.015),
+    AX_Y = TL_Y + Inches(1.05)
+    _add_rect(slide, TL_X + Inches(0.20), AX_Y, TL_W - Inches(0.40), Inches(0.015),
               fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
 
     try:
-        if not acts.empty and "Due Date" in acts.columns:
-            _tl_df = acts.copy()
-            _tl_df["_dt"] = pd.to_datetime(_tl_df["Due Date"], errors="coerce")
-            _tl_df = _tl_df[_tl_df["_dt"].notna()].sort_values("_dt")
-            if not _tl_df.empty:
-                _today = date.today()
-                _vt_min = _tl_df["_dt"].min().date().replace(day=1)
-                _vt_max_raw = _tl_df["_dt"].max().date()
-                _ld = _calendar.monthrange(_vt_max_raw.year, _vt_max_raw.month)[1]
-                _vt_max = _vt_max_raw.replace(day=_ld)
-                if _today < _vt_min: _vt_min = _today.replace(day=1)
-                if _today > _vt_max:
-                    _ld2 = _calendar.monthrange(_today.year, _today.month)[1]
-                    _vt_max = _today.replace(day=_ld2)
-                _span = max((_vt_max - _vt_min).days, 1)
-                _TL_AX_X = TL_X + Inches(0.15)
-                _TL_AX_W = TL_W - Inches(0.30)
+        # Build unified date list: meetings first, then key action due dates
+        _tl_events = []   # (date, label, sub_label, color)
+        _MTG_COL = {"Completed": "#1B5C3F", "Scheduled": "#C89B3C",
+                    "Cancelled": "#AAAAAA", "In Progress": "#C89B3C"}
+        if not meetings.empty and "Meeting Date" in meetings.columns:
+            _mtg_copy = meetings.copy()
+            _mtg_copy["_dt"] = pd.to_datetime(_mtg_copy["Meeting Date"], errors="coerce")
+            _mtg_copy = _mtg_copy[_mtg_copy["_dt"].notna()].sort_values("_dt")
+            for _, _mr in _mtg_copy.iterrows():
+                _mt = str(_mr.get("Meeting Type", "") or "Meeting").strip()
+                _md = str(_mr.get("Meeting Description", _mr.get("Agenda", "")) or "").strip()
+                _mc = _MTG_COL.get(_mt, "#1B5C3F")
+                _tl_events.append((_mr["_dt"].date(), _mt, _md[:22], _mc))
 
-                def _tlx(d):
-                    if hasattr(d, "date") and callable(d.date): d = d.date()
-                    frac = max(0.0, min(1.0, (d - _vt_min).days / _span))
-                    return _TL_AX_X + frac * _TL_AX_W
+        if not _tl_events and not acts.empty and "Due Date" in acts.columns:
+            _act_copy = acts.copy()
+            _act_copy["_dt"] = pd.to_datetime(_act_copy["Due Date"], errors="coerce")
+            _act_copy = _act_copy[_act_copy["_dt"].notna()].sort_values("_dt")
+            for _, _ar in _act_copy.iterrows():
+                _tl_events.append((_ar["_dt"].date(),
+                                   str(_ar.get("Status", "Action"))[:16],
+                                   str(_ar.get("Action Description","") or "")[:22],
+                                   "#C89B3C"))
 
-                # Month labels
-                _n_months = max(1, (_vt_max.year - _vt_min.year) * 12 + (_vt_max.month - _vt_min.month))
-                _show_every = 1 if _n_months <= 8 else 2
-                _mo = _vt_min.replace(day=1)
-                _mo_count = 0
-                while _mo <= _vt_max and _mo_count < 36:
-                    _mo_count += 1
-                    _mx = _tlx(_mo)
-                    _add_rect(slide, _mx, AX_Y, Inches(0.010), Inches(0.10),
-                              fill_color=_rgb("#AAAAAA"), line_color=_rgb("#AAAAAA"))
-                    if _mo_count % _show_every == 0:
-                        _add_text_box(slide, _mo.strftime("%b '%y") if _n_months > 12 else _mo.strftime("%b"),
-                                      _mx - Inches(0.28), AX_Y + Inches(0.12),
-                                      Inches(0.58), Inches(0.22),
-                                      font_size=9, color=_rgb("#555555"), align=PP_ALIGN.CENTER)
-                    _mo = (_mo.replace(year=_mo.year+1, month=1) if _mo.month==12
-                           else _mo.replace(month=_mo.month+1))
+        if _tl_events:
+            _today = date.today()
+            _all_dates = [e[0] for e in _tl_events]
+            _vt_min = min(_all_dates).replace(day=1)
+            _vt_max_raw = max(_all_dates)
+            _ld = _calendar.monthrange(_vt_max_raw.year, _vt_max_raw.month)[1]
+            _vt_max = _vt_max_raw.replace(day=_ld)
+            if _today < _vt_min: _vt_min = _today.replace(day=1)
+            if _today > _vt_max:
+                _ld2 = _calendar.monthrange(_today.year, _today.month)[1]
+                _vt_max = _today.replace(day=_ld2)
+            _span = max((_vt_max - _vt_min).days, 1)
+            _TL_AX_X = TL_X + Inches(0.20)
+            _TL_AX_W = TL_W - Inches(0.40)
 
-                # NOW marker
-                _nx = _tlx(_today)
-                _add_rect(slide, _nx - Inches(0.015), AX_Y - Inches(0.25),
-                          Inches(0.030), Inches(0.50),
-                          fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
-                _add_text_box(slide, "NOW", _nx - Inches(0.32), AX_Y - Inches(0.42),
-                              Inches(0.64), Inches(0.18),
-                              font_size=9, bold=True, color=_rgb(MISA_GOLD), align=PP_ALIGN.CENTER)
+            def _tlx(d):
+                frac = max(0.0, min(1.0, (d - _vt_min).days / _span))
+                return _TL_AX_X + frac * _TL_AX_W
 
-                # Action dots on timeline
-                _ACT_SC2 = {
-                    "Completed":"#1B5C3F","In Progress":"#C9974A","Inprogress":"#C9974A",
-                    "Not Started":"#888888","Blocked":"#C0392B","Cancelled":"#AAAAAA",
-                }
-                for _ai, (_, _ar) in enumerate(_tl_df.iterrows()):
-                    _adx = _tlx(_ar["_dt"])
-                    _asc = _rgb(_ACT_SC2.get(str(_ar.get("Status","")), "#888888"))
-                    _dy = Inches(0.12) if _ai % 2 == 0 else Inches(0.05)
-                    _add_rect(slide, _adx - Inches(0.050), AX_Y - _dy - Inches(0.10),
-                              Inches(0.10), Inches(0.10),
-                              fill_color=_asc, line_color=_asc)
-                    _add_text_box(slide, str(_ai+1),
-                                  _adx - Inches(0.11), AX_Y - _dy - Inches(0.22),
-                                  Inches(0.22), Inches(0.13),
-                                  font_size=6, color=_rgb("#333333"), align=PP_ALIGN.CENTER)
+            # Month labels along axis
+            _n_months = max(1, (_vt_max.year - _vt_min.year) * 12
+                            + (_vt_max.month - _vt_min.month))
+            _show_every = 1 if _n_months <= 8 else 2
+            _mo = _vt_min.replace(day=1)
+            _mo_count = 0
+            while _mo <= _vt_max and _mo_count < 36:
+                _mo_count += 1
+                _mx = _tlx(_mo)
+                _add_rect(slide, _mx, AX_Y, Inches(0.010), Inches(0.09),
+                          fill_color=_rgb("#BBBBBB"), line_color=_rgb("#BBBBBB"))
+                if _mo_count % _show_every == 0:
+                    _lbl = _mo.strftime("%b '%y") if _n_months > 12 else _mo.strftime("%b")
+                    _add_text_box(slide, _lbl,
+                                  _mx - Inches(0.30), AX_Y + Inches(0.12),
+                                  Inches(0.62), Inches(0.20),
+                                  font_size=9, bold=True, color=_rgb("#333333"),
+                                  align=PP_ALIGN.CENTER)
+                _mo = (_mo.replace(year=_mo.year + 1, month=1)
+                       if _mo.month == 12 else _mo.replace(month=_mo.month + 1))
+
+            # NOW marker
+            _nx = _tlx(_today)
+            _add_rect(slide, _nx - Inches(0.018), AX_Y - Inches(0.28),
+                      Inches(0.036), Inches(0.55),
+                      fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
+            # NOW badge pill
+            _add_rect(slide, _nx - Inches(0.28), AX_Y - Inches(0.52),
+                      Inches(0.56), Inches(0.22),
+                      fill_color=_rgb(MISA_GOLD), line_color=_rgb(MISA_GOLD))
+            _add_text_box(slide, "NOW", _nx - Inches(0.28), AX_Y - Inches(0.52),
+                          Inches(0.56), Inches(0.22),
+                          font_size=8, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+
+            # Milestone dots + labels
+            for _ei, (_edate, _elbl, _esub, _ecol) in enumerate(_tl_events):
+                _ex = _tlx(_edate)
+                _dot_r = Inches(0.10)
+                # Alternate above/below axis for crowded dots
+                _above = (_ei % 2 == 0)
+                _dot_y = AX_Y - _dot_r if _above else AX_Y + Inches(0.015)
+                _dot = slide.shapes.add_shape(9, _ex - _dot_r, _dot_y, _dot_r * 2, _dot_r * 2)
+                _dot.fill.solid(); _dot.fill.fore_color.rgb = _rgb(_ecol)
+                _dot.line.fill.background()
+                # Month label above dot (for milestones at the top)
+                _lbl_y = AX_Y - Inches(0.60) if _above else AX_Y + Inches(0.28)
+                _add_text_box(slide, _elbl[:18],
+                              _ex - Inches(0.55), _lbl_y,
+                              Inches(1.10), Inches(0.18),
+                              font_size=7.5, color=_rgb(_ecol), align=PP_ALIGN.CENTER)
+                if _esub:
+                    _add_text_box(slide, _esub,
+                                  _ex - Inches(0.55), _lbl_y + Inches(0.18),
+                                  Inches(1.10), Inches(0.16),
+                                  font_size=6.5, color=MGRAY, align=PP_ALIGN.CENTER)
     except Exception:
         pass
 
@@ -1334,25 +1448,31 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   Inches(3.0), Inches(0.22),
                   font_size=9, bold=True, color=_rgb("#0B4A2F"))
 
-    # 5 count circles
+    # 5 count circles with distinct Unicode icons
     _circ_items = [
-        (str(n_done_s),  "Completed",  "#1B5C3F"),
-        (str(n_prog_s),  "In Progress","#C9974A"),
-        (str(n_pend_s),  "Pending",    "#888888"),
-        (str(n_block_s), "Blocked",    "#C0392B"),
-        (str(n_opps_s),  "Opps",       "#0B4A2F"),
+        (str(n_done_s),  "Completed",  "#1B5C3F", "✓"),
+        (str(n_prog_s),  "In Progress","#C9974A", "↺"),
+        (str(n_pend_s),  "Pending",    "#888888", "◷"),
+        (str(n_block_s), "Blocked",    "#C0392B", "⊘"),
+        (str(n_opps_s),  "Opps",       "#0B4A2F", "★"),
     ]
     _circ_r   = Inches(0.417)
     _circ_gap = (AS_W - Inches(0.30)) / 5
-    for _ci_idx, (_cval, _clbl, _ccol) in enumerate(_circ_items):
+    for _ci_idx, (_cval, _clbl, _ccol, _cicon) in enumerate(_circ_items):
         _cx = AS_X + Inches(0.15) + _circ_gap * _ci_idx + _circ_gap / 2
         _cy = AS_Y + Inches(0.90)
         _cs = slide.shapes.add_shape(9, _cx - _circ_r, _cy - _circ_r, _circ_r*2, _circ_r*2)
         _cs.fill.solid(); _cs.fill.fore_color.rgb = _rgb(_ccol); _cs.line.fill.background()
+        # Icon in upper half of circle
+        _add_text_box(slide, _cicon,
+                      _cx - _circ_r, _cy - _circ_r,
+                      _circ_r*2, _circ_r,
+                      font_size=13, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        # Count in lower half
         _add_text_box(slide, _cval,
-                      _cx - _circ_r, _cy - _circ_r + Inches(0.09),
-                      _circ_r*2, _circ_r*2 - Inches(0.09),
-                      font_size=18, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+                      _cx - _circ_r, _cy - Inches(0.05),
+                      _circ_r*2, _circ_r,
+                      font_size=14, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
         _add_text_box(slide, _clbl,
                       _cx - _circ_r - Inches(0.10), _cy + _circ_r + Inches(0.02),
                       _circ_r*2 + Inches(0.20), Inches(0.22),
@@ -1369,37 +1489,94 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
               fill_color=_rgb("#F9F5EA"), line_color=_rgb("#E0D8CC"))
     _add_rect(slide, OP_X, BOT_Y, OP_W, Inches(0.042),
               fill_color=_rgb("#C89B3C"), line_color=_rgb("#C89B3C"))
-    _add_text_box(slide, f"Opportunities ({n_opps_s})",
+    # Count active opps for the header
+    _n_active_opps = (
+        int((opps["Opportunity Status"] == "Active").sum())
+        if not opps.empty and "Opportunity Status" in opps.columns
+        else n_opps_s
+    )
+    _add_text_box(slide, f"OPPORTUNITIES ({_n_active_opps} ACTIVE)",
                   OP_X + Inches(0.12), BOT_Y + Inches(0.08),
                   OP_W - Inches(0.20), Inches(0.26),
-                  font_size=10, bold=True, color=_rgb("#0B4A2F"))
+                  font_size=9, bold=True, color=_rgb("#0B4A2F"))
 
+    def _get_sector_icon(sec):
+        _si = {
+            "water": "≋", "utilities": "⚡", "energy": "⚡",
+            "aviation": "✈", "transport": "✈", "logistics": "✈",
+            "tourism": "⌂", "hospitality": "⌂", "hotel": "⌂",
+            "finance": "$", "banking": "$", "investment": "$",
+            "tech": "⚙", "digital": "⚙", "technology": "⚙",
+            "mining": "◆", "resources": "◆", "metal": "◆",
+            "construction": "⊞", "real estate": "⊞",
+            "health": "✚", "pharma": "✚", "medical": "✚",
+            "food": "❖", "agriculture": "❖",
+        }
+        sl = str(sec).lower()
+        for k, v in _si.items():
+            if k in sl:
+                return v
+        return "◎"
+
+    def _stage_badge_col(st):
+        sl = str(st).lower()
+        if any(x in sl for x in ("contract", "signed", "complet")):
+            return "#1B5C3F"
+        if any(x in sl for x in ("negotiat", "advanced")):
+            return "#C9974A"
+        if any(x in sl for x in ("due dilig", "review")):
+            return "#2D6DA8"
+        return "#888888"
+
+    _inv_sector_val = str(inv_row.get("Sector", "") or "")
     _opp_item_y = BOT_Y + Inches(0.40)
+    _opp_card_h = Inches(0.68)
     if not opps.empty and "Opportunity Name" in opps.columns:
         for _, _orow in opps.iterrows():
-            if _opp_item_y + Inches(0.55) > BOT_Y + BOT_H - Inches(0.05):
+            if _opp_item_y + _opp_card_h > BOT_Y + BOT_H - Inches(0.05):
                 break
             _oname  = str(_orow.get("Opportunity Name", "") or "").strip()
             _ostage = str(_orow.get("Opportunity Stage", "") or "").strip()
+            _osub   = str(_orow.get("Description", "") or _orow.get("Partners", "") or "").strip()
             if _oname in ("nan", ""):
                 continue
-            # Card with gold left stripe
+            # Card background
             _add_rect(slide, OP_X + Inches(0.08), _opp_item_y,
-                      OP_W - Inches(0.16), Inches(0.50),
+                      OP_W - Inches(0.16), _opp_card_h,
                       fill_color=WHITE, line_color=_rgb("#E0D8CC"))
-            _add_rect(slide, OP_X + Inches(0.08), _opp_item_y,
-                      Inches(0.042), Inches(0.50),
-                      fill_color=_rgb("#C89B3C"), line_color=_rgb("#C89B3C"))
-            _add_text_box(slide, _oname[:40],
-                          OP_X + Inches(0.17), _opp_item_y + Inches(0.04),
-                          OP_W - Inches(0.28), Inches(0.24),
-                          font_size=8.5, color=_rgb("#2B2B2B"))
-            if _ostage and _ostage != "nan":
-                _add_text_box(slide, _ostage,
-                              OP_X + Inches(0.17), _opp_item_y + Inches(0.26),
-                              OP_W - Inches(0.28), Inches(0.18),
-                              font_size=7.5, color=_rgb("#888888"))
-            _opp_item_y += Inches(0.56)
+            # Sector icon circle
+            _sicon = _get_sector_icon(_inv_sector_val)
+            _sic_sz = Inches(0.46)
+            _sic_x  = OP_X + Inches(0.12)
+            _sic_y  = _opp_item_y + (_opp_card_h - _sic_sz) / 2
+            _sic = slide.shapes.add_shape(9, _sic_x, _sic_y, _sic_sz, _sic_sz)
+            _sic.fill.solid(); _sic.fill.fore_color.rgb = _rgb("#EEE8D5"); _sic.line.fill.background()
+            _add_text_box(slide, _sicon, _sic_x, _sic_y, _sic_sz, _sic_sz,
+                          font_size=14, bold=True, color=_rgb("#0B4A2F"), align=PP_ALIGN.CENTER)
+            # Opportunity name
+            _txt_x = OP_X + Inches(0.65)
+            _txt_w = OP_W - Inches(0.78)
+            _add_text_box(slide, _oname[:36],
+                          _txt_x, _opp_item_y + Inches(0.05),
+                          _txt_w, Inches(0.22),
+                          font_size=8.5, bold=True, color=_rgb("#2B2B2B"))
+            # Subtitle (description / partners)
+            if _osub and _osub not in ("nan", ""):
+                _add_text_box(slide, _osub[:42],
+                              _txt_x, _opp_item_y + Inches(0.26),
+                              _txt_w, Inches(0.16),
+                              font_size=7.0, color=_rgb("#888888"))
+            # Stage badge pill
+            if _ostage and _ostage not in ("nan", ""):
+                _bcol  = _stage_badge_col(_ostage)
+                _bdg_y = _opp_item_y + _opp_card_h - Inches(0.24)
+                _bdg_w = Inches(1.30); _bdg_h = Inches(0.18)
+                _bdg = slide.shapes.add_shape(9, _txt_x, _bdg_y, _bdg_w, _bdg_h)
+                _bdg.fill.solid(); _bdg.fill.fore_color.rgb = _rgb(_bcol); _bdg.line.fill.background()
+                _add_text_box(slide, _ostage[:20].upper(),
+                              _txt_x, _bdg_y, _bdg_w, _bdg_h,
+                              font_size=6.0, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+            _opp_item_y += _opp_card_h + Inches(0.06)
     else:
         _add_text_box(slide, "No opportunities recorded.",
                       OP_X + Inches(0.12), _opp_item_y,
