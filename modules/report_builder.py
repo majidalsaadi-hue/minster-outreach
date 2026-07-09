@@ -957,7 +957,7 @@ def render(dfs: dict, lang: str):
         if st.button("📧 Generate Internal AM Letter", use_container_width=True,
                      key="rb_am_letter_btn"):
             try:
-                _am_bytes = _build_internal_am_letter_docx(_am_cfg, _am_actions)
+                _am_bytes = _build_pre_review_am_letter_docx(_am_cfg, _am_actions)
                 st.session_state["rb_am_letter_bytes"] = _am_bytes
             except Exception as _e:
                 st.error(f"Could not generate AM letter: {_e}")
@@ -3318,3 +3318,167 @@ def _build_internal_am_letter_docx(cfg: dict, actions_df: pd.DataFrame) -> bytes
     buf_am = io.BytesIO()
     doc.save(buf_am)
     return buf_am.getvalue()
+
+
+def _build_pre_review_am_letter_docx(cfg: dict, actions_df: pd.DataFrame) -> bytes:
+    """
+    Initial internal memo from RM to AM — sent immediately after a minister meeting.
+    Shares the draft action items and requests an alignment session before stakeholder engagement.
+    """
+    from docx.shared import Pt, RGBColor, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    co      = cfg.get("company", "")
+    mtg     = cfg.get("meeting_date", "") or date.today().strftime("%d %B %Y")
+    arm     = cfg.get("arm", "") or "Account Manager"
+    exec_rm = cfg.get("exec_rm", "") or ""
+    yr_mon  = date.today().strftime("%Y-%m")
+
+    doc = docx.Document()
+    sec = doc.sections[0]
+    sec.left_margin = sec.right_margin = Inches(1.0)
+    sec.top_margin  = sec.bottom_margin = Inches(0.75)
+
+    def _rgb(h: str) -> RGBColor:
+        h = h.lstrip("#")
+        return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+    def _cell_bg(cell, hex_color: str):
+        tcPr = cell._tc.get_or_add_tcPr()
+        shd  = OxmlElement("w:shd")
+        shd.set(qn("w:val"), "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"), hex_color.lstrip("#").upper())
+        tcPr.append(shd)
+
+    def _run(para, text, bold=False, size_pt=11.0, color="1C1C1C"):
+        r = para.add_run(text)
+        r.bold = bold; r.font.size = Pt(size_pt)
+        r.font.color.rgb = _rgb(color)
+        return r
+
+    def _para(text="", bold=False, size_pt=11.0, color="1C1C1C"):
+        p = doc.add_paragraph()
+        if text:
+            _run(p, text, bold=bold, size_pt=size_pt, color=color)
+        return p
+
+    # Header
+    hdr = doc.add_table(rows=2, cols=1)
+    hdr.style = "Table Grid"
+    c0 = hdr.rows[0].cells[0]
+    _cell_bg(c0, "217141")
+    p0 = c0.paragraphs[0]
+    p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p0, "Ministry of Investment  |  وزارة الاستثمار", bold=True, size_pt=12, color="FFFFFF")
+    c1 = hdr.rows[1].cells[0]
+    _cell_bg(c1, "1A5C3F")
+    p1 = c1.paragraphs[0]
+    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p1, "Minister's Office  |  Internal Memo", size_pt=10, color="C9974A")
+
+    _para()
+
+    ref_p = doc.add_paragraph()
+    _run(ref_p, "Date: ", bold=True, size_pt=10, color="555555")
+    _run(ref_p, mtg, size_pt=10, color="555555")
+    _run(ref_p, f"     |     Ref: MISA / {co} / AM-INTERNAL / {yr_mon}",
+         size_pt=10, color="999999")
+
+    _para()
+
+    for lbl, val in [("To: ", arm), ("From: ", exec_rm or "Minister's Office"),
+                     ("Re: ", f"Action Items — {co} (Meeting: {mtg})")]:
+        p = doc.add_paragraph()
+        _run(p, lbl, bold=True, size_pt=11)
+        _run(p, val, bold=(lbl == "Re: "), size_pt=11)
+
+    _para()
+
+    # Salutation
+    p_sal = doc.add_paragraph()
+    _run(p_sal, "Dear ")
+    _run(p_sal, arm, bold=True)
+    _run(p_sal, ",")
+    _para()
+
+    # Body — pre-review version
+    p_b1 = doc.add_paragraph()
+    _run(p_b1, "Following the Minister's meeting with ")
+    _run(p_b1, co, bold=True)
+    _run(p_b1, f" on {mtg}, please find below the initial action items captured during "
+         "the meeting.")
+    _para()
+
+    p_b2 = doc.add_paragraph()
+    _run(p_b2, "Prior to sharing these with the relevant stakeholders for delivery, we "
+         "would like to schedule a brief ")
+    _run(p_b2, "Action Item Review Session", bold=True)
+    _run(p_b2, " with you to walk through each item, ensure full alignment, and confirm "
+         "your acknowledgement.")
+    _para()
+
+    # Action items table
+    if not actions_df.empty:
+        tbl = doc.add_table(rows=1, cols=6)
+        tbl.style = "Table Grid"
+        hdrs   = ["#", "Action Item", "Assigned To", "Priority", "Timeline", "Status"]
+        widths = [0.3, 2.8, 1.3, 0.7, 0.9, 0.8]
+        for j, (cell, h) in enumerate(zip(tbl.rows[0].cells, hdrs)):
+            _cell_bg(cell, "217141")
+            p = cell.paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _run(p, h, bold=True, size_pt=9, color="FFFFFF")
+            try:
+                tcPr = cell._tc.get_or_add_tcPr()
+                tcW  = OxmlElement("w:tcW")
+                tcW.set(qn("w:w"), str(int(widths[j] * 1440)))
+                tcW.set(qn("w:type"), "dxa")
+                tcPr.append(tcW)
+            except Exception:
+                pass
+        for i, (_, row) in enumerate(actions_df.iterrows()):
+            en     = (row.get("Action (EN)") or row.get("Action (AR)", "")).strip()
+            owner  = str(row.get("Assigned To", "") or "")
+            prio   = str(row.get("Priority", "Medium") or "Medium")
+            due    = str(row.get("Due Text EN", "") or row.get("Due Text", "") or
+                         row.get("Due Date", "") or "TBD")
+            status = str(row.get("Status", "Not Started") or "Not Started")
+            bg     = "FFFFFF" if i % 2 == 0 else "F5F5F5"
+            data_row = tbl.add_row()
+            for j, val in enumerate([str(i + 1), en, owner, prio, due, status]):
+                cell = data_row.cells[j]
+                _cell_bg(cell, bg)
+                p = cell.paragraphs[0]
+                if j == 0:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                _run(p, val, size_pt=9)
+
+    _para()
+    _para("Kindly share your availability for the review session at your earliest "
+          "convenience so we can align before engaging the relevant parties.",
+          size_pt=11)
+    _para()
+    _para("Best regards,")
+    _para()
+
+    sig_n = doc.add_paragraph()
+    _run(sig_n, exec_rm or "Minister's Office", bold=True, size_pt=11.5, color="217141")
+    sig_t = doc.add_paragraph()
+    _run(sig_t, "Relationship Manager (RM)  |  Minister's Office", size_pt=10.5, color="555555")
+    _para("Ministry of Investment  |  Kingdom of Saudi Arabia", size_pt=10.5, color="555555")
+
+    ftr = doc.add_table(rows=1, cols=1)
+    ftr.style = "Table Grid"
+    fc = ftr.rows[0].cells[0]
+    _cell_bg(fc, "F5F5F5")
+    fp = fc.paragraphs[0]
+    fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(fp, "CONFIDENTIAL — INTERNAL USE ONLY  |  Ministry of Investment",
+         size_pt=9, color="888888")
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
