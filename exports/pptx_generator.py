@@ -372,7 +372,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
         _add_text_box(slide, lbl, _txt_kx, Inches(1.40), _txt_kw, Inches(0.34),
                       font_size=10, color=WHITE, align=PP_ALIGN.CENTER)
 
-    # ── Left 60%: Actions Progress by Company ────────────────────────────────
+    # ── Left: Actions Progress by Company (compact, upper area) ─────────────
     _add_text_box(slide, "Actions Progress by Company",
                   Inches(0.42), Inches(2.0), Inches(7.8), Inches(0.24),
                   font_size=11, bold=True, color=DARK)
@@ -387,12 +387,11 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             pct_g   = round((done_g + prog_g) / total_g * 100) if total_g > 0 else 0
             co_stats[co_name_g] = (pct_g, done_g, prog_g, ns_g, total_g)
 
-        # Average of per-company progress %
         _avg_co_pct = round(sum(v[0] for v in co_stats.values()) / max(len(co_stats), 1)) if co_stats else _ovr_pct
         MAX_BAR_W = Inches(8.0)
         by = Inches(2.20)
-        bar_h   = Inches(0.30)
-        bar_gap = Inches(0.08)
+        bar_h   = Inches(0.27)
+        bar_gap = Inches(0.07)
 
         # Overall average row
         _add_text_box(slide, "OVERALL AVG", Inches(0.42), by,
@@ -404,83 +403,36 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                   fill_color=GREEN, line_color=GREEN)
         _add_text_box(slide, f"{_avg_co_pct}%", bx + MAX_BAR_W + Inches(0.08), by,
                       Inches(0.5), Inches(0.22), font_size=8, bold=True, color=GREEN)
-        by += bar_h + Inches(0.14)
+        by += bar_h + Inches(0.12)
 
-        sorted_cos = sorted(co_stats.items(), key=lambda x: x[1][0], reverse=True)[:8]
+        sorted_cos = sorted(co_stats.items(), key=lambda x: x[1][0], reverse=True)[:10]
 
         for co_name_b, (pct_g, done_g, prog_g, ns_g, total_g) in sorted_cos:
             _add_text_box(slide, str(co_name_b)[:24], Inches(0.42), by,
-                          Inches(3.0), Inches(0.26), font_size=8, color=DARK)
+                          Inches(3.0), Inches(0.24), font_size=8, color=DARK)
             bx = Inches(3.60)
-            _add_rect(slide, bx, by + Inches(0.04), MAX_BAR_W, bar_h,
+            _add_rect(slide, bx, by + Inches(0.03), MAX_BAR_W, bar_h,
                       fill_color=_rgb("#E0E0E0"), line_color=_rgb("#E0E0E0"))
             if done_g > 0 and total_g > 0:
                 done_w = MAX_BAR_W * done_g / total_g
-                _add_rect(slide, bx, by + Inches(0.04), done_w, bar_h,
+                _add_rect(slide, bx, by + Inches(0.03), done_w, bar_h,
                           fill_color=GREEN, line_color=GREEN)
             if prog_g > 0 and total_g > 0:
                 prog_off = MAX_BAR_W * done_g / total_g
                 prog_w   = MAX_BAR_W * prog_g / total_g
-                _add_rect(slide, bx + prog_off, by + Inches(0.04), prog_w, bar_h,
+                _add_rect(slide, bx + prog_off, by + Inches(0.03), prog_w, bar_h,
                           fill_color=GOLD, line_color=GOLD)
             _add_text_box(slide, f"{pct_g}%", bx + MAX_BAR_W + Inches(0.08), by,
-                          Inches(0.5), Inches(0.26), font_size=8, bold=True, color=DARK)
+                          Inches(0.5), Inches(0.24), font_size=8, bold=True, color=DARK)
             by += bar_h + bar_gap
-            if by > Inches(9.5):
+            if by > Inches(6.60):
                 break
 
-    # ── Opportunities by Sector (left side bottom) ──────────────────────────
-    n_total_opps = len(opportunities) if not opportunities.empty else 0
-    n_active_opps = (
-        int((opportunities["Opportunity Status"] == "Active").sum())
-        if not opportunities.empty and "Opportunity Status" in opportunities.columns
-        else n_total_opps
-    )
-    OPP_SEC_X = Inches(0.42)
-    OPP_SEC_Y = Inches(9.50)
-    _add_text_box(slide, "Opportunities by Sector",
-                  OPP_SEC_X, OPP_SEC_Y, Inches(2.60), Inches(0.22),
-                  font_size=9, bold=True, color=GREEN)
-    _add_text_box(slide, f"{n_total_opps} total  |  active: {n_active_opps}",
-                  OPP_SEC_X + Inches(2.65), OPP_SEC_Y, Inches(1.15), Inches(0.22),
-                  font_size=7.5, color=_rgb(MISA_GOLD), align=PP_ALIGN.RIGHT)
-    # Build sector counts by joining opportunities → investor sector
-    _sec_opp_counts = pd.Series(dtype=int)
-    if (not opportunities.empty and not investors.empty
-            and "Company Name" in opportunities.columns
-            and "Company Name" in investors.columns
-            and "Sector" in investors.columns):
-        _inv_sec = investors[["Company Name", "Sector"]].rename(columns={"Sector": "_inv_sector"})
-        _opp_merged = opportunities.merge(_inv_sec, on="Company Name", how="left")
-        _sec_opp_counts = _opp_merged["_inv_sector"].fillna("Unknown").value_counts().head(5)
-    elif n_total_opps > 0:
-        _sec_opp_counts = pd.Series({"All Sectors": n_total_opps})
-    _SEC_OPP_COLORS = [MISA_GREEN, MISA_GOLD, "#2D7A54", "#E0B06A", "#888888"]
-    _MAX_BAR_OPP = Inches(2.50)
-    _sec_opp_y = OPP_SEC_Y + Inches(0.26)
-    for _si, (_sname, _scnt) in enumerate(_sec_opp_counts.items()):
-        _col = _SEC_OPP_COLORS[_si % len(_SEC_OPP_COLORS)]
-        _bar_frac = _scnt / max(int(_sec_opp_counts.max()), 1)
-        _add_rect(slide, OPP_SEC_X, _sec_opp_y + Inches(0.04), Inches(0.08), Inches(0.08),
-                  fill_color=_rgb(_col), line_color=_rgb(_col))
-        _add_text_box(slide, str(_sname)[:16], OPP_SEC_X + Inches(0.13), _sec_opp_y,
-                      Inches(1.35), Inches(0.18), font_size=7.5, color=DARK)
-        _add_rect(slide, OPP_SEC_X + Inches(1.55), _sec_opp_y + Inches(0.04),
-                  _MAX_BAR_OPP * _bar_frac, Inches(0.12),
-                  fill_color=_rgb(_col), line_color=_rgb(_col))
-        _add_text_box(slide, str(_scnt),
-                      OPP_SEC_X + Inches(1.55) + _MAX_BAR_OPP + Inches(0.06), _sec_opp_y,
-                      Inches(0.30), Inches(0.18), font_size=7.5, bold=True, color=DARK)
-        _sec_opp_y += Inches(0.18)
-        if _sec_opp_y > Inches(10.80):
-            break
-
-    # ── Right: By Sector donut chart ──────────────────────────────────────────
+    # ── Right: By Sector donut (compact) ─────────────────────────────────────
     _DONUT_PALETTE = ["#1B5C3F", "#2D7A54", "#3D9068", "#C9974A", "#E0B06A", "#888888"]
-    SEC_X = Inches(12.5)
     _add_text_box(slide, "By Sector",
-                  SEC_X, Inches(2.0), Inches(4.7), Inches(0.26),
-                  font_size=11, bold=True, color=DARK)
+                  Inches(12.5), Inches(2.0), Inches(4.7), Inches(0.24),
+                  font_size=10, bold=True, color=DARK)
     if not investors.empty and "Sector" in investors.columns:
         sec_counts = investors["Sector"].dropna().value_counts().head(6)
         try:
@@ -489,34 +441,31 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             _sec_data.add_series("Sectors", tuple(int(v) for v in sec_counts.values))
             _sec_gfx = slide.shapes.add_chart(
                 XL_CHART_TYPE.DOUGHNUT,
-                Inches(12.5), Inches(2.30), Inches(3.40), Inches(3.00),
+                Inches(12.5), Inches(2.26), Inches(2.80), Inches(2.40),
                 _sec_data,
             )
-            _sec_obj = _sec_gfx.chart
-            _sec_obj.has_title = False
-            _sec_obj.has_legend = False
-            for _pi, _pt in enumerate(_sec_obj.series[0].points):
+            _sec_gfx.chart.has_title = False
+            _sec_gfx.chart.has_legend = False
+            for _pi, _pt in enumerate(_sec_gfx.chart.series[0].points):
                 _pt.format.fill.solid()
                 _pt.format.fill.fore_color.rgb = _rgb(_DONUT_PALETTE[_pi % len(_DONUT_PALETTE)])
         except Exception:
             pass
-        # Text legend beside donut
-        _leg_x = Inches(16.0)
-        _leg_y = Inches(2.35)
+        _leg_x = Inches(15.4)
+        _leg_y = Inches(2.30)
         for _si, (_sname, _scnt) in enumerate(sec_counts.items()):
             _col = _DONUT_PALETTE[_si % len(_DONUT_PALETTE)]
             _add_rect(slide, _leg_x, _leg_y + Inches(0.04), Inches(0.09), Inches(0.09),
                       fill_color=_rgb(_col), line_color=_rgb(_col))
             _add_text_box(slide, f"{str(_sname)[:14]}: {_scnt}",
                           _leg_x + Inches(0.13), _leg_y,
-                          Inches(2.25), Inches(0.20), font_size=7.5, color=DARK)
-            _leg_y += Inches(0.26)
+                          Inches(3.70), Inches(0.20), font_size=7.5, color=DARK)
+            _leg_y += Inches(0.24)
 
-    # ── Right: By Country donut chart ─────────────────────────────────────────
-    CTY_X = Inches(12.5)
+    # ── Right: By Country donut (compact) ────────────────────────────────────
     _add_text_box(slide, "By Country",
-                  CTY_X, Inches(5.60), Inches(4.7), Inches(0.26),
-                  font_size=11, bold=True, color=DARK)
+                  Inches(12.5), Inches(4.72), Inches(4.7), Inches(0.24),
+                  font_size=10, bold=True, color=DARK)
     if not investors.empty and "Country" in investors.columns:
         cty_counts = investors["Country"].dropna().value_counts().head(6)
         try:
@@ -525,21 +474,19 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             _cty_data.add_series("Countries", tuple(int(v) for v in cty_counts.values))
             _cty_gfx = slide.shapes.add_chart(
                 XL_CHART_TYPE.DOUGHNUT,
-                Inches(12.5), Inches(5.88), Inches(3.40), Inches(3.00),
+                Inches(12.5), Inches(4.98), Inches(2.80), Inches(2.40),
                 _cty_data,
             )
-            _cty_obj = _cty_gfx.chart
-            _cty_obj.has_title = False
-            _cty_obj.has_legend = False
+            _cty_gfx.chart.has_title = False
+            _cty_gfx.chart.has_legend = False
             _CTY_PAL = ["#C9974A", "#E0B06A", "#1B5C3F", "#2D7A54", "#888888", "#AAAAAA"]
-            for _pi, _pt in enumerate(_cty_obj.series[0].points):
+            for _pi, _pt in enumerate(_cty_gfx.chart.series[0].points):
                 _pt.format.fill.solid()
                 _pt.format.fill.fore_color.rgb = _rgb(_CTY_PAL[_pi % len(_CTY_PAL)])
         except Exception:
             pass
-        # Text legend beside donut
-        _leg_x = Inches(16.0)
-        _leg_y = Inches(5.93)
+        _leg_x = Inches(15.4)
+        _leg_y = Inches(5.02)
         _CTY_PAL2 = ["#C9974A", "#E0B06A", "#1B5C3F", "#2D7A54", "#888888", "#AAAAAA"]
         for _ci, (_cname, _ccnt) in enumerate(cty_counts.items()):
             _col = _CTY_PAL2[_ci % len(_CTY_PAL2)]
@@ -547,64 +494,180 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                       fill_color=_rgb(_col), line_color=_rgb(_col))
             _add_text_box(slide, f"{str(_cname)[:14]}: {_ccnt}",
                           _leg_x + Inches(0.13), _leg_y,
-                          Inches(2.25), Inches(0.20), font_size=7.5, color=DARK)
-            _leg_y += Inches(0.26)
+                          Inches(3.70), Inches(0.20), font_size=7.5, color=DARK)
+            _leg_y += Inches(0.24)
 
-    # ── IMPORTANT ACTIVATES: high-priority actions strip ─────────────────────
-    _IA_X = Inches(3.90)
-    _IA_Y = Inches(9.20)
-    _IA_W = Inches(8.10)
-    _IA_H = Inches(1.55)
-    _add_rect(slide, _IA_X, _IA_Y, _IA_W, _IA_H,
-              fill_color=_rgb("#FAF7EE"), line_color=_rgb("#E0DDD4"))
-    _add_rect(slide, _IA_X, _IA_Y, _IA_W, Inches(0.042),
-              fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
-    _add_text_box(slide, "IMPORTANT ACTIVATES",
-                  _IA_X + Inches(0.15), _IA_Y + Inches(0.07),
-                  Inches(3.0), Inches(0.22),
+    # ── PENDING / IN PROGRESS ACTIONS — full-width table ─────────────────────
+    def _update_text(remarks, am_input, max_chars=95):
+        """Intelligent summary: prefer AM Input if it adds info, else Remarks."""
+        r = str(remarks or "").strip()
+        a = str(am_input or "").strip()
+        r = "" if r.lower() in ("nan", "none", "-", "n/a", "") else r
+        a = "" if a.lower() in ("nan", "none", "-", "n/a", "") else a
+        # Use AM Input if it meaningfully differs from Remarks
+        text = a if (a and a.lower() != r.lower() and len(a) >= len(r) * 0.6) else (r or a)
+        if not text:
+            return "—"
+        # Take first sentence
+        for sep in (". ", ".\n", "\n"):
+            if sep in text:
+                text = text.split(sep)[0]
+                break
+        # Truncate at word boundary
+        if len(text) > max_chars:
+            text = text[:max_chars - 1].rsplit(" ", 1)[0] + "…"
+        return text.strip()
+
+    _PIA_X = Inches(0.42)
+    _PIA_Y = Inches(6.88)
+    _PIA_W = Inches(19.375) - _PIA_X - Inches(0.10)
+    # Section title strip
+    _PIA_TTL_H = Inches(0.27)
+    _add_rect(slide, _PIA_X, _PIA_Y, _PIA_W, _PIA_TTL_H,
+              fill_color=_rgb("#EEE8D5"), line_color=_rgb("#D8D2C0"))
+    _add_text_box(slide, "PENDING / IN PROGRESS ACTIONS",
+                  _PIA_X + Inches(0.12), _PIA_Y + Inches(0.04),
+                  Inches(5.0), _PIA_TTL_H - Inches(0.06),
                   font_size=9, bold=True, color=_rgb("#0B4A2F"))
-    _ia_acts = pd.DataFrame()
+    _PIA_TBL_Y = _PIA_Y + _PIA_TTL_H
+
+    # Column definitions: (label, width_raw_inches)
+    _pia_cols = [
+        ("#",        0.38),
+        ("Company",  2.10),
+        ("Action",   4.80),
+        ("Priority", 1.05),
+        ("Progress", 1.55),
+        ("Update",   9.00),
+    ]
+    _pia_cw_sum = sum(w for _, w in _pia_cols)
+    _pia_scale  = _PIA_W / Inches(_pia_cw_sum)
+    _pia_cws    = [Inches(w) * _pia_scale for _, w in _pia_cols]
+    _pia_hdrs   = [lbl for lbl, _ in _pia_cols]
+    _PIA_HDR_H  = Inches(0.30)
+    _PIA_ROW_H  = Inches(0.335)
+
+    # Header row
+    _px = _PIA_X
+    for _ph, _pw in zip(_pia_hdrs, _pia_cws):
+        _add_rect(slide, _px, _PIA_TBL_Y, _pw, _PIA_HDR_H,
+                  fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
+        _add_text_box(slide, _ph, _px + Inches(0.04), _PIA_TBL_Y + Inches(0.05),
+                      _pw - Inches(0.06), _PIA_HDR_H - Inches(0.06),
+                      font_size=8.5, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        _px += _pw
+
+    # Collect pending/in-progress actions flagged for dashboard
+    _pia_acts = pd.DataFrame()
     try:
         if not actions.empty and "Status" in actions.columns:
-            _ia_pending = actions[~actions["Status"].isin(["Completed", "Cancelled"])]
-            if "Priority" in actions.columns:
-                _ia_high = _ia_pending[_ia_pending["Priority"].isin(["High", "Very High"])]
-                _ia_acts = _ia_high.head(6) if not _ia_high.empty else _ia_pending.head(6)
-            else:
-                _ia_acts = _ia_pending.head(6)
+            _pia_all = actions[~actions["Status"].isin(["Completed", "Cancelled"])].copy()
+            if "To Be In Dashboard" in _pia_all.columns:
+                _mask = _pia_all["To Be In Dashboard"].astype(str).str.strip().str.upper() == "YES"
+                if _mask.any():
+                    _pia_all = _pia_all[_mask]
+            # Sort: High/Very High first, then by due date
+            _pri_order = {"Very High": 0, "High": 1, "Blocked": 2, "Medium": 3, "Low": 4}
+            if "Priority" in _pia_all.columns:
+                _pia_all["_pri_ord"] = _pia_all["Priority"].map(_pri_order).fillna(5)
+                _pia_all = _pia_all.sort_values("_pri_ord")
+            _pia_acts = _pia_all
     except Exception:
         pass
-    _ia_row_y = _IA_Y + Inches(0.32)
-    if not _ia_acts.empty:
-        for _, _ia_r in _ia_acts.iterrows():
-            if _ia_row_y + Inches(0.22) > _IA_Y + _IA_H - Inches(0.05):
-                break
-            _ia_desc = str(_ia_r.get("Action Description", "") or "")[:58]
-            _ia_co   = str(_ia_r.get("Company Name", "") or "")[:20]
-            try:
-                _ia_due_raw = _ia_r.get("Due Date", "")
-                _ia_due_dt  = pd.to_datetime(_ia_due_raw, errors="coerce")
-                _ia_due = _ia_due_dt.strftime("%d %b") if pd.notna(_ia_due_dt) else ""
-            except Exception:
-                _ia_due = ""
-            _bul = slide.shapes.add_shape(9,
-                _IA_X + Inches(0.14), _ia_row_y + Inches(0.04),
-                Inches(0.10), Inches(0.10))
-            _bul.fill.solid(); _bul.fill.fore_color.rgb = _rgb("#1B5C3F"); _bul.line.fill.background()
-            _ia_line = _ia_desc
-            if _ia_co:
-                _ia_line += f"  ·  {_ia_co}"
-            if _ia_due:
-                _ia_line += f"  ·  {_ia_due}"
-            _add_text_box(slide, _ia_line,
-                          _IA_X + Inches(0.30), _ia_row_y,
-                          _IA_W - Inches(0.38), Inches(0.20),
-                          font_size=8.0, color=_rgb("#2B2B2B"))
-            _ia_row_y += Inches(0.23)
-    else:
-        _add_text_box(slide, "No high-priority actions pending.",
-                      _IA_X + Inches(0.15), _ia_row_y,
-                      _IA_W - Inches(0.22), Inches(0.22),
+
+    _pia_row_y = _PIA_TBL_Y + _PIA_HDR_H
+    _pia_i = 0
+    _pri_dot_colors = {"High": "#C00000", "Very High": "#C00000",
+                       "Medium": "#FFC000", "Low": "#0B4A2F", "Blocked": "#C00000"}
+    for _, _pr in _pia_acts.iterrows():
+        if _pia_row_y + _PIA_ROW_H > Inches(10.833) - Inches(0.417):
+            break
+        _alt_bg = _rgb("#FAF7EE") if _pia_i % 2 == 1 else WHITE
+        _px = _PIA_X
+
+        # Col 0: #
+        _add_rect(slide, _px, _pia_row_y, _pia_cws[0], _PIA_ROW_H,
+                  fill_color=_alt_bg, line_color=_rgb("#E0E0DC"))
+        _add_text_box(slide, str(_pia_i + 1),
+                      _px + Inches(0.02), _pia_row_y + Inches(0.08),
+                      _pia_cws[0] - Inches(0.04), Inches(0.20),
+                      font_size=8, color=_rgb("#555555"), align=PP_ALIGN.CENTER)
+        _px += _pia_cws[0]
+
+        # Col 1: Company
+        _add_rect(slide, _px, _pia_row_y, _pia_cws[1], _PIA_ROW_H,
+                  fill_color=_alt_bg, line_color=_rgb("#E0E0DC"))
+        _add_text_box(slide, str(_pr.get("Company Name", "") or "")[:22],
+                      _px + Inches(0.05), _pia_row_y + Inches(0.07),
+                      _pia_cws[1] - Inches(0.08), Inches(0.20),
+                      font_size=8, bold=True, color=_rgb("#0B4A2F"))
+        _px += _pia_cws[1]
+
+        # Col 2: Action
+        _add_rect(slide, _px, _pia_row_y, _pia_cws[2], _PIA_ROW_H,
+                  fill_color=_alt_bg, line_color=_rgb("#E0E0DC"))
+        _add_text_box(slide, str(_pr.get("Action Description", "") or "")[:85],
+                      _px + Inches(0.05), _pia_row_y + Inches(0.05),
+                      _pia_cws[2] - Inches(0.08), _PIA_ROW_H - Inches(0.06),
+                      font_size=7.5, color=_rgb("#2B2B2B"))
+        _px += _pia_cws[2]
+
+        # Col 3: Priority (dot + text)
+        _add_rect(slide, _px, _pia_row_y, _pia_cws[3], _PIA_ROW_H,
+                  fill_color=_alt_bg, line_color=_rgb("#E0E0DC"))
+        _pval = str(_pr.get("Priority", "") or "").strip()
+        _pcol = _pri_dot_colors.get(_pval, "#888888")
+        _dot = slide.shapes.add_shape(9, _px + Inches(0.08),
+                                       _pia_row_y + _PIA_ROW_H/2 - Inches(0.05),
+                                       Inches(0.10), Inches(0.10))
+        _dot.fill.solid(); _dot.fill.fore_color.rgb = _rgb(_pcol); _dot.line.fill.background()
+        _add_text_box(slide, _pval, _px + Inches(0.22), _pia_row_y + Inches(0.08),
+                      _pia_cws[3] - Inches(0.25), Inches(0.20),
+                      font_size=7.5, color=_rgb(_pcol))
+        _px += _pia_cws[3]
+
+        # Col 4: Progress (mini bar + %)
+        _add_rect(slide, _px, _pia_row_y, _pia_cws[4], _PIA_ROW_H,
+                  fill_color=_alt_bg, line_color=_rgb("#E0E0DC"))
+        try:
+            _praw = _pr.get("Progress", 0)
+            _pv = float(str(_praw).replace("%", "")) if _praw not in (None, "", "nan") else 0.0
+            if _pv > 1.0: _pv /= 100.0
+        except Exception:
+            _pv = 0.0
+        _pbx = _px + Inches(0.06)
+        _pbw = _pia_cws[4] - Inches(0.12)
+        _pbh = Inches(0.09)
+        _pby = _pia_row_y + _PIA_ROW_H / 2 - _pbh / 2 - Inches(0.04)
+        _add_rect(slide, _pbx, _pby, _pbw, _pbh,
+                  fill_color=_rgb("#E0E0DC"), line_color=_rgb("#E0E0DC"))
+        if _pv > 0:
+            _pfc = (_rgb("#1B5C3F") if _pv >= 1.0 else
+                    (_rgb("#C9974A") if _pv >= 0.5 else _rgb("#888888")))
+            _add_rect(slide, _pbx, _pby, max(_pbw * _pv, Inches(0.02)), _pbh,
+                      fill_color=_pfc, line_color=_pfc)
+        _add_text_box(slide, f"{int(_pv * 100)}%",
+                      _px, _pby + _pbh + Inches(0.01),
+                      _pia_cws[4], Inches(0.16),
+                      font_size=7, color=_rgb("#555555"), align=PP_ALIGN.CENTER)
+        _px += _pia_cws[4]
+
+        # Col 5: Update (intelligent summary of Remarks + AM Input)
+        _add_rect(slide, _px, _pia_row_y, _pia_cws[5], _PIA_ROW_H,
+                  fill_color=_alt_bg, line_color=_rgb("#E0E0DC"))
+        _upd_text = _update_text(_pr.get("Remarks", ""), _pr.get("AM Input", ""))
+        _add_text_box(slide, _upd_text,
+                      _px + Inches(0.05), _pia_row_y + Inches(0.05),
+                      _pia_cws[5] - Inches(0.08), _PIA_ROW_H - Inches(0.06),
+                      font_size=7.5, color=_rgb("#444444"))
+
+        _pia_row_y += _PIA_ROW_H
+        _pia_i += 1
+
+    if _pia_i == 0:
+        _add_text_box(slide, "No pending / in-progress actions flagged for dashboard.",
+                      _PIA_X + Inches(0.15), _PIA_TBL_Y + _PIA_HDR_H + Inches(0.08),
+                      _PIA_W, Inches(0.22),
                       font_size=8.5, color=_rgb("#888888"))
 
     # Dark green footer
@@ -1586,15 +1649,31 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     # ── Actions table: left=4.167", y=BOT_Y ──────────────────────────────────
     TBL_X = Inches(4.167)
     TBL_W = Inches(19.375) - TBL_X - Inches(0.10)
-    # Column widths (must sum to TBL_W):  #=0.469, Action=4.636, Owner=1.823, Start=1.250, End=1.250, Priority=1.771, Progress=remainder
-    _cw_raw = [0.469, 4.636, 1.823, 1.250, 1.250, 1.771, 3.803]
+    # Column widths: shortened Progress + new Update column
+    # #=0.45, Action=4.20, Owner=1.65, Start=1.10, End=1.10, Priority=1.55, Progress=1.60, Update=remainder
+    _cw_raw = [0.45, 4.20, 1.65, 1.10, 1.10, 1.55, 1.60, 3.40]
     _cw_sum = sum(_cw_raw)
-    # Scale to fit TBL_W
     _scale = TBL_W / Inches(_cw_sum)
     CW_TBL = [Inches(w) * _scale for w in _cw_raw]
-    COL_HDR = ["#", "Action", "Owner", "Start Date", "End Date", "Priority", "Progress %"]
+    COL_HDR = ["#", "Action", "Owner", "Start Date", "End Date", "Priority", "Progress", "Update"]
     HDR_H2  = Inches(0.333)
     ROW_H2  = Inches(0.375)
+
+    def _co_update_text(remarks, am_input, max_chars=55):
+        r = str(remarks or "").strip()
+        a = str(am_input or "").strip()
+        r = "" if r.lower() in ("nan", "none", "-", "n/a") else r
+        a = "" if a.lower() in ("nan", "none", "-", "n/a") else a
+        text = a if (a and a.lower() != r.lower() and len(a) >= len(r) * 0.6) else (r or a)
+        if not text:
+            return "—"
+        for sep in (". ", ".\n", "\n"):
+            if sep in text:
+                text = text.split(sep)[0]
+                break
+        if len(text) > max_chars:
+            text = text[:max_chars - 1].rsplit(" ", 1)[0] + "…"
+        return text.strip()
 
     # Section title "PENDING / IN PROGRESS ACTIONS"
     _TBL_TTL_H = Inches(0.26)
@@ -1724,6 +1803,15 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       _cx_cur, _by2 + _bh2 + Inches(0.02),
                       CW_TBL[6], Inches(0.18),
                       font_size=8, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
+        _cx_cur += CW_TBL[6]
+
+        # Col 7: Update (intelligent summary of Remarks + AM Input)
+        _add_rect(slide, _cx_cur, _row_y, CW_TBL[7], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
+        _upd2 = _co_update_text(_rrow.get("Remarks", ""), _rrow.get("AM Input", ""))
+        _add_text_box(slide, _upd2,
+                      _cx_cur + Inches(0.04), _row_y + Inches(0.05),
+                      CW_TBL[7] - Inches(0.06), ROW_H2 - Inches(0.06),
+                      font_size=7.5, color=_rgb("#444444"))
 
         _row_y += ROW_H2
         _row_i += 1
