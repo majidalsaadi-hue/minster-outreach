@@ -1596,12 +1596,22 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     HDR_H2  = Inches(0.333)
     ROW_H2  = Inches(0.375)
 
+    # Section title "PENDING / IN PROGRESS ACTIONS"
+    _TBL_TTL_H = Inches(0.26)
+    _add_rect(slide, TBL_X, BOT_Y, TBL_W, _TBL_TTL_H,
+              fill_color=_rgb("#EEE8D5"), line_color=_rgb("#D8D2C0"))
+    _add_text_box(slide, "PENDING / IN PROGRESS ACTIONS",
+                  TBL_X + Inches(0.12), BOT_Y + Inches(0.04),
+                  TBL_W - Inches(0.20), _TBL_TTL_H - Inches(0.06),
+                  font_size=9, bold=True, color=_rgb("#0B4A2F"))
+    _TBL_START_Y = BOT_Y + _TBL_TTL_H
+
     # Table header
     _cx_cur = TBL_X
     for _hdr, _cw in zip(COL_HDR, CW_TBL):
-        _add_rect(slide, _cx_cur, BOT_Y, _cw, HDR_H2,
+        _add_rect(slide, _cx_cur, _TBL_START_Y, _cw, HDR_H2,
                   fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
-        _add_text_box(slide, _hdr, _cx_cur + Inches(0.04), BOT_Y + Inches(0.05),
+        _add_text_box(slide, _hdr, _cx_cur + Inches(0.04), _TBL_START_Y + Inches(0.05),
                       _cw - Inches(0.08), HDR_H2 - Inches(0.06),
                       font_size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
         _cx_cur += _cw
@@ -1624,10 +1634,16 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     else:
         _acts_ordered = acts.copy() if not acts.empty else pd.DataFrame()
 
+    # Filter to rows flagged "YES" for the dashboard if the column exists
+    if not _acts_ordered.empty and "To Be In Dashboard" in _acts_ordered.columns:
+        _dash_mask = _acts_ordered["To Be In Dashboard"].astype(str).str.strip().str.upper() == "YES"
+        if _dash_mask.any():
+            _acts_ordered = _acts_ordered[_dash_mask].reset_index(drop=True)
+
     _pri_colors = {"High": "#C00000", "Very High": "#C00000",
                    "Medium": "#FFC000", "Low": "#0B4A2F"}
 
-    _row_y = BOT_Y + HDR_H2
+    _row_y = _TBL_START_Y + HDR_H2
     _row_i = 0
     for _, _rrow in _acts_ordered.iterrows():
         if _row_y + ROW_H2 > Inches(10.833) - Inches(0.417):
@@ -1714,7 +1730,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
 
     if not _acts_ordered.empty and _row_i == 0:
         _add_text_box(slide, "No action items recorded.",
-                      TBL_X + Inches(0.10), BOT_Y + HDR_H2 + Inches(0.10),
+                      TBL_X + Inches(0.10), _TBL_START_Y + HDR_H2 + Inches(0.10),
                       TBL_W, Inches(0.26),
                       font_size=9, color=_rgb("#888888"))
 

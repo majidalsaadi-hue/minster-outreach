@@ -317,6 +317,7 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
                 "Escalation Flag":    "None",
                 "Remarks":            _safe_get(row, col_map, "Remarks", ""),
                 "AM Input":           _safe_get(row, col_map, "AM Input", ""),
+                "To Be In Dashboard": _safe_get(row, col_map, "To Be In Dashboard", ""),
                 "Outcome":            "",
                 "Next Action":        "",
                 "Next Action Date":   None,
@@ -360,6 +361,7 @@ def _build_legacy_col_map(cols: list[str]) -> dict:
         "Status":            ["status", "update status", "update the status"],
         "Remarks":           ["remarks", "notes", "comments"],
         "AM Input":          ["am input", "am notes", "account manager input"],
+        "To Be In Dashboard":["to be in dashbaord", "to be in dashboard", "in dashboard"],
     }
     for logical, options in candidates.items():
         for opt in options:
