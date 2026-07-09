@@ -580,7 +580,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
     _pri_dot_colors = {"High": "#C00000", "Very High": "#C00000",
                        "Medium": "#FFC000", "Low": "#0B4A2F", "Blocked": "#C00000"}
     for _, _pr in _pia_acts.iterrows():
-        if _pia_row_y + _PIA_ROW_H > Inches(10.833) - Inches(0.417):
+        if _pia_row_y + _PIA_ROW_H > Inches(9.10):
             break
         _alt_bg = _rgb("#FAF7EE") if _pia_i % 2 == 1 else WHITE
         _px = _PIA_X
@@ -669,6 +669,130 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                       _PIA_X + Inches(0.15), _PIA_TBL_Y + _PIA_HDR_H + Inches(0.08),
                       _PIA_W, Inches(0.22),
                       font_size=8.5, color=_rgb("#888888"))
+
+    # ── Opportunities by Sector ───────────────────────────────────────────────
+    _OPS_X = Inches(0.42)
+    _OPS_Y = Inches(9.22)
+    _OPS_W = Inches(5.50)
+    _OPS_H = Inches(1.43)
+    _OPS_TTL_H = Inches(0.26)
+    _add_rect(slide, _OPS_X, _OPS_Y, _OPS_W, _OPS_TTL_H,
+              fill_color=_rgb("#EEE8D5"), line_color=_rgb("#D8D2C0"))
+    _add_text_box(slide, "OPPORTUNITIES BY SECTOR",
+                  _OPS_X + Inches(0.10), _OPS_Y + Inches(0.04),
+                  _OPS_W - Inches(0.12), _OPS_TTL_H - Inches(0.06),
+                  font_size=8.5, bold=True, color=_rgb("#0B4A2F"))
+
+    _ops_body_y = _OPS_Y + _OPS_TTL_H + Inches(0.06)
+    _ops_body_h = _OPS_H - _OPS_TTL_H - Inches(0.08)
+    _add_rect(slide, _OPS_X, _OPS_Y + _OPS_TTL_H, _OPS_W, _OPS_H - _OPS_TTL_H,
+              fill_color=WHITE, line_color=_rgb("#D8D2C0"))
+
+    if not opportunities.empty and "Sector" in opportunities.columns:
+        _sec_opp_counts = opportunities["Sector"].dropna().value_counts().head(6)
+        _OPS_BAR_PALETTE = ["#1B5C3F", "#2D7A54", "#C9974A", "#E0B06A", "#888888", "#AAAAAA"]
+        _sec_max = int(_sec_opp_counts.iloc[0]) if len(_sec_opp_counts) > 0 else 1
+        _sec_bar_max_w = _OPS_W - Inches(1.90)
+        _sec_row_h = min(_ops_body_h / max(len(_sec_opp_counts), 1), Inches(0.22))
+        for _si, (_sname, _scnt) in enumerate(_sec_opp_counts.items()):
+            _scy = _ops_body_y + _si * _sec_row_h
+            _scol = _OPS_BAR_PALETTE[_si % len(_OPS_BAR_PALETTE)]
+            # Dot
+            _sdot = slide.shapes.add_shape(9,
+                        _OPS_X + Inches(0.10), _scy + _sec_row_h / 2 - Inches(0.05),
+                        Inches(0.09), Inches(0.09))
+            _sdot.fill.solid(); _sdot.fill.fore_color.rgb = _rgb(_scol)
+            _sdot.line.fill.background()
+            # Label
+            _add_text_box(slide, str(_sname)[:16],
+                          _OPS_X + Inches(0.23), _scy,
+                          Inches(1.55), _sec_row_h,
+                          font_size=7.5, color=_rgb("#2B2B2B"))
+            # Mini bar background
+            _sbx = _OPS_X + Inches(1.82)
+            _sbw_full = _sec_bar_max_w
+            _sbh = Inches(0.08)
+            _sby = _scy + _sec_row_h / 2 - _sbh / 2
+            _add_rect(slide, _sbx, _sby, _sbw_full, _sbh,
+                      fill_color=_rgb("#E8E4D8"), line_color=_rgb("#E8E4D8"))
+            _sbw_fill = _sbw_full * _scnt / max(_sec_max, 1)
+            if _sbw_fill > 0:
+                _add_rect(slide, _sbx, _sby, _sbw_fill, _sbh,
+                          fill_color=_rgb(_scol), line_color=_rgb(_scol))
+            # Count
+            _add_text_box(slide, str(_scnt),
+                          _sbx + _sbw_full + Inches(0.05), _scy,
+                          Inches(0.28), _sec_row_h,
+                          font_size=7, bold=True, color=_rgb("#555555"))
+
+    # ── IMPORTANT ACTIVATES ───────────────────────────────────────────────────
+    _IA_X = Inches(6.20)
+    _IA_Y = Inches(9.22)
+    _IA_W = Inches(13.10)
+    _IA_H = Inches(1.43)
+    _IA_TTL_H = Inches(0.26)
+    _add_rect(slide, _IA_X, _IA_Y, _IA_W, _IA_TTL_H,
+              fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
+    _add_text_box(slide, "IMPORTANT ACTIVATES",
+                  _IA_X + Inches(0.12), _IA_Y + Inches(0.03),
+                  _IA_W - Inches(0.15), _IA_TTL_H - Inches(0.04),
+                  font_size=8.5, bold=True, color=_rgb("#C89B3C"))
+    _add_rect(slide, _IA_X, _IA_Y + _IA_TTL_H, _IA_W, _IA_H - _IA_TTL_H,
+              fill_color=_rgb("#FAF7EE"), line_color=_rgb("#D8D2C0"))
+
+    # Collect high-priority pending/in-progress actions
+    _ia_items = []
+    try:
+        if not actions.empty and "Status" in actions.columns:
+            _ia_all = actions[~actions["Status"].isin(["Completed", "Cancelled"])].copy()
+            if "Priority" in _ia_all.columns:
+                _ia_hi = _ia_all[_ia_all["Priority"].isin(["Very High", "High", "Blocked"])].copy()
+            else:
+                _ia_hi = _ia_all.copy()
+            if "To Be In Dashboard" in _ia_hi.columns:
+                _ia_yes = _ia_hi[_ia_hi["To Be In Dashboard"].astype(str).str.strip().str.upper() == "YES"]
+                if not _ia_yes.empty:
+                    _ia_hi = _ia_yes
+            _pri_ord2 = {"Very High": 0, "High": 1, "Blocked": 2, "Medium": 3, "Low": 4}
+            if "Priority" in _ia_hi.columns:
+                _ia_hi["_po"] = _ia_hi["Priority"].map(_pri_ord2).fillna(5)
+                _ia_hi = _ia_hi.sort_values("_po")
+            for _, _ia_r in _ia_hi.head(8).iterrows():
+                _co_n = str(_ia_r.get("Company Name", "") or "").strip()[:18]
+                _ac_n = str(_ia_r.get("Action Description", "") or "").strip()
+                if len(_ac_n) > 70:
+                    _ac_n = _ac_n[:69].rsplit(" ", 1)[0] + "…"
+                _pr_n = str(_ia_r.get("Priority", "") or "").strip()
+                _ia_items.append((_co_n, _ac_n, _pr_n))
+    except Exception:
+        pass
+
+    _ia_item_y = _IA_Y + _IA_TTL_H + Inches(0.06)
+    _ia_col_w  = (_IA_W - Inches(0.20)) / max(min(len(_ia_items), 4), 1)
+    _ia_rows   = [_ia_items[i:i+4] for i in range(0, len(_ia_items), 4)]
+    _ia_row_h  = (_IA_H - _IA_TTL_H - Inches(0.10)) / max(len(_ia_rows), 1)
+    for _ir_idx, _ia_row in enumerate(_ia_rows[:2]):
+        _ia_col_x = _IA_X + Inches(0.10)
+        _ia_ry = _ia_item_y + _ir_idx * _ia_row_h
+        for _ic_idx, (_co_n, _ac_n, _pr_n) in enumerate(_ia_row):
+            _pr_col = "#C00000" if _pr_n in ("Very High", "High", "Blocked") else "#888888"
+            _iadot = slide.shapes.add_shape(9,
+                         _ia_col_x + Inches(0.01),
+                         _ia_ry + Inches(0.06),
+                         Inches(0.09), Inches(0.09))
+            _iadot.fill.solid(); _iadot.fill.fore_color.rgb = _rgb(_pr_col)
+            _iadot.line.fill.background()
+            _add_text_box(slide, f"{_co_n}  ·  {_ac_n}",
+                          _ia_col_x + Inches(0.14), _ia_ry,
+                          _ia_col_w - Inches(0.18), _ia_row_h,
+                          font_size=7.5, color=_rgb("#1A1A1A"))
+            _ia_col_x += _ia_col_w
+
+    if not _ia_items:
+        _add_text_box(slide, "No high-priority actions at this time.",
+                      _IA_X + Inches(0.15), _IA_Y + _IA_TTL_H + Inches(0.10),
+                      _IA_W - Inches(0.20), Inches(0.22),
+                      font_size=8, color=_rgb("#888888"))
 
     # Dark green footer
     _add_rect(slide, Inches(0), Inches(10.833), Inches(20.0), Inches(0.417),
