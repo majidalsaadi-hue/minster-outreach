@@ -459,7 +459,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                       fill_color=_rgb(_col), line_color=_rgb(_col))
             _add_text_box(slide, f"{str(_sname)[:14]}: {_scnt}",
                           _leg_x + Inches(0.13), _leg_y,
-                          Inches(3.70), Inches(0.20), font_size=7.5, color=DARK)
+                          Inches(3.70), Inches(0.20), font_size=12, color=DARK)
             _leg_y += Inches(0.24)
 
     # ── Right: By Country donut (compact) ────────────────────────────────────
@@ -494,7 +494,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                       fill_color=_rgb(_col), line_color=_rgb(_col))
             _add_text_box(slide, f"{str(_cname)[:14]}: {_ccnt}",
                           _leg_x + Inches(0.13), _leg_y,
-                          Inches(3.70), Inches(0.20), font_size=7.5, color=DARK)
+                          Inches(3.70), Inches(0.20), font_size=12, color=DARK)
             _leg_y += Inches(0.24)
 
     # ── Opportunities by Sector ───────────────────────────────────────────────
@@ -546,11 +546,6 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             if _sbw_fill > 0:
                 _add_rect(slide, _sbx, _sby, _sbw_fill, _sbh,
                           fill_color=_rgb(_scol), line_color=_rgb(_scol))
-            # Count
-            _add_text_box(slide, str(_scnt),
-                          _sbx + _sbw_full + Inches(0.05), _scy,
-                          Inches(0.40), _sec_row_h,
-                          font_size=22, bold=True, color=_rgb("#555555"))
 
     # ── IMPORTANT ACTIVATES ───────────────────────────────────────────────────
     _IA_X = Inches(6.20)
@@ -1275,9 +1270,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   KPI_W - Inches(1.20), Inches(0.40),
                   font_size=24, bold=True, color=_rgb("#0B4A2F"))
     _add_text_box(slide, goal_text[:220],
-                  C1_X + Inches(0.18), KPI_Y + Inches(0.52),
-                  KPI_W - Inches(0.32), Inches(0.95),
-                  font_size=20, color=_rgb("#2B2B2B"))
+                  C1_X + Inches(1.05), KPI_Y + Inches(0.52),
+                  KPI_W - Inches(1.20), Inches(0.95),
+                  font_size=15, color=_rgb("#2B2B2B"))
 
     # Card 2: Overall Progress (gold background) — big %, subtitle, mini bar
     C2_X = C1_X + KPI_W + KPI_GAP
@@ -1328,9 +1323,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   Inches(1.15), Inches(0.18),
                   font_size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
     _add_text_box(slide, (action_text or "No immediate action required.").upper()[:200],
-                  C3_X + Inches(0.18), KPI_Y + Inches(0.52),
-                  KPI_W - Inches(0.32), Inches(0.95),
-                  font_size=20, bold=True, color=_rgb("#2B2B2B"))
+                  C3_X + Inches(1.10), KPI_Y + Inches(0.48),
+                  KPI_W - Inches(1.25), Inches(0.95),
+                  font_size=15, bold=True, color=_rgb("#2B2B2B"))
 
     # ── Journey Timeline: y=4.145", w=8.854" — meetings as milestones ────────
     TL_X = Inches(0.417)
@@ -1440,15 +1435,11 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 _dot.line.fill.background()
                 # Month label above dot (for milestones at the top)
                 _lbl_y = AX_Y - Inches(0.60) if _above else AX_Y + Inches(0.28)
-                _add_text_box(slide, _elbl[:18],
-                              _ex - Inches(0.65), _lbl_y,
-                              Inches(1.30), Inches(0.24),
-                              font_size=16, color=_rgb(_ecol), align=PP_ALIGN.CENTER)
                 if _esub:
                     _add_text_box(slide, _esub,
-                                  _ex - Inches(0.65), _lbl_y + Inches(0.24),
-                                  Inches(1.30), Inches(0.22),
-                                  font_size=14, color=MGRAY, align=PP_ALIGN.CENTER)
+                                  _ex - Inches(0.65), _lbl_y,
+                                  Inches(1.30), Inches(0.32),
+                                  font_size=14, color=_rgb(_ecol), align=PP_ALIGN.CENTER)
     except Exception:
         pass
 
@@ -1707,14 +1698,14 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _desc2 = str(_rrow.get("Action Description","") or "")
         _add_text_box(slide, _desc2[:80], _cx_cur + Inches(0.05), _row_y + Inches(0.04),
                       CW_TBL[1] - Inches(0.08), ROW_H2 - Inches(0.06),
-                      font_size=13, color=_rgb("#2B2B2B"))
+                      font_size=10, color=_rgb("#2B2B2B"))
         _cx_cur += CW_TBL[1]
         # Col 2: Owner
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[2], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
         _owner2 = str(_rrow.get("Assigned To","") or "")[:22]
         _add_text_box(slide, _owner2, _cx_cur + Inches(0.04), _row_y + Inches(0.07),
                       CW_TBL[2] - Inches(0.06), Inches(0.26),
-                      font_size=13, color=_rgb("#2B2B2B"))
+                      font_size=10, color=_rgb("#2B2B2B"))
         _cx_cur += CW_TBL[2]
         # Col 3: Start Date
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[3], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
