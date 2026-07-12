@@ -1138,20 +1138,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     # ── Slide background: light beige ────────────────────────────────────────
     _fill_background(slide, _rgb("#FAF7EE"))
 
-    # ── Right vertical strip: dark green, rotated label ──────────────────────
+    # ── Right vertical strip: dark green ─────────────────────────────────────
     _add_rect(slide, Inches(19.375), Inches(0), Inches(0.208), Inches(11.25),
               fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
-    _vstrip_tb = slide.shapes.add_textbox(Inches(8.542), Inches(9.896), Inches(10.833), Inches(0.208))
-    _vstrip_tf = _vstrip_tb.text_frame
-    _vstrip_tf.word_wrap = False
-    _vstrip_tf.auto_size = MSO_AUTO_SIZE.NONE
-    _vstrip_p = _vstrip_tf.paragraphs[0]
-    _vstrip_p.alignment = PP_ALIGN.CENTER
-    _vstrip_r = _vstrip_p.add_run()
-    _vstrip_r.text = f"Man-marking Weekly Report  ·  Executive Outreach  ·  Minister Office"
-    _vstrip_r.font.size = Pt(7)
-    _vstrip_r.font.color.rgb = _rgb("#C89B3C")
-    _vstrip_tb.rotation = 90
 
     # ── Header: dark green bar, h=1.354" ─────────────────────────────────────
     HDR_H = Inches(1.354)
@@ -1288,9 +1277,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   Inches(2.60), Inches(0.90),
                   font_size=52, bold=True, color=WHITE)
     _add_text_box(slide, f"{n_done_s + n_prog_s} of {n_total} actions active",
-                  C2_X + Inches(1.00), KPI_Y + Inches(1.10),
-                  KPI_W - Inches(1.20), Inches(0.30),
-                  font_size=20, color=WHITE)
+                  C2_X + Inches(1.00), KPI_Y + Inches(0.98),
+                  KPI_W - Inches(1.20), Inches(0.26),
+                  font_size=16, color=WHITE)
     _pb_x = C2_X + Inches(1.00)
     _pb_y = KPI_Y + KPI_H - Inches(0.23)
     _pb_w = KPI_W - Inches(1.20)
@@ -1439,7 +1428,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                     _add_text_box(slide, _esub,
                                   _ex - Inches(0.65), _lbl_y,
                                   Inches(1.30), Inches(0.32),
-                                  font_size=14, color=_rgb(_ecol), align=PP_ALIGN.CENTER)
+                                  font_size=7, color=_rgb(_ecol), align=PP_ALIGN.CENTER)
     except Exception:
         pass
 
@@ -1507,8 +1496,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     )
     _add_text_box(slide, f"OPPORTUNITIES ({_n_active_opps} ACTIVE)",
                   OP_X + Inches(0.12), BOT_Y + Inches(0.05),
-                  OP_W - Inches(0.20), Inches(0.38),
-                  font_size=22, bold=True, color=_rgb("#0B4A2F"))
+                  OP_W - Inches(0.20), Inches(0.26),
+                  font_size=14, bold=True, color=_rgb("#0B4A2F"))
 
     def _get_sector_icon(sec):
         _si = {
@@ -1569,22 +1558,23 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _add_text_box(slide, _oname[:36],
                           _txt_x, _opp_item_y + Inches(0.04),
                           _txt_w, Inches(0.32),
-                          font_size=18, bold=True, color=_rgb("#2B2B2B"))
+                          font_size=14, bold=True, color=_rgb("#2B2B2B"))
             # Subtitle (description / partners)
             if _osub and _osub not in ("nan", ""):
                 _add_text_box(slide, _osub[:42],
                               _txt_x, _opp_item_y + Inches(0.36),
                               _txt_w, Inches(0.26),
                               font_size=16, color=_rgb("#888888"))
-            # Stage badge pill
+            # Stage badge pill — shifted right so it doesn't overlap wrapped name text
             if _ostage and _ostage not in ("nan", ""):
                 _bcol  = _stage_badge_col(_ostage)
                 _bdg_y = _opp_item_y + _opp_card_h - Inches(0.24)
                 _bdg_w = Inches(1.30); _bdg_h = Inches(0.18)
-                _bdg = slide.shapes.add_shape(9, _txt_x, _bdg_y, _bdg_w, _bdg_h)
+                _bdg_x = _txt_x + Inches(0.60)
+                _bdg = slide.shapes.add_shape(9, _bdg_x, _bdg_y, _bdg_w, _bdg_h)
                 _bdg.fill.solid(); _bdg.fill.fore_color.rgb = _rgb(_bcol); _bdg.line.fill.background()
                 _add_text_box(slide, _ostage[:20].upper(),
-                              _txt_x, _bdg_y, _bdg_w, _bdg_h,
+                              _bdg_x, _bdg_y, _bdg_w, _bdg_h,
                               font_size=6.0, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
             _opp_item_y += _opp_card_h + Inches(0.06)
     else:
@@ -1623,13 +1613,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         return text.strip()
 
     # Section title "PENDING / IN PROGRESS ACTIONS"
-    _TBL_TTL_H = Inches(0.26)
+    _TBL_TTL_H = Inches(0.35)
     _add_rect(slide, TBL_X, BOT_Y, TBL_W, _TBL_TTL_H,
               fill_color=_rgb("#EEE8D5"), line_color=_rgb("#D8D2C0"))
     _add_text_box(slide, "PENDING / IN PROGRESS ACTIONS",
-                  TBL_X + Inches(0.12), BOT_Y + Inches(0.02),
-                  TBL_W - Inches(0.20), _TBL_TTL_H - Inches(0.02),
-                  font_size=22, bold=True, color=_rgb("#0B4A2F"))
+                  TBL_X + Inches(0.12), BOT_Y + Inches(0.03),
+                  TBL_W - Inches(0.20), _TBL_TTL_H - Inches(0.04),
+                  font_size=16, bold=True, color=_rgb("#0B4A2F"))
     _TBL_START_Y = BOT_Y + _TBL_TTL_H
 
     # Table header
