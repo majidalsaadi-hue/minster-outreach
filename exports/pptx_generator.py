@@ -1422,13 +1422,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 _dot = slide.shapes.add_shape(9, _ex - _dot_r, _dot_y, _dot_r * 2, _dot_r * 2)
                 _dot.fill.solid(); _dot.fill.fore_color.rgb = _rgb(_ecol)
                 _dot.line.fill.background()
-                # Month label above dot (for milestones at the top)
-                _lbl_y = AX_Y - Inches(0.60) if _above else AX_Y + Inches(0.28)
+                # Short description clipped tight to axis line
                 if _esub:
+                    _lbl_y = (AX_Y - Inches(0.25) if _above else AX_Y + Inches(0.22))
                     _add_text_box(slide, _esub,
                                   _ex - Inches(0.65), _lbl_y,
-                                  Inches(1.30), Inches(0.32),
-                                  font_size=7, color=_rgb(_ecol), align=PP_ALIGN.CENTER)
+                                  Inches(1.30), Inches(0.15),
+                                  font_size=6, color=_rgb(_ecol), align=PP_ALIGN.CENTER)
     except Exception:
         pass
 
