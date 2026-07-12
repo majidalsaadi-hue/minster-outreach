@@ -395,21 +395,21 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
 
         # Overall average row
         _add_text_box(slide, "OVERALL AVG", Inches(0.42), by,
-                      Inches(3.0), Inches(0.22), font_size=8, bold=True, color=GREEN)
+                      Inches(3.0), Inches(0.22), font_size=12, bold=True, color=GREEN)
         bx = Inches(3.60)
         _add_rect(slide, bx, by + Inches(0.03), MAX_BAR_W, bar_h,
                   fill_color=_rgb("#E0E0E0"), line_color=_rgb("#E0E0E0"))
         _add_rect(slide, bx, by + Inches(0.03), MAX_BAR_W * _avg_co_pct / 100, bar_h,
                   fill_color=GREEN, line_color=GREEN)
         _add_text_box(slide, f"{_avg_co_pct}%", bx + MAX_BAR_W + Inches(0.08), by,
-                      Inches(0.5), Inches(0.22), font_size=8, bold=True, color=GREEN)
+                      Inches(0.5), Inches(0.22), font_size=12, bold=True, color=GREEN)
         by += bar_h + Inches(0.12)
 
         sorted_cos = sorted(co_stats.items(), key=lambda x: x[1][0], reverse=True)[:10]
 
         for co_name_b, (pct_g, done_g, prog_g, ns_g, total_g) in sorted_cos:
             _add_text_box(slide, str(co_name_b)[:24], Inches(0.42), by,
-                          Inches(3.0), Inches(0.24), font_size=8, color=DARK)
+                          Inches(3.0), Inches(0.24), font_size=12, color=DARK)
             bx = Inches(3.60)
             _add_rect(slide, bx, by + Inches(0.03), MAX_BAR_W, bar_h,
                       fill_color=_rgb("#E0E0E0"), line_color=_rgb("#E0E0E0"))
@@ -423,7 +423,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                 _add_rect(slide, bx + prog_off, by + Inches(0.03), prog_w, bar_h,
                           fill_color=GOLD, line_color=GOLD)
             _add_text_box(slide, f"{pct_g}%", bx + MAX_BAR_W + Inches(0.08), by,
-                          Inches(0.5), Inches(0.24), font_size=8, bold=True, color=DARK)
+                          Inches(0.5), Inches(0.24), font_size=10, bold=True, color=DARK)
             by += bar_h + bar_gap
             if by > Inches(6.60):
                 break
@@ -534,7 +534,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             _add_text_box(slide, str(_sname)[:16],
                           _OPS_X + Inches(0.23), _scy,
                           Inches(1.55), _sec_row_h,
-                          font_size=7.5, color=_rgb("#2B2B2B"))
+                          font_size=12, color=_rgb("#2B2B2B"))
             # Mini bar background
             _sbx = _OPS_X + Inches(1.82)
             _sbw_full = _sec_bar_max_w
@@ -550,7 +550,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             _add_text_box(slide, str(_scnt),
                           _sbx + _sbw_full + Inches(0.05), _scy,
                           Inches(0.28), _sec_row_h,
-                          font_size=7, bold=True, color=_rgb("#555555"))
+                          font_size=18, bold=True, color=_rgb("#555555"))
 
     # ── IMPORTANT ACTIVATES ───────────────────────────────────────────────────
     _IA_X = Inches(6.20)
@@ -612,7 +612,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
             _add_text_box(slide, f"{_co_n}  ·  {_ac_n}",
                           _ia_col_x + Inches(0.14), _ia_ry,
                           _ia_col_w - Inches(0.18), _ia_row_h,
-                          font_size=7.5, color=_rgb("#1A1A1A"))
+                          font_size=10, color=_rgb("#1A1A1A"))
             _ia_col_x += _ia_col_w
 
     if not _ia_items:
@@ -1212,12 +1212,12 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _add_text_box(slide, _mlbl,
                       _icx + _icon_r + Inches(0.083), META_Y + Inches(0.10),
                       _meta_field_w - _icon_r * 2 - Inches(0.25), Inches(0.22),
-                      font_size=8, color=_rgb("#888888"))
+                      font_size=16, color=_rgb("#888888"))
         # Value
         _add_text_box(slide, str(_mval)[:30],
                       _icx + _icon_r + Inches(0.083), META_Y + Inches(0.35),
                       _meta_field_w - _icon_r * 2 - Inches(0.25), Inches(0.40),
-                      font_size=11, bold=True, color=_rgb("#2B2B2B"))
+                      font_size=16, bold=True, color=_rgb("#2B2B2B"))
     # Gold line at bottom of meta bar
     _add_rect(slide, Inches(0), META_Y + META_H, Inches(19.375), Inches(0.021),
               fill_color=_rgb("#C89B3C"), line_color=_rgb("#C89B3C"))
@@ -1273,11 +1273,11 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, "STRATEGIC GOAL",
                   C1_X + Inches(1.05), KPI_Y + Inches(0.10),
                   KPI_W - Inches(1.20), Inches(0.24),
-                  font_size=9, bold=True, color=_rgb("#0B4A2F"))
+                  font_size=16, bold=True, color=_rgb("#0B4A2F"))
     _add_text_box(slide, goal_text[:220],
                   C1_X + Inches(0.18), KPI_Y + Inches(0.50),
                   KPI_W - Inches(0.32), Inches(0.95),
-                  font_size=8.5, color=_rgb("#2B2B2B"))
+                  font_size=14, color=_rgb("#2B2B2B"))
 
     # Card 2: Overall Progress (gold background) — big %, subtitle, mini bar
     C2_X = C1_X + KPI_W + KPI_GAP
@@ -1287,7 +1287,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, "OVERALL PROGRESS",
                   C2_X + Inches(1.05), KPI_Y + Inches(0.10),
                   KPI_W - Inches(1.20), Inches(0.24),
-                  font_size=9, bold=True, color=WHITE)
+                  font_size=16, bold=True, color=WHITE)
     _add_text_box(slide, f"{pct_s}%",
                   C2_X + Inches(1.00), KPI_Y + Inches(0.28),
                   Inches(2.60), Inches(0.90),
@@ -1295,7 +1295,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, f"{n_done_s + n_prog_s} of {n_total} actions active",
                   C2_X + Inches(1.00), KPI_Y + Inches(1.10),
                   KPI_W - Inches(1.20), Inches(0.22),
-                  font_size=8.5, color=WHITE)
+                  font_size=14, color=WHITE)
     _pb_x = C2_X + Inches(1.00)
     _pb_y = KPI_Y + KPI_H - Inches(0.23)
     _pb_w = KPI_W - Inches(1.20)
@@ -1314,7 +1314,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, "IMMEDIATE ACTION",
                   C3_X + Inches(1.05), KPI_Y + Inches(0.10),
                   KPI_W - Inches(2.80), Inches(0.24),
-                  font_size=9, bold=True, color=_rgb("#C0392B"))
+                  font_size=16, bold=True, color=_rgb("#C0392B"))
     # Priority badge — top right
     _add_rect(slide, C3_X + KPI_W - Inches(1.30), KPI_Y + Inches(0.07),
               Inches(1.15), Inches(0.32),
@@ -1330,7 +1330,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, (action_text or "No immediate action required.").upper()[:200],
                   C3_X + Inches(0.18), KPI_Y + Inches(0.50),
                   KPI_W - Inches(0.32), Inches(0.95),
-                  font_size=8.5, bold=True, color=_rgb("#2B2B2B"))
+                  font_size=14, bold=True, color=_rgb("#2B2B2B"))
 
     # ── Journey Timeline: y=4.145", w=8.854" — meetings as milestones ────────
     TL_X = Inches(0.417)
@@ -1344,7 +1344,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, "JOURNEY TIMELINE",
                   TL_X + Inches(0.15), TL_Y + Inches(0.08),
                   Inches(3.5), Inches(0.22),
-                  font_size=9, bold=True, color=_rgb("#0B4A2F"))
+                  font_size=16, bold=True, color=_rgb("#0B4A2F"))
 
     AX_Y = TL_Y + Inches(1.05)
     _add_rect(slide, TL_X + Inches(0.20), AX_Y, TL_W - Inches(0.40), Inches(0.015),
@@ -1410,7 +1410,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                     _add_text_box(slide, _lbl,
                                   _mx - Inches(0.30), AX_Y + Inches(0.12),
                                   Inches(0.62), Inches(0.20),
-                                  font_size=9, bold=True, color=_rgb("#333333"),
+                                  font_size=14, bold=True, color=_rgb("#333333"),
                                   align=PP_ALIGN.CENTER)
                 _mo = (_mo.replace(year=_mo.year + 1, month=1)
                        if _mo.month == 12 else _mo.replace(month=_mo.month + 1))
@@ -1443,12 +1443,12 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                 _add_text_box(slide, _elbl[:18],
                               _ex - Inches(0.55), _lbl_y,
                               Inches(1.10), Inches(0.18),
-                              font_size=7.5, color=_rgb(_ecol), align=PP_ALIGN.CENTER)
+                              font_size=12, color=_rgb(_ecol), align=PP_ALIGN.CENTER)
                 if _esub:
                     _add_text_box(slide, _esub,
                                   _ex - Inches(0.55), _lbl_y + Inches(0.18),
                                   Inches(1.10), Inches(0.16),
-                                  font_size=6.5, color=MGRAY, align=PP_ALIGN.CENTER)
+                                  font_size=11, color=MGRAY, align=PP_ALIGN.CENTER)
     except Exception:
         pass
 
@@ -1465,7 +1465,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, "Actions Summary",
                   AS_X + Inches(0.15), AS_Y + Inches(0.08),
                   Inches(3.0), Inches(0.22),
-                  font_size=9, bold=True, color=_rgb("#0B4A2F"))
+                  font_size=14, bold=True, color=_rgb("#0B4A2F"))
 
     # 5 count circles with distinct Unicode icons
     _circ_items = [
@@ -1475,7 +1475,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         (str(n_block_s), "Blocked",    "#C0392B", "⊘"),
         (str(n_opps_s),  "Opps",       "#0B4A2F", "★"),
     ]
-    _circ_r   = Inches(0.417)
+    _circ_r   = Inches(0.60)
     _circ_gap = (AS_W - Inches(0.30)) / 5
     for _ci_idx, (_cval, _clbl, _ccol, _cicon) in enumerate(_circ_items):
         _cx = AS_X + Inches(0.15) + _circ_gap * _ci_idx + _circ_gap / 2
@@ -1486,16 +1486,16 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _add_text_box(slide, _cicon,
                       _cx - _circ_r, _cy - _circ_r,
                       _circ_r*2, _circ_r,
-                      font_size=13, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+                      font_size=30, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
         # Count in lower half
         _add_text_box(slide, _cval,
                       _cx - _circ_r, _cy - Inches(0.05),
                       _circ_r*2, _circ_r,
-                      font_size=14, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+                      font_size=24, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
         _add_text_box(slide, _clbl,
                       _cx - _circ_r - Inches(0.10), _cy + _circ_r + Inches(0.02),
                       _circ_r*2 + Inches(0.20), Inches(0.22),
-                      font_size=7.5, color=_rgb("#555555"), align=PP_ALIGN.CENTER)
+                      font_size=11, color=_rgb("#555555"), align=PP_ALIGN.CENTER)
 
     # ── Bottom section: y=6.437" — Opportunities (left) + Actions table (right)
     BOT_Y = Inches(6.437)
@@ -1517,7 +1517,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, f"OPPORTUNITIES ({_n_active_opps} ACTIVE)",
                   OP_X + Inches(0.12), BOT_Y + Inches(0.08),
                   OP_W - Inches(0.20), Inches(0.26),
-                  font_size=9, bold=True, color=_rgb("#0B4A2F"))
+                  font_size=16, bold=True, color=_rgb("#0B4A2F"))
 
     def _get_sector_icon(sec):
         _si = {
@@ -1578,13 +1578,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _add_text_box(slide, _oname[:36],
                           _txt_x, _opp_item_y + Inches(0.05),
                           _txt_w, Inches(0.22),
-                          font_size=8.5, bold=True, color=_rgb("#2B2B2B"))
+                          font_size=14, bold=True, color=_rgb("#2B2B2B"))
             # Subtitle (description / partners)
             if _osub and _osub not in ("nan", ""):
                 _add_text_box(slide, _osub[:42],
                               _txt_x, _opp_item_y + Inches(0.26),
                               _txt_w, Inches(0.16),
-                              font_size=7.0, color=_rgb("#888888"))
+                              font_size=14, color=_rgb("#888888"))
             # Stage badge pill
             if _ostage and _ostage not in ("nan", ""):
                 _bcol  = _stage_badge_col(_ostage)
@@ -1638,7 +1638,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_text_box(slide, "PENDING / IN PROGRESS ACTIONS",
                   TBL_X + Inches(0.12), BOT_Y + Inches(0.04),
                   TBL_W - Inches(0.20), _TBL_TTL_H - Inches(0.06),
-                  font_size=9, bold=True, color=_rgb("#0B4A2F"))
+                  font_size=16, bold=True, color=_rgb("#0B4A2F"))
     _TBL_START_Y = BOT_Y + _TBL_TTL_H
 
     # Table header
@@ -1648,7 +1648,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
         _add_text_box(slide, _hdr, _cx_cur + Inches(0.04), _TBL_START_Y + Inches(0.05),
                       _cw - Inches(0.08), HDR_H2 - Inches(0.06),
-                      font_size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+                      font_size=11, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
         _cx_cur += _cw
 
     # Sort actions: pending first by due date, then done
@@ -1700,35 +1700,35 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[0], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
         _add_text_box(slide, str(_row_i+1), _cx_cur + Inches(0.02), _row_y + Inches(0.09),
                       CW_TBL[0] - Inches(0.04), Inches(0.22),
-                      font_size=9, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
+                      font_size=11, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
         _cx_cur += CW_TBL[0]
         # Col 1: Action
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[1], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
         _desc2 = str(_rrow.get("Action Description","") or "")
         _add_text_box(slide, _desc2[:80], _cx_cur + Inches(0.05), _row_y + Inches(0.06),
                       CW_TBL[1] - Inches(0.08), ROW_H2 - Inches(0.08),
-                      font_size=8.5, color=_rgb("#2B2B2B"))
+                      font_size=11, color=_rgb("#2B2B2B"))
         _cx_cur += CW_TBL[1]
         # Col 2: Owner
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[2], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
         _owner2 = str(_rrow.get("Assigned To","") or "")[:22]
         _add_text_box(slide, _owner2, _cx_cur + Inches(0.04), _row_y + Inches(0.09),
                       CW_TBL[2] - Inches(0.06), Inches(0.22),
-                      font_size=8.5, color=_rgb("#2B2B2B"))
+                      font_size=11, color=_rgb("#2B2B2B"))
         _cx_cur += CW_TBL[2]
         # Col 3: Start Date
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[3], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
         _sdate = _fmt_dt2(_rrow.get("Start Date", _rrow.get("Created Date", None)))
         _add_text_box(slide, _sdate, _cx_cur + Inches(0.04), _row_y + Inches(0.09),
                       CW_TBL[3] - Inches(0.06), Inches(0.22),
-                      font_size=8.5, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
+                      font_size=11, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
         _cx_cur += CW_TBL[3]
         # Col 4: End Date
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[4], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
         _edate = _fmt_dt2(_rrow.get("Due Date", None))
         _add_text_box(slide, _edate, _cx_cur + Inches(0.04), _row_y + Inches(0.09),
                       CW_TBL[4] - Inches(0.06), Inches(0.22),
-                      font_size=8.5, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
+                      font_size=11, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
         _cx_cur += CW_TBL[4]
         # Col 5: Priority (dot + text)
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[5], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
@@ -1741,7 +1741,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _ds.fill.solid(); _ds.fill.fore_color.rgb = _rgb(_pri_col2); _ds.line.fill.background()
         _add_text_box(slide, _pri2, _cx_cur + Inches(0.28), _row_y + Inches(0.09),
                       CW_TBL[5] - Inches(0.32), Inches(0.22),
-                      font_size=8.5, color=_rgb(_pri_col2))
+                      font_size=11, color=_rgb(_pri_col2))
         _cx_cur += CW_TBL[5]
         # Col 6: Progress %
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[6], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
@@ -1758,7 +1758,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _add_text_box(slide, f"{int(_prog_v*100)}%",
                       _cx_cur, _by2 + _bh2 + Inches(0.02),
                       CW_TBL[6], Inches(0.18),
-                      font_size=8, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
+                      font_size=11, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
         _cx_cur += CW_TBL[6]
 
         # Col 7: Update (intelligent summary of Remarks + AM Input)
@@ -1767,7 +1767,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _add_text_box(slide, _upd2,
                       _cx_cur + Inches(0.04), _row_y + Inches(0.05),
                       CW_TBL[7] - Inches(0.06), ROW_H2 - Inches(0.06),
-                      font_size=7.5, color=_rgb("#444444"))
+                      font_size=11, color=_rgb("#444444"))
 
         _row_y += ROW_H2
         _row_i += 1
@@ -1776,7 +1776,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         _add_text_box(slide, "No action items recorded.",
                       TBL_X + Inches(0.10), _TBL_START_Y + HDR_H2 + Inches(0.10),
                       TBL_W, Inches(0.26),
-                      font_size=9, color=_rgb("#888888"))
+                      font_size=11, color=_rgb("#888888"))
 
     # ── Footer ────────────────────────────────────────────────────────────────
     _add_rect(slide, Inches(0), Inches(10.833), Inches(19.375), Inches(0.417),
