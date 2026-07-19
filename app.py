@@ -78,11 +78,13 @@ from exports.excel_exporter import export_status_excel, generate_template
 # ── Session state initialisation ─────────────────────────────────────────────
 def _init_state():
     defaults = {
-        "lang":     "en",
-        "dfs":      None,
+        "lang":             "en",
+        "dfs":              None,
         "last_upload_name": None,
         "last_upload_time": None,
-        "summary":  None,
+        "summary":          None,
+        "last_pptx_bytes":  None,
+        "last_pptx_name":   None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -192,6 +194,17 @@ def render_sidebar():
         )
         if uploaded is not None:
             _handle_upload(uploaded)
+
+        # Instant PPTX download — appears as soon as data is loaded
+        if st.session_state.get("last_pptx_bytes"):
+            st.download_button(
+                "⬇️ Download Dashboard (.pptx)",
+                data=st.session_state["last_pptx_bytes"],
+                file_name=st.session_state.get("last_pptx_name", "MoI_Dashboard.pptx"),
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                use_container_width=True,
+                key="sidebar_pptx_dl",
+            )
 
         # Clear saved data button
         if st.session_state["dfs"] is not None:
@@ -372,6 +385,19 @@ def _handle_upload(uploaded_file):
     st.session_state["last_upload_time"] = date.today().strftime("%d %b %Y")
     save_session(dfs)
     st.success(f"✅ {T('success_upload')}: **{uploaded_file.name}**")
+
+    # Auto-generate the All Companies Dashboard PPTX immediately after upload
+    if generate_pptx_all_companies_dashboard is not None:
+        try:
+            with st.spinner("Generating All Companies Dashboard…"):
+                _note = st.session_state.get("ministry_note_input", "") or ""
+                _auto_pptx = generate_pptx_all_companies_dashboard(dfs, lang="en", ministry_note=_note)
+            _auto_fname = f"MoI_AllCompanies_Dashboard_{date.today().strftime('%Y-%m-%d')}.pptx"
+            st.session_state["last_pptx_bytes"] = _auto_pptx
+            st.session_state["last_pptx_name"]  = _auto_fname
+            st.success("📊 Dashboard ready — download from the sidebar below.")
+        except Exception as _pptx_err:
+            st.warning(f"Dashboard generation failed: {_pptx_err}")
 
 
 # ── Overdue action banner ─────────────────────────────────────────────────────
