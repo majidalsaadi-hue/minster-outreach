@@ -1211,6 +1211,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         "low":    "#888888",   # grey
     }
     _pri_key = _priority_val.lower()
+    if _pri_key not in _pri_badge_colors:
+        _pri_key = "low"           # blank or unrecognised → grey LOW
+        _priority_val = "Low"
     if _pri_key in _pri_badge_colors:
         _pbadge_col = _rgb(_pri_badge_colors[_pri_key])
         _pbadge_x = Inches(14.5)
