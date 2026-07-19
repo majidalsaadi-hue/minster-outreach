@@ -572,7 +572,8 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
             else:
                 _ia_hi = _ia_all.copy()
             if "To Be In Dashboard" in _ia_hi.columns:
-                _ia_yes = _ia_hi[_ia_hi["To Be In Dashboard"].astype(str).str.strip().str.upper() == "YES"]
+                _dash_flag = _ia_hi["To Be In Dashboard"].astype(str).str.strip().str.upper()
+                _ia_yes = _ia_hi[_dash_flag.isin(["YES", "TOP"])]
                 if not _ia_yes.empty:
                     _ia_hi = _ia_yes
             _pri_ord2 = {"Very High": 0, "High": 1, "Blocked": 2, "Medium": 3, "Low": 4}
@@ -637,9 +638,17 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                   Inches(0), Inches(10.833), Inches(20.0), Inches(0.417),
                   font_size=11, color=_rgb("#C89B3C"), align=PP_ALIGN.CENTER)
 
-    # ── Slides 2+: one per company (full design, logos + charts skipped for speed)
+    # ── Slides 2+: one per company — sorted High → Medium → Low priority
     if not investors.empty and "Company Name" in investors.columns:
-        for _, inv in investors.iterrows():
+        _pri_sort_map = {"high": 0, "medium": 1, "low": 2}
+        _inv_sorted = investors.copy()
+        _inv_sorted["_ps"] = (
+            _inv_sorted.get("Priority Classification", pd.Series(dtype=str))
+            .fillna("").str.strip().str.lower()
+            .map(_pri_sort_map).fillna(3)
+        )
+        _inv_sorted = _inv_sorted.sort_values("_ps").drop(columns=["_ps"])
+        for _, inv in _inv_sorted.iterrows():
             co = inv.get("Company Name", "")
             if not co:
                 continue
@@ -1697,9 +1706,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     else:
         _acts_ordered = acts.copy() if not acts.empty else pd.DataFrame()
 
-    # Filter to rows flagged "YES" for the dashboard if the column exists
+    # Filter to rows flagged "YES" or "TOP" for the dashboard if the column exists
     if not _acts_ordered.empty and "To Be In Dashboard" in _acts_ordered.columns:
-        _dash_mask = _acts_ordered["To Be In Dashboard"].astype(str).str.strip().str.upper() == "YES"
+        _dash_mask = _acts_ordered["To Be In Dashboard"].astype(str).str.strip().str.upper().isin(["YES", "TOP"])
         if _dash_mask.any():
             _acts_ordered = _acts_ordered[_dash_mask].reset_index(drop=True)
 
@@ -2562,6 +2571,15 @@ def _build_strategic_brief(acts, opps, meetings, inv_row):
     blocker_descs = []
     eng_counts: dict = {}
 
+    # If any action is flagged TOP, use it directly as the IMMEDIATE ACTION text
+    _top_action_text = ""
+    if not acts.empty and "To Be In Dashboard" in acts.columns:
+        _top_acts = acts[acts["To Be In Dashboard"].astype(str).str.strip().str.upper() == "TOP"]
+        if not _top_acts.empty:
+            _top_desc = str(_top_acts.iloc[0].get("Action Description", "")).strip()
+            if _top_desc and _top_desc not in ("nan", ""):
+                _top_action_text = _top_desc
+
     if not acts.empty and "Status" in acts.columns:
         sl = acts["Status"].fillna("")
         completed = int(sl.str.lower().str.contains("complet").sum())
@@ -2629,7 +2647,10 @@ def _build_strategic_brief(acts, opps, meetings, inv_row):
         strat += "Next step: formalise opportunity pipeline."
 
     # ── IMMEDIATE ACTION (renamed from "Minister Action") ────────────────────
-    if minister_act and minister_act not in ("None Required", "—", ""):
+    # "TOP" flagged action overrides everything else
+    if _top_action_text:
+        m_act = _top_action_text
+    elif minister_act and minister_act not in ("None Required", "—", ""):
         m_act = f"{minister_act}. Immediate senior-level engagement needed."
     elif blocked_n > 0 and blocker_descs:
         m_act = f"Resolve: '{blocker_descs[0]}' — senior intervention needed to unblock and restore momentum."
