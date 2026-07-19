@@ -328,6 +328,37 @@ def _handle_upload(uploaded_file):
     if warnings:
         st.warning("Schema warnings:\n" + "\n".join(f"• {w}" for w in warnings))
 
+    # ── Company consistency check ─────────────────────────────────────────
+    _master = dfs.get("Investor Master", pd.DataFrame())
+    _master_cos = (
+        set(_master["Company Name"].dropna().str.strip().str.lower())
+        if not _master.empty and "Company Name" in _master.columns
+        else set()
+    )
+    _missing: dict = {}   # {company_name: [source_sheet, ...]}
+    for _src_sheet in ("Action Items", "Meeting Log", "Opportunity Pipeline"):
+        _src_df = dfs.get(_src_sheet, pd.DataFrame())
+        if _src_df.empty or "Company Name" not in _src_df.columns:
+            continue
+        for _co in _src_df["Company Name"].dropna().unique():
+            _co_key = str(_co).strip().lower()
+            if _co_key and _co_key not in _master_cos:
+                _co_display = str(_co).strip()
+                _missing.setdefault(_co_display, [])
+                if _src_sheet not in _missing[_co_display]:
+                    _missing[_co_display].append(_src_sheet)
+    if _missing:
+        _msg_lines = [
+            f"**{co}** _(found in: {', '.join(sheets)})_"
+            for co, sheets in sorted(_missing.items())
+        ]
+        st.warning(
+            f"⚠️ **{len(_missing)} company name(s) in your data are not in the Investor Master sheet** — "
+            f"their slides will be generated but metadata (Country, Sector, Stage, RM) will be blank.\n\n"
+            + "\n".join(f"• {l}" for l in _msg_lines)
+            + "\n\n_Add these companies to the Investor Master tab to get fully populated slides._"
+        )
+
     # Preserve existing RM Tasks if the uploaded Excel has no Tasks sheet
     existing_dfs = st.session_state.get("dfs") or {}
     existing_tasks = existing_dfs.get("RM Tasks", pd.DataFrame())
