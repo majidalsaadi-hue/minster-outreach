@@ -211,6 +211,7 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
         min_act   = _find_header_value(df_raw, 11, 22, ["minister action", "immediate action", "minister action required"])
         blocker   = _find_header_value(df_raw, 11, 22, ["blocker", "blocker level"])
         priority_hdr = _find_header_value(df_raw, 11, 18, ["priority"])
+        file_owner   = _find_header_value(df_raw, 11, 18, ["file owner", "file_owner", "fileowner"])
 
         # Override sheet-name-derived company with the name in the Excel header
         if company_name_xl:
@@ -245,6 +246,7 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
             "Minister Action Required":   _min_act_str,
             "Blocker Level":              _blocker_str,
             "Priority Classification":    _sstr(priority_hdr),
+            "File Owner":                 _sstr(file_owner),
         })
 
         # ── Extract opportunities from header block (rows 14-19, col H) ──────

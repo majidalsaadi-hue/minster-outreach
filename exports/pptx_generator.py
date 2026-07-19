@@ -1194,8 +1194,9 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   "Ministry of Investment  ·  Minister Office  ·  Executive Outreach  ·  Man-marking Weekly Report",
                   Inches(0.417), Inches(1.00), Inches(14.0), Inches(0.26),
                   font_size=10, color=_rgb("#C89B3C"))
-    # File owner + date — top right
-    _add_text_box(slide, "File owner: Majed H. Al Saadi",
+    # File owner + date — top right (from Excel header; fallback to default name)
+    _file_owner = str(_mv(inv_row, "File Owner", "")).strip() or "Majed H. Al Saadi"
+    _add_text_box(slide, f"File owner: {_file_owner}",
                   Inches(14.5), Inches(0.10), Inches(4.60), Inches(0.28),
                   font_size=12, color=WHITE, align=PP_ALIGN.RIGHT)
     _add_text_box(slide, date.today().strftime("%d %B %Y"),
