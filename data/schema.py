@@ -18,6 +18,7 @@ SCHEMA = {
             "Est. Jobs Created", "Saudi Content %", "Technology Transfer",
             "Deal Classification", "Vision 2030 Pillar",
             "Strategic Priority Score",
+            "Priority Classification",
             "Minister Action Required", "Decision Required By",
             "Blocker Level",
             "Last Meeting Date", "Next Meeting Date", "Last Updated",

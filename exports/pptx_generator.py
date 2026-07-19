@@ -1202,6 +1202,26 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   Inches(14.5), Inches(0.42), Inches(4.6), Inches(0.35),
                   font_size=11, color=_rgb("#C89B3C"), align=PP_ALIGN.RIGHT)
 
+    # Priority Classification badge — colored pill below the date
+    _priority_val = str(_mv(inv_row, "Priority Classification", "")).strip()
+    _pri_badge_colors = {
+        "high":   "#C00000",   # red
+        "medium": "#2D6DA8",   # blue
+        "low":    "#888888",   # grey
+    }
+    _pri_key = _priority_val.lower()
+    if _pri_key in _pri_badge_colors:
+        _pbadge_col = _rgb(_pri_badge_colors[_pri_key])
+        _pbadge_x = Inches(14.5)
+        _pbadge_y = Inches(0.82)
+        _pbadge_w = Inches(4.60)
+        _pbadge_h = Inches(0.30)
+        _pb = slide.shapes.add_shape(5, _pbadge_x, _pbadge_y, _pbadge_w, _pbadge_h)
+        _pb.fill.solid(); _pb.fill.fore_color.rgb = _pbadge_col; _pb.line.fill.background()
+        _add_text_box(slide, f"{_priority_val.upper()} PRIORITY",
+                      _pbadge_x, _pbadge_y, _pbadge_w, _pbadge_h,
+                      font_size=11, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+
     # ── Metadata bar: white band with 5 fields + oval icons ──────────────────
     META_Y = Inches(1.396)
     META_H = Inches(0.938)
