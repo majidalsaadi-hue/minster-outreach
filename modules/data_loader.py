@@ -175,11 +175,16 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
                  "action item", "id", "assigned to", "remarks", "am input",
                  "priority", "progress", "start date", "due date", "type of engagement"}
 
+    _STANDARD_SHEET_NAMES = set(SCHEMA.keys())
+
     for sheet_name in sheet_names:
-        if not any(sheet_name.startswith(p) for p in LEGACY_SHEET_PREFIXES):
+        # Skip known standard CRM sheets; process everything else as a
+        # potential legacy action-tracker tab (e.g. "CoC – Chamber of Commerce")
+        if sheet_name in _STANDARD_SHEET_NAMES:
             continue
 
         df_raw = raw.parse(sheet_name, header=None)
+        # Derive a fallback company name from the sheet name
         company = _extract_company_from_sheet_name(sheet_name)
 
         # Skip portfolio-level "deal" sheets — they have no per-investor header
