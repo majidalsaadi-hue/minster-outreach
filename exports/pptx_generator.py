@@ -1203,29 +1203,6 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   Inches(14.5), Inches(0.42), Inches(4.6), Inches(0.35),
                   font_size=11, color=_rgb("#C89B3C"), align=PP_ALIGN.RIGHT)
 
-    # Priority Classification badge — colored pill below the date
-    _priority_val = str(_mv(inv_row, "Priority Classification", "")).strip()
-    _pri_badge_colors = {
-        "high":   "#C00000",   # red
-        "medium": "#2D6DA8",   # blue
-        "low":    "#888888",   # grey
-    }
-    _pri_key = _priority_val.lower()
-    if _pri_key not in _pri_badge_colors:
-        _pri_key = "low"           # blank or unrecognised → grey LOW
-        _priority_val = "Low"
-    if _pri_key in _pri_badge_colors:
-        _pbadge_col = _rgb(_pri_badge_colors[_pri_key])
-        _pbadge_x = Inches(14.5)
-        _pbadge_y = Inches(0.82)
-        _pbadge_w = Inches(4.60)
-        _pbadge_h = Inches(0.30)
-        _pb = slide.shapes.add_shape(5, _pbadge_x, _pbadge_y, _pbadge_w, _pbadge_h)
-        _pb.fill.solid(); _pb.fill.fore_color.rgb = _pbadge_col; _pb.line.fill.background()
-        _add_text_box(slide, f"{_priority_val.upper()} PRIORITY",
-                      _pbadge_x, _pbadge_y, _pbadge_w, _pbadge_h,
-                      font_size=11, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-
     # ── Metadata bar: white band with 5 fields + oval icons ──────────────────
     META_Y = Inches(1.396)
     META_H = Inches(0.938)
@@ -1362,15 +1339,22 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   C3_X + Inches(1.05), KPI_Y + Inches(0.08),
                   KPI_W - Inches(2.80), Inches(0.40),
                   font_size=24, bold=True, color=_rgb("#C0392B"))
-    # Priority badge — top right
+    # Priority badge — top right (uses Priority Classification from investor row)
+    _pc_val = str(_mv(inv_row, "Priority Classification", "")).strip()
+    _pc_colors = {"high": "#C00000", "medium": "#2D6DA8", "low": "#888888"}
+    _pc_key = _pc_val.lower()
+    if _pc_key not in _pc_colors:
+        _pc_key = "low"
+        _pc_val = "Low"
+    _pc_col = _rgb(_pc_colors[_pc_key])
     _add_rect(slide, C3_X + KPI_W - Inches(1.30), KPI_Y + Inches(0.07),
               Inches(1.15), Inches(0.32),
-              fill_color=_rgb("#C0392B"), line_color=_rgb("#C0392B"))
+              fill_color=_pc_col, line_color=_pc_col)
     _add_text_box(slide, "Priority",
                   C3_X + KPI_W - Inches(1.30), KPI_Y + Inches(0.07),
                   Inches(1.15), Inches(0.15),
                   font_size=6, color=WHITE, align=PP_ALIGN.CENTER)
-    _add_text_box(slide, "HIGH",
+    _add_text_box(slide, _pc_val.upper(),
                   C3_X + KPI_W - Inches(1.30), KPI_Y + Inches(0.19),
                   Inches(1.15), Inches(0.18),
                   font_size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
