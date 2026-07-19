@@ -299,7 +299,7 @@ def _slide_end_thankyou(prs):
                   font_size=11, color=_rgb("#C89B3C"), align=PP_ALIGN.CENTER)
 
 
-def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
+def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_note: str = "") -> bytes:
     """
     Strategic all-companies dashboard deck.
     Slide 1: Cover with KPI strip + progress bars + sector/country charts.
@@ -589,10 +589,24 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
     except Exception:
         pass
 
-    _ia_item_y = _IA_Y + _IA_TTL_H + Inches(0.06)
+    _ia_content_y = _IA_Y + _IA_TTL_H + Inches(0.06)
+
+    # If a minister's note was entered in the CRM, show it prominently first
+    if ministry_note and ministry_note.strip():
+        _note_h = Inches(0.70)
+        _add_rect(slide, _IA_X + Inches(0.08), _ia_content_y,
+                  _IA_W - Inches(0.16), _note_h,
+                  fill_color=_rgb("#FFF8E8"), line_color=_rgb("#C89B3C"))
+        _add_text_box(slide, f"► {ministry_note.strip()[:220]}",
+                      _IA_X + Inches(0.18), _ia_content_y + Inches(0.05),
+                      _IA_W - Inches(0.36), _note_h - Inches(0.10),
+                      font_size=14, bold=True, color=_rgb("#0B4A2F"))
+        _ia_content_y += _note_h + Inches(0.06)
+
+    _ia_item_y = _ia_content_y
     _ia_col_w  = (_IA_W - Inches(0.20)) / max(min(len(_ia_items), 4), 1)
     _ia_rows   = [_ia_items[i:i+4] for i in range(0, len(_ia_items), 4)]
-    _ia_row_h  = (_IA_H - _IA_TTL_H - Inches(0.10)) / max(len(_ia_rows), 1)
+    _ia_row_h  = (_IA_H - (_ia_content_y - _IA_Y) - Inches(0.06)) / max(len(_ia_rows), 1)
     for _ir_idx, _ia_row in enumerate(_ia_rows[:2]):
         _ia_col_x = _IA_X + Inches(0.10)
         _ia_ry = _ia_item_y + _ir_idx * _ia_row_h
@@ -610,7 +624,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                           font_size=14, color=_rgb("#1A1A1A"))
             _ia_col_x += _ia_col_w
 
-    if not _ia_items:
+    if not _ia_items and not (ministry_note and ministry_note.strip()):
         _add_text_box(slide, "No high-priority actions at this time.",
                       _IA_X + Inches(0.15), _IA_Y + _IA_TTL_H + Inches(0.10),
                       _IA_W - Inches(0.20), Inches(0.22),
@@ -643,6 +657,28 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en") -> bytes:
                         else pd.DataFrame())
             try:
                 _co_slide_cover_profile(prs, co, inv, inv_opps, inv_acts, inv_mtgs, inv_dls, lang,
+                                        _skip_logos=True, _skip_charts=True)
+            except Exception:
+                pass
+
+    # Also include companies present in action/meeting/opportunity data but absent from Investor Master
+    _inv_cos = set(investors["Company Name"].dropna().str.strip().str.lower()) if not investors.empty else set()
+    _seen_extra: set = set()
+    for _src in [actions, opportunities, meetings]:
+        if _src.empty or "Company Name" not in _src.columns:
+            continue
+        for _co_extra in _src["Company Name"].dropna().unique():
+            _co_key = str(_co_extra).strip().lower()
+            if not _co_key or _co_key in _inv_cos or _co_key in _seen_extra:
+                continue
+            _seen_extra.add(_co_key)
+            _co_name = str(_co_extra).strip()
+            _ea = actions[actions["Company Name"] == _co_extra] if not actions.empty and "Company Name" in actions.columns else pd.DataFrame()
+            _eo = opportunities[opportunities["Company Name"] == _co_extra] if not opportunities.empty and "Company Name" in opportunities.columns else pd.DataFrame()
+            _em = meetings[meetings["Company Name"] == _co_extra] if not meetings.empty and "Company Name" in meetings.columns else pd.DataFrame()
+            try:
+                _co_slide_cover_profile(prs, _co_name, pd.Series({"Company Name": _co_name}),
+                                        _eo, _ea, _em, pd.DataFrame(), lang,
                                         _skip_logos=True, _skip_charts=True)
             except Exception:
                 pass
@@ -1158,7 +1194,10 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                   "Ministry of Investment  ·  Minister Office  ·  Executive Outreach  ·  Man-marking Weekly Report",
                   Inches(0.417), Inches(1.00), Inches(14.0), Inches(0.26),
                   font_size=10, color=_rgb("#C89B3C"))
-    # Date top-right
+    # File owner + date — top right
+    _add_text_box(slide, "File owner: Majed H. Al Saadi",
+                  Inches(14.5), Inches(0.10), Inches(4.60), Inches(0.28),
+                  font_size=12, color=WHITE, align=PP_ALIGN.RIGHT)
     _add_text_box(slide, date.today().strftime("%d %B %Y"),
                   Inches(14.5), Inches(0.42), Inches(4.6), Inches(0.35),
                   font_size=11, color=_rgb("#C89B3C"), align=PP_ALIGN.RIGHT)

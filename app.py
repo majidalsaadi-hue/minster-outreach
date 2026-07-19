@@ -789,13 +789,21 @@ def render_export():
         then one page per company.
     </div>""", unsafe_allow_html=True)
     all_lang_pptx = st.selectbox("Language", ["English", "Arabic"], key="pptx_all_lang")
+    ministry_note_input = st.text_area(
+        "Additional note for Ministry (IMPORTANT ACTIVATES section)",
+        placeholder="Leave blank to auto-generate from high-priority actions. Enter text here to show it prominently at the top of the IMPORTANT ACTIVATES box.",
+        height=80,
+        key="ministry_note_input",
+    )
     if generate_pptx_all_companies_dashboard is None:
         err_detail = f" — {_PPTX_IMPORT_ERROR}" if _PPTX_IMPORT_ERROR else ""
         st.warning(f"PPTX generator failed to load{err_detail}")
     elif st.button("📥 Generate All Companies Dashboard", use_container_width=True, disabled=(dfs is None)):
         with st.spinner("Building all-companies dashboard…"):
             all_lang_code = "ar" if all_lang_pptx == "Arabic" else "en"
-            all_pptx = generate_pptx_all_companies_dashboard(dfs or {}, lang=all_lang_code)
+            all_pptx = generate_pptx_all_companies_dashboard(
+                dfs or {}, lang=all_lang_code, ministry_note=ministry_note_input or ""
+            )
         all_filename = f"MoI_AllCompanies_Dashboard_{date.today().strftime('%Y-%m-%d')}.pptx"
         st.download_button(
             "⬇️ Download All Companies Dashboard (.pptx)",
