@@ -244,6 +244,7 @@ def _load_legacy(raw: pd.ExcelFile, sheet_names: list[str]) -> dict:
             "Rep Phone":                  _sstr(rep_phone),
             "Minister Action Required":   _min_act_str,
             "Blocker Level":              _blocker_str,
+            "Priority Classification":    _sstr(priority_hdr),
         })
 
         # ── Extract opportunities from header block (rows 14-19, col H) ──────
