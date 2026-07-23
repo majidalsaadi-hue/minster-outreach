@@ -1499,20 +1499,19 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
     _add_rect(slide, AS_X, AS_Y, AS_W, Inches(0.042),
               fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
     _add_text_box(slide, "Actions Summary",
-                  AS_X + Inches(0.15), AS_Y + Inches(0.06),
+                  AS_X + Inches(0.15), AS_Y + Inches(0.01),
                   Inches(3.5), Inches(0.35),
-                  font_size=22, bold=True, color=_rgb("#0B4A2F"))
+                  font_size=18, bold=True, color=_rgb("#0B4A2F"))
 
-    # 5 count circles with distinct Unicode icons
+    # 4 count circles (Blocked removed)
     _circ_items = [
         (str(n_done_s),  "Completed",  "#1B5C3F", "✓"),
         (str(n_prog_s),  "In Progress","#C9974A", "↺"),
         (str(n_pend_s),  "Pending",    "#888888", "◷"),
-        (str(n_block_s), "Blocked",    "#C0392B", "⊘"),
         (str(n_opps_s),  "Opps",       "#0B4A2F", "★"),
     ]
     _circ_r   = Inches(0.60)
-    _circ_gap = (AS_W - Inches(0.30)) / 5
+    _circ_gap = (AS_W - Inches(0.30)) / 4
     for _ci_idx, (_cval, _clbl, _ccol, _cicon) in enumerate(_circ_items):
         _cx = AS_X + Inches(0.15) + _circ_gap * _ci_idx + _circ_gap / 2
         _cy = AS_Y + Inches(0.90)
@@ -1621,34 +1620,84 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                               _txt_x, _opp_item_y + Inches(0.36),
                               _txt_w, Inches(0.26),
                               font_size=16, color=_rgb("#888888"))
-            # Stage badge pill — shifted right so it doesn't overlap wrapped name text
-            if _ostage and _ostage not in ("nan", ""):
-                _bcol  = _stage_badge_col(_ostage)
-                _bdg_y = _opp_item_y + _opp_card_h - Inches(0.24)
-                _bdg_w = Inches(1.30); _bdg_h = Inches(0.18)
-                _bdg_x = _txt_x + Inches(0.60)
-                _bdg = slide.shapes.add_shape(9, _bdg_x, _bdg_y, _bdg_w, _bdg_h)
-                _bdg.fill.solid(); _bdg.fill.fore_color.rgb = _rgb(_bcol); _bdg.line.fill.background()
-                _add_text_box(slide, _ostage[:20].upper(),
-                              _bdg_x, _bdg_y, _bdg_w, _bdg_h,
-                              font_size=6.0, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
             _opp_item_y += _opp_card_h + Inches(0.06)
     else:
         _add_text_box(slide, "No opportunities recorded.",
                       OP_X + Inches(0.12), _opp_item_y,
                       OP_W - Inches(0.20), Inches(0.26),
                       font_size=8.5, color=_rgb("#888888"))
+        _opp_item_y += Inches(0.32)
+
+    # ── Major Highlights — below last opportunity card ─────────────────────────
+    _mh_y = _opp_item_y
+    _mh_avail = BOT_Y + BOT_H - _mh_y - Inches(0.05)
+    if _mh_avail > Inches(0.65):
+        _MH_TTL_H = Inches(0.28)
+        _add_rect(slide, OP_X, _mh_y, OP_W, _MH_TTL_H,
+                  fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
+        _add_rect(slide, OP_X, _mh_y, Inches(0.042), _MH_TTL_H,
+                  fill_color=_rgb("#C89B3C"), line_color=_rgb("#C89B3C"))
+        _add_text_box(slide, "MAJOR HIGHLIGHTS",
+                      OP_X + Inches(0.10), _mh_y + Inches(0.05),
+                      OP_W - Inches(0.16), _MH_TTL_H - Inches(0.08),
+                      font_size=12, bold=True, color=_rgb("#C89B3C"))
+        _mh_body_y = _mh_y + _MH_TTL_H + Inches(0.06)
+        # Pull top 2 highlights from Remarks/AM Input (dashboard-flagged actions first)
+        _mh_bullets = []
+        _mh_src = acts.copy() if not acts.empty else pd.DataFrame()
+        if not _mh_src.empty and "To Be In Dashboard" in _mh_src.columns:
+            _mh_flagged = _mh_src[
+                _mh_src["To Be In Dashboard"].astype(str).str.strip().str.upper().isin(["YES", "TOP"])
+            ]
+            if not _mh_flagged.empty:
+                _mh_src = _mh_flagged
+        if not _mh_src.empty:
+            for _, _mhr in _mh_src.head(5).iterrows():
+                _r = str(_mhr.get("Remarks", "") or "").strip()
+                _a = str(_mhr.get("AM Input", "") or "").strip()
+                _r = "" if _r.lower() in ("nan", "none", "-", "n/a") else _r
+                _a = "" if _a.lower() in ("nan", "none", "-", "n/a") else _a
+                _mh_txt = _a if (_a and len(_a) >= len(_r) * 0.6) else (_r or _a)
+                if not _mh_txt:
+                    continue
+                for _sep in (". ", ".\n", "\n"):
+                    if _sep in _mh_txt:
+                        _mh_txt = _mh_txt.split(_sep)[0]
+                        break
+                if len(_mh_txt) > 100:
+                    _mh_txt = _mh_txt[:99].rsplit(" ", 1)[0] + "…"
+                _mh_bullets.append(_mh_txt.strip())
+                if len(_mh_bullets) >= 2:
+                    break
+        if not _mh_bullets:
+            _notes_val = str(inv_row.get("Notes", "") or "").strip()
+            if _notes_val and _notes_val.lower() not in ("nan", "none", ""):
+                _mh_bullets = [_notes_val[:100]]
+        for _mh_b in _mh_bullets:
+            if _mh_body_y + Inches(0.30) > BOT_Y + BOT_H - Inches(0.05):
+                break
+            _mhdot = slide.shapes.add_shape(
+                9, OP_X + Inches(0.10), _mh_body_y + Inches(0.09),
+                Inches(0.07), Inches(0.07))
+            _mhdot.fill.solid()
+            _mhdot.fill.fore_color.rgb = _rgb("#C89B3C")
+            _mhdot.line.fill.background()
+            _add_text_box(slide, _mh_b,
+                          OP_X + Inches(0.24), _mh_body_y,
+                          OP_W - Inches(0.32), Inches(0.52),
+                          font_size=11, color=_rgb("#2B2B2B"))
+            _mh_body_y += Inches(0.56)
 
     # ── Actions table: left=4.167", y=BOT_Y ──────────────────────────────────
     TBL_X = Inches(4.167)
     TBL_W = Inches(19.375) - TBL_X - Inches(0.10)
-    # Column widths: shortened Progress + new Update column
-    # #=0.45, Action=4.20, Owner=1.65, Start=1.10, End=1.10, Priority=1.55, Progress=1.60, Update=remainder
-    _cw_raw = [0.45, 4.20, 1.65, 1.10, 1.10, 1.55, 1.60, 3.40]
+    # Column widths: # | Action | Owner | Start | End | Update | Progress
+    # Priority removed (1.55"); its width added to Update → 4.95"
+    _cw_raw = [0.45, 4.20, 1.65, 1.10, 1.10, 4.95, 1.60]
     _cw_sum = sum(_cw_raw)
     _scale = TBL_W / Inches(_cw_sum)
     CW_TBL = [Inches(w) * _scale for w in _cw_raw]
-    COL_HDR = ["#", "Action", "Owner", "Start Date", "End Date", "Priority", "Progress", "Update"]
+    COL_HDR = ["#", "Action", "Owner", "Start Date", "End Date", "Update", "Progress"]
     HDR_H2  = Inches(0.333)
     ROW_H2  = Inches(0.375)
 
@@ -1767,18 +1816,13 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       CW_TBL[4] - Inches(0.06), Inches(0.26),
                       font_size=13, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
         _cx_cur += CW_TBL[4]
-        # Col 5: Priority (dot + text)
+        # Col 5: Update (intelligent summary of Remarks + AM Input)
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[5], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
-        _pri2 = str(_rrow.get("Priority","") or "").strip()
-        _pri_col2 = _pri_colors.get(_pri2, "#888888")
-        _dot_r = Inches(0.06)
-        _dot_x = _cx_cur + Inches(0.10)
-        _dot_y = _row_y + ROW_H2/2 - _dot_r
-        _ds = slide.shapes.add_shape(9, _dot_x, _dot_y, _dot_r*2, _dot_r*2)
-        _ds.fill.solid(); _ds.fill.fore_color.rgb = _rgb(_pri_col2); _ds.line.fill.background()
-        _add_text_box(slide, _pri2, _cx_cur + Inches(0.28), _row_y + Inches(0.07),
-                      CW_TBL[5] - Inches(0.32), Inches(0.26),
-                      font_size=13, color=_rgb(_pri_col2))
+        _upd2 = _co_update_text(_rrow.get("Remarks", ""), _rrow.get("AM Input", ""))
+        _add_text_box(slide, _upd2,
+                      _cx_cur + Inches(0.04), _row_y + Inches(0.04),
+                      CW_TBL[5] - Inches(0.06), ROW_H2 - Inches(0.05),
+                      font_size=13, color=_rgb("#444444"))
         _cx_cur += CW_TBL[5]
         # Col 6: Progress %
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[6], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
@@ -1796,15 +1840,6 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
                       _cx_cur, _by2 + _bh2 + Inches(0.01),
                       CW_TBL[6], Inches(0.22),
                       font_size=13, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
-        _cx_cur += CW_TBL[6]
-
-        # Col 7: Update (intelligent summary of Remarks + AM Input)
-        _add_rect(slide, _cx_cur, _row_y, CW_TBL[7], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
-        _upd2 = _co_update_text(_rrow.get("Remarks", ""), _rrow.get("AM Input", ""))
-        _add_text_box(slide, _upd2,
-                      _cx_cur + Inches(0.04), _row_y + Inches(0.04),
-                      CW_TBL[7] - Inches(0.06), ROW_H2 - Inches(0.05),
-                      font_size=13, color=_rgb("#444444"))
 
         _row_y += ROW_H2
         _row_i += 1
