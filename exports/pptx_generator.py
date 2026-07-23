@@ -47,6 +47,48 @@ PRI_AMB    = _rgb("#FFC000")
 INT_GOLD   = _rgb("#C89B3C")
 
 
+def _donut_image_buf(counts_dict: dict, palette: list, size: int = 480) -> "io.BytesIO | None":
+    """Draw a donut chart as a PIL PNG image and return a BytesIO buffer."""
+    try:
+        from PIL import Image, ImageDraw
+        import math as _math
+
+        total = sum(counts_dict.values())
+        if total == 0:
+            return None
+
+        img = Image.new("RGBA", (size, size), (255, 255, 255, 0))
+        draw = ImageDraw.Draw(img)
+
+        cx = cy = size // 2
+        r_outer = cx - 6
+        r_inner = int(r_outer * 0.52)
+
+        angle = -90.0
+        for i, (_name, count) in enumerate(counts_dict.items()):
+            sweep = 360.0 * count / total
+            h = palette[i % len(palette)].lstrip("#")
+            fill = (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), 255)
+            draw.pieslice(
+                [(cx - r_outer, cy - r_outer), (cx + r_outer, cy + r_outer)],
+                start=angle, end=angle + sweep, fill=fill,
+            )
+            angle += sweep
+
+        # Hollow centre
+        draw.ellipse(
+            [(cx - r_inner, cy - r_inner), (cx + r_inner, cy + r_inner)],
+            fill=(255, 255, 255, 255),
+        )
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return buf
+    except Exception:
+        return None
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def generate_pptx(dfs: dict, lang: str = "en") -> bytes:
@@ -414,7 +456,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
             # Company name
             _add_text_box(slide, str(_co_nb)[:22], _BARS_X, _by,
                           _CO_NM_W, _bar_h,
-                          font_size=10, bold=True, color=DARK)
+                          font_size=13, bold=True, color=DARK)
 
             # 3-segment bar
             _bx  = _BARS_X + _CO_NM_W + Inches(0.08)
@@ -432,7 +474,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                 if _dw > Inches(0.45):
                     _add_text_box(slide, f"{round(_dn/_tot*100)}%",
                                   _bx, _by2, _dw, _bsh,
-                                  font_size=7, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+                                  font_size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
             # Gold (in progress)
             if _pr > 0 and _tot > 0:
                 _px = _bx + _BAR_TRK_W * _dn / _tot
@@ -442,7 +484,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                 if _pw > Inches(0.45):
                     _add_text_box(slide, f"{round(_pr/_tot*100)}%",
                                   _px, _by2, _pw, _bsh,
-                                  font_size=7, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+                                  font_size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
             # Grey label (not started)
             if _ns > 0 and _tot > 0:
                 _nw = _BAR_TRK_W * _ns / _tot
@@ -450,7 +492,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                 if _nw > Inches(0.45):
                     _add_text_box(slide, f"{round(_ns/_tot*100)}%",
                                   _nx, _by2, _nw, _bsh,
-                                  font_size=7, bold=True, color=_rgb("#555555"), align=PP_ALIGN.CENTER)
+                                  font_size=9, bold=True, color=_rgb("#555555"), align=PP_ALIGN.CENTER)
 
             # Bar-end: Sector|Country / N opps / date range
             _ex = _bx + _BAR_TRK_W + Inches(0.10)
@@ -492,23 +534,12 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                   font_size=10, bold=True, color=DARK)
     if not investors.empty and "Sector" in investors.columns:
         sec_counts = investors["Sector"].dropna().value_counts().head(6)
-        try:
-            _sec_data = ChartData()
-            _sec_data.categories = [str(s)[:14] for s in sec_counts.index]
-            _sec_data.add_series("Sectors", tuple(int(v) for v in sec_counts.values))
-            _sec_gfx = slide.shapes.add_chart(
-                XL_CHART_TYPE.DOUGHNUT,
-                _DONUT_X, _CONTENT_Y + Inches(0.28),
-                Inches(2.40), Inches(2.10),
-                _sec_data,
+        _sec_buf = _donut_image_buf(dict(sec_counts), _DONUT_PALETTE)
+        if _sec_buf:
+            slide.shapes.add_picture(
+                _sec_buf, _DONUT_X, _CONTENT_Y + Inches(0.28),
+                Inches(2.40), Inches(2.40),
             )
-            _sec_gfx.chart.has_title = False
-            _sec_gfx.chart.has_legend = False
-            for _pi, _pt in enumerate(_sec_gfx.chart.series[0].points):
-                _pt.format.fill.solid()
-                _pt.format.fill.fore_color.rgb = _rgb(_DONUT_PALETTE[_pi % len(_DONUT_PALETTE)])
-        except Exception:
-            pass
         _leg_x = _DONUT_X + Inches(2.50)
         _leg_y = _CONTENT_Y + Inches(0.32)
         for _si, (_sname, _scnt) in enumerate(sec_counts.items()):
@@ -529,23 +560,12 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                   font_size=10, bold=True, color=DARK)
     if not investors.empty and "Country" in investors.columns:
         cty_counts = investors["Country"].dropna().value_counts().head(6)
-        try:
-            _cty_data = ChartData()
-            _cty_data.categories = [str(c)[:14] for c in cty_counts.index]
-            _cty_data.add_series("Countries", tuple(int(v) for v in cty_counts.values))
-            _cty_gfx = slide.shapes.add_chart(
-                XL_CHART_TYPE.DOUGHNUT,
-                _DONUT_X, _d2_y + Inches(0.28),
-                Inches(2.40), Inches(2.10),
-                _cty_data,
+        _cty_buf = _donut_image_buf(dict(cty_counts), _CTY_PAL)
+        if _cty_buf:
+            slide.shapes.add_picture(
+                _cty_buf, _DONUT_X, _d2_y + Inches(0.28),
+                Inches(2.40), Inches(2.40),
             )
-            _cty_gfx.chart.has_title = False
-            _cty_gfx.chart.has_legend = False
-            for _pi, _pt in enumerate(_cty_gfx.chart.series[0].points):
-                _pt.format.fill.solid()
-                _pt.format.fill.fore_color.rgb = _rgb(_CTY_PAL[_pi % len(_CTY_PAL)])
-        except Exception:
-            pass
         _leg_x = _DONUT_X + Inches(2.50)
         _leg_y = _d2_y + Inches(0.32)
         for _ci, (_cname, _ccnt) in enumerate(cty_counts.items()):
