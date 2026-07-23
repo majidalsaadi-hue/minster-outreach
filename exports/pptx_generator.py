@@ -649,6 +649,172 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                   Inches(0), SLIDE_H - _SLD_FOOTER_H, SLIDE_W, _SLD_FOOTER_H,
                   font_size=11, color=_rgb("#C89B3C"), align=PP_ALIGN.CENTER)
 
+    # ── Slide 3: Minister's Company Action Summary ────────────────────────────
+    _ms = _blank_slide(prs)
+
+    # Header
+    _add_rect(_ms, Inches(0), Inches(0), SLIDE_W, Inches(0.72),
+              fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
+    _add_text_box(_ms, "Minister's Company Action Summary",
+                  Inches(0.30), Inches(0.04), Inches(14.0), Inches(0.40),
+                  font_size=18, bold=True, color=WHITE)
+    _add_text_box(_ms, "Progress & Key Actions — All Companies at a Glance",
+                  Inches(0.30), Inches(0.44), Inches(10.0), Inches(0.20),
+                  font_size=9, color=_rgb("#C89B3C"))
+    _add_text_box(_ms, date.today().strftime("%d %B %Y"),
+                  Inches(16.0), Inches(0.18), Inches(3.6), Inches(0.26),
+                  font_size=9, color=_rgb("#C89B3C"), align=PP_ALIGN.RIGHT)
+
+    # Grid layout: 4 columns × up to 4 rows
+    _MS_COLS    = 4
+    _MS_COL_GAP = Inches(0.14)
+    _MS_ROW_GAP = Inches(0.12)
+    _MS_PAD_X   = Inches(0.28)
+    _MS_PAD_Y   = Inches(0.80)
+    _MS_FOOTER_H = Inches(0.36)
+    _MS_CARD_W  = (SLIDE_W - 2 * _MS_PAD_X - (_MS_COLS - 1) * _MS_COL_GAP) / _MS_COLS
+    _MS_AVAIL_H = SLIDE_H - _MS_PAD_Y - _MS_FOOTER_H
+
+    # Collect per-company summary data
+    _ms_companies = []
+    if not investors.empty and "Company Name" in investors.columns:
+        _pri_ms = {"high": 0, "medium": 1, "low": 2}
+        _inv_ms = investors.copy()
+        _inv_ms["_ps"] = (
+            _inv_ms.get("Priority Classification", pd.Series(dtype=str))
+            .fillna("").str.strip().str.lower().map(_pri_ms).fillna(3)
+        )
+        for _, _inv_ms_row in _inv_ms.sort_values("_ps").iterrows():
+            _ms_co = str(_inv_ms_row.get("Company Name", "") or "").strip()
+            if not _ms_co:
+                continue
+            _ms_acts = actions[actions["Company Name"] == _ms_co] if not actions.empty and "Company Name" in actions.columns else pd.DataFrame()
+            _ms_tot  = len(_ms_acts)
+            _ms_done = int(_ms_acts["Status"].str.lower().str.contains("complet").sum()) if not _ms_acts.empty and "Status" in _ms_acts.columns else 0
+            _ms_prog = int(_ms_acts["Status"].isin(["In Progress", "Inprogress"]).sum()) if not _ms_acts.empty and "Status" in _ms_acts.columns else 0
+            _ms_pend = max(_ms_tot - _ms_done - _ms_prog, 0)
+            _ms_pct  = round((_ms_done + _ms_prog) / max(_ms_tot, 1) * 100)
+
+            # Bullet points: prefer flagged actions, fall back to any active
+            _ms_bullets = []
+            if not _ms_acts.empty:
+                _ms_flag = _ms_acts.copy()
+                if "To Be In Dashboard" in _ms_flag.columns:
+                    _fl = _ms_flag["To Be In Dashboard"].astype(str).str.strip().str.upper()
+                    _flagged = _ms_flag[_fl.isin(["YES", "TOP"])]
+                    if not _flagged.empty:
+                        _ms_flag = _flagged
+                for _, _mr in _ms_flag.head(3).iterrows():
+                    _rm = str(_mr.get("Remarks", "") or "").strip()
+                    _am = str(_mr.get("AM Input", "") or "").strip()
+                    _rm = "" if _rm.lower() in ("nan", "none", "-", "n/a") else _rm
+                    _am = "" if _am.lower() in ("nan", "none", "-", "n/a") else _am
+                    _bt = _am if (_am and len(_am) >= len(_rm) * 0.6) else (_rm or _am)
+                    if not _bt:
+                        _bt = str(_mr.get("Action Description", "") or "").strip()
+                    if not _bt:
+                        continue
+                    for _sep in (". ", ".\n", "\n"):
+                        if _sep in _bt:
+                            _bt = _bt.split(_sep)[0]; break
+                    if len(_bt) > 90:
+                        _bt = _bt[:88].rsplit(" ", 1)[0] + "…"
+                    _ms_bullets.append(_bt.strip())
+                    if len(_ms_bullets) >= 3:
+                        break
+
+            _ms_companies.append((_ms_co, _ms_pct, _ms_done, _ms_prog, _ms_pend, _ms_tot, _ms_bullets))
+
+    # Compute row count and card height
+    _ms_n    = len(_ms_companies)
+    _ms_rows = max(1, -(-_ms_n // _MS_COLS))   # ceiling division
+    _MS_CARD_H = (_MS_AVAIL_H - (_ms_rows - 1) * _MS_ROW_GAP) / max(_ms_rows, 1)
+
+    for _mi, (_ms_co, _ms_pct, _ms_done, _ms_prog, _ms_pend, _ms_tot, _ms_bullets) in enumerate(_ms_companies):
+        _mc  = _mi % _MS_COLS
+        _mr  = _mi // _MS_COLS
+        _cx  = _MS_PAD_X + _mc * (_MS_CARD_W + _MS_COL_GAP)
+        _cy  = _MS_PAD_Y + _mr * (_MS_CARD_H + _MS_ROW_GAP)
+
+        # Card background
+        _add_rect(_ms, _cx, _cy, _MS_CARD_W, _MS_CARD_H,
+                  fill_color=WHITE, line_color=_rgb("#D8D2C0"))
+
+        # Company name header (dark green bar)
+        _ms_hdr_h = Inches(0.28)
+        _add_rect(_ms, _cx, _cy, _MS_CARD_W, _ms_hdr_h,
+                  fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
+        _add_rect(_ms, _cx, _cy, Inches(0.04), _ms_hdr_h,
+                  fill_color=_rgb("#C89B3C"), line_color=_rgb("#C89B3C"))
+        _add_text_box(_ms, _ms_co,
+                      _cx + Inches(0.10), _cy + Inches(0.04),
+                      _MS_CARD_W - Inches(0.14), _ms_hdr_h - Inches(0.06),
+                      font_size=9, bold=True, color=WHITE)
+
+        # Progress bar
+        _pb_y = _cy + _ms_hdr_h + Inches(0.07)
+        _pb_h = Inches(0.13)
+        _pb_w = _MS_CARD_W - Inches(0.20)
+        _pb_x = _cx + Inches(0.10)
+        _add_rect(_ms, _pb_x, _pb_y, _pb_w, _pb_h,
+                  fill_color=_rgb("#E0E0DC"), line_color=_rgb("#E0E0DC"))
+        if _ms_done > 0 and _ms_tot > 0:
+            _add_rect(_ms, _pb_x, _pb_y, _pb_w * _ms_done / _ms_tot, _pb_h,
+                      fill_color=GREEN, line_color=GREEN)
+        if _ms_prog > 0 and _ms_tot > 0:
+            _add_rect(_ms, _pb_x + _pb_w * _ms_done / _ms_tot, _pb_y,
+                      _pb_w * _ms_prog / _ms_tot, _pb_h,
+                      fill_color=GOLD, line_color=GOLD)
+        _add_text_box(_ms, f"{_ms_pct}%",
+                      _cx + _MS_CARD_W - Inches(0.48), _pb_y - Inches(0.02),
+                      Inches(0.44), Inches(0.18),
+                      font_size=8, bold=True, color=_rgb("#0B4A2F"), align=PP_ALIGN.RIGHT)
+
+        # Status counts row
+        _sc_y = _pb_y + _pb_h + Inches(0.04)
+        _sc_items = [
+            (f"✓ {_ms_done} Done",  "#1B5C3F"),
+            (f"↺ {_ms_prog} Active","#C9974A"),
+            (f"◷ {_ms_pend} Pend",  "#888888"),
+        ]
+        _sc_w = (_MS_CARD_W - Inches(0.10)) / 3
+        for _sci, (_sc_lbl, _sc_col) in enumerate(_sc_items):
+            _add_text_box(_ms, _sc_lbl,
+                          _cx + Inches(0.05) + _sci * _sc_w, _sc_y,
+                          _sc_w, Inches(0.16),
+                          font_size=7, bold=True, color=_rgb(_sc_col))
+
+        # Bullet points
+        _bl_y = _sc_y + Inches(0.18)
+        _bl_avail = _cy + _MS_CARD_H - _bl_y - Inches(0.05)
+        _bl_h = _bl_avail / max(len(_ms_bullets), 1) if _ms_bullets else _bl_avail
+        for _bi, _bt in enumerate(_ms_bullets):
+            _bly = _bl_y + _bi * _bl_h
+            if _bly + Inches(0.05) > _cy + _MS_CARD_H:
+                break
+            _bldot = _ms.shapes.add_shape(9,
+                         _cx + Inches(0.09), _bly + Inches(0.06),
+                         Inches(0.06), Inches(0.06))
+            _bldot.fill.solid(); _bldot.fill.fore_color.rgb = _rgb("#C89B3C")
+            _bldot.line.fill.background()
+            _add_text_box(_ms, _bt,
+                          _cx + Inches(0.19), _bly,
+                          _MS_CARD_W - Inches(0.24), _bl_h,
+                          font_size=7.5, color=_rgb("#2B2B2B"))
+
+        if not _ms_bullets:
+            _add_text_box(_ms, "No actions recorded.",
+                          _cx + Inches(0.10), _bl_y,
+                          _MS_CARD_W - Inches(0.14), Inches(0.20),
+                          font_size=7, color=_rgb("#888888"))
+
+    # Footer
+    _add_rect(_ms, Inches(0), SLIDE_H - _MS_FOOTER_H, SLIDE_W, _MS_FOOTER_H,
+              fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
+    _add_text_box(_ms, "CONFIDENTIAL | Ministry of Investment — وزارة الاستثمار",
+                  Inches(0), SLIDE_H - _MS_FOOTER_H, SLIDE_W, _MS_FOOTER_H,
+                  font_size=9, color=_rgb("#C89B3C"), align=PP_ALIGN.CENTER)
+
     # ── Slides 2+: one per company — sorted High → Medium → Low priority
     if not investors.empty and "Company Name" in investors.columns:
         _pri_sort_map = {"high": 0, "medium": 1, "low": 2}
