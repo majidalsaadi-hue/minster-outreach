@@ -749,7 +749,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
         _add_text_box(_ms, _ms_co,
                       _cx + Inches(0.10), _cy + Inches(0.04),
                       _MS_CARD_W - Inches(0.14), _ms_hdr_h - Inches(0.06),
-                      font_size=9, bold=True, color=WHITE)
+                      font_size=13, bold=True, color=WHITE)
 
         # Progress bar
         _pb_y = _cy + _ms_hdr_h + Inches(0.07)
@@ -782,7 +782,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
             _add_text_box(_ms, _sc_lbl,
                           _cx + Inches(0.05) + _sci * _sc_w, _sc_y,
                           _sc_w, Inches(0.16),
-                          font_size=7, bold=True, color=_rgb(_sc_col))
+                          font_size=9, bold=True, color=_rgb(_sc_col))
 
         # Bullet points
         _bl_y = _sc_y + Inches(0.18)
@@ -800,7 +800,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
             _add_text_box(_ms, _bt,
                           _cx + Inches(0.19), _bly,
                           _MS_CARD_W - Inches(0.24), _bl_h,
-                          font_size=7.5, color=_rgb("#2B2B2B"))
+                          font_size=10, color=_rgb("#2B2B2B"))
 
         if not _ms_bullets:
             _add_text_box(_ms, "No actions recorded.",
