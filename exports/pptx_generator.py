@@ -442,8 +442,8 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
 
         _sorted_cos = sorted(_co_stats.items(), key=lambda x: x[1][3], reverse=True)
 
-        _bar_h   = Inches(0.46)
-        _bar_gap = Inches(0.06)
+        _bar_h   = Inches(0.50)
+        _bar_gap = Inches(0.04)
         _by = _CONTENT_Y + Inches(0.32)
         _max_by = _CONTENT_BOT - _bar_h
 
@@ -460,8 +460,8 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
 
             # 3-segment bar
             _bx  = _BARS_X + _CO_NM_W + Inches(0.08)
-            _by2 = _by + Inches(0.12)
-            _bsh = _bar_h - Inches(0.24)
+            _by2 = _by + Inches(0.10)
+            _bsh = _bar_h - Inches(0.18)
 
             # Grey background (not started)
             _add_rect(slide, _bx, _by2, _BAR_TRK_W, _bsh,
@@ -501,27 +501,28 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
             _sector  = str(_inv_r.iloc[0].get("Sector",  "") if len(_inv_r) > 0 else "").strip()
             _country = str(_inv_r.iloc[0].get("Country", "") if len(_inv_r) > 0 else "").strip()
             _sec_cty = f"{_sector} | {_country}" if _sector and _country else (_sector or _country)
-            _add_text_box(slide, _sec_cty, _ex, _by, _BAR_END_W, Inches(0.17),
-                          font_size=7, color=_rgb("#888888"))
+            _be_third = _bar_h // 3
+            _add_text_box(slide, _sec_cty, _ex, _by, _BAR_END_W, _be_third,
+                          font_size=12, color=_rgb("#888888"))
 
             _n_opps = len(opportunities[opportunities["Company Name"] == _co_nb]) if not opportunities.empty and "Company Name" in opportunities.columns else 0
             _add_text_box(slide, f"{_n_opps} opp{'s' if _n_opps != 1 else ''}",
-                          _ex, _by + Inches(0.16), _BAR_END_W, Inches(0.16),
-                          font_size=8, bold=True, color=DARK)
+                          _ex, _by + _be_third, _BAR_END_W, _be_third,
+                          font_size=9, bold=True, color=DARK)
 
             _co_acts_r = actions[actions["Company Name"] == _co_nb] if not actions.empty and "Company Name" in actions.columns else pd.DataFrame()
             _dates_txt = ""
             if not _co_acts_r.empty:
                 try:
                     _sd = pd.to_datetime(_co_acts_r.get("Start Date", pd.Series(dtype=str)), errors="coerce").dropna()
-                    _ed = pd.to_datetime(_co_acts_r.get("End Date",   pd.Series(dtype=str)), errors="coerce").dropna()
+                    _ed = pd.to_datetime(_co_acts_r.get("Due Date",   pd.Series(dtype=str)), errors="coerce").dropna()
                     if not _sd.empty and not _ed.empty:
                         _dates_txt = f"{_sd.min().strftime('%b %Y')} → {_ed.max().strftime('%b %Y')}"
                 except Exception:
                     pass
             if _dates_txt:
-                _add_text_box(slide, _dates_txt, _ex, _by + Inches(0.31), _BAR_END_W, Inches(0.15),
-                              font_size=7, color=_rgb("#888888"))
+                _add_text_box(slide, _dates_txt, _ex, _by + _be_third * 2, _BAR_END_W, _be_third,
+                              font_size=9, color=_rgb("#888888"))
 
             _by += _bar_h + _bar_gap
 
@@ -538,9 +539,9 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
         if _sec_buf:
             slide.shapes.add_picture(
                 _sec_buf, _DONUT_X, _CONTENT_Y + Inches(0.28),
-                Inches(2.40), Inches(2.40),
+                Inches(3.10), Inches(3.10),
             )
-        _leg_x = _DONUT_X + Inches(2.50)
+        _leg_x = _DONUT_X + Inches(3.20)
         _leg_y = _CONTENT_Y + Inches(0.32)
         for _si, (_sname, _scnt) in enumerate(sec_counts.items()):
             _col = _DONUT_PALETTE[_si % len(_DONUT_PALETTE)]
@@ -548,7 +549,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                       fill_color=_rgb(_col), line_color=_rgb(_col))
             _add_text_box(slide, f"{str(_sname)[:14]}: {_scnt}",
                           _leg_x + Inches(0.13), _leg_y,
-                          _DONUT_W - Inches(2.62), Inches(0.22), font_size=9, color=DARK)
+                          _DONUT_W - Inches(3.32), Inches(0.22), font_size=9, color=DARK)
             _leg_y += Inches(0.24)
 
     # ── Right column: By Country donut ────────────────────────────────────────
@@ -564,9 +565,9 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
         if _cty_buf:
             slide.shapes.add_picture(
                 _cty_buf, _DONUT_X, _d2_y + Inches(0.28),
-                Inches(2.40), Inches(2.40),
+                Inches(3.10), Inches(3.10),
             )
-        _leg_x = _DONUT_X + Inches(2.50)
+        _leg_x = _DONUT_X + Inches(3.20)
         _leg_y = _d2_y + Inches(0.32)
         for _ci, (_cname, _ccnt) in enumerate(cty_counts.items()):
             _col = _CTY_PAL[_ci % len(_CTY_PAL)]
@@ -574,7 +575,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                       fill_color=_rgb(_col), line_color=_rgb(_col))
             _add_text_box(slide, f"{str(_cname)[:14]}: {_ccnt}",
                           _leg_x + Inches(0.13), _leg_y,
-                          _DONUT_W - Inches(2.62), Inches(0.22), font_size=9, color=DARK)
+                          _DONUT_W - Inches(3.32), Inches(0.22), font_size=9, color=DARK)
             _leg_y += Inches(0.24)
 
     # ── IMPORTANT ACTIVATES (full-width bottom strip) ─────────────────────────
