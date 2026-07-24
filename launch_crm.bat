@@ -9,6 +9,7 @@ echo.
 
 :: Pull latest updates from GitHub
 echo Checking for updates...
+git fetch origin claude/determined-sagan-YNQZB >nul 2>&1
 git pull origin claude/determined-sagan-YNQZB
 echo.
 
@@ -21,8 +22,8 @@ if exist "venv\Scripts\activate.bat" (
     echo No venv found - using system Python.
 )
 
-:: Install / update dependencies silently
-python -m pip install -q -r requirements.txt 2>nul
+:: Install / update dependencies silently (pillow needed for donut charts)
+python -m pip install -q -r requirements.txt pillow 2>nul
 
 :: Clear pycache so new code is always loaded
 rd /s /q modules\__pycache__ 2>nul
