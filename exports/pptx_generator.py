@@ -453,12 +453,12 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
             if _by > _max_by:
                 break
 
-            # Company name
-            _add_text_box(slide, str(_co_nb)[:22], _BARS_X, _by,
+            # Company name — pushed to left edge so dates can sit beside it
+            _add_text_box(slide, str(_co_nb)[:22], Inches(0), _by,
                           _CO_NM_W, _bar_h,
                           font_size=13, bold=True, color=DARK)
 
-            # 3-segment bar
+            # 3-segment bar (bar start position unchanged)
             _bx  = _BARS_X + _CO_NM_W + Inches(0.08)
             _by2 = _by + Inches(0.10)
             _bsh = _bar_h - Inches(0.18)
@@ -494,22 +494,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                                   _nx, _by2, _nw, _bsh,
                                   font_size=9, bold=True, color=_rgb("#555555"), align=PP_ALIGN.CENTER)
 
-            # Bar-end: Sector|Country / N opps / date range
-            _ex = _bx + _BAR_TRK_W + Inches(0.10)
-
-            _inv_r = investors[investors["Company Name"] == _co_nb] if not investors.empty and "Company Name" in investors.columns else pd.DataFrame()
-            _sector  = str(_inv_r.iloc[0].get("Sector",  "") if len(_inv_r) > 0 else "").strip()
-            _country = str(_inv_r.iloc[0].get("Country", "") if len(_inv_r) > 0 else "").strip()
-            _sec_cty = f"{_sector} | {_country}" if _sector and _country else (_sector or _country)
-            _be_third = _bar_h // 3
-            _add_text_box(slide, _sec_cty, _ex, _by, _BAR_END_W, _be_third,
-                          font_size=12, color=_rgb("#888888"))
-
-            _n_opps = len(opportunities[opportunities["Company Name"] == _co_nb]) if not opportunities.empty and "Company Name" in opportunities.columns else 0
-            _add_text_box(slide, f"{_n_opps} opp{'s' if _n_opps != 1 else ''}",
-                          _ex, _by + _be_third, _BAR_END_W, _be_third,
-                          font_size=9, bold=True, color=DARK)
-
+            # Date range — shown in the left zone beside the company name
             _co_acts_r = actions[actions["Company Name"] == _co_nb] if not actions.empty and "Company Name" in actions.columns else pd.DataFrame()
             _dates_txt = ""
             if not _co_acts_r.empty:
@@ -521,8 +506,26 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                 except Exception:
                     pass
             if _dates_txt:
-                _add_text_box(slide, _dates_txt, _ex, _by + _be_third * 2, _BAR_END_W, _be_third,
-                              font_size=9, color=_rgb("#888888"))
+                _add_text_box(slide, _dates_txt,
+                              Inches(1.62), _by + Inches(0.17),
+                              Inches(1.30), Inches(0.20),
+                              font_size=8, color=_rgb("#888888"))
+
+            # Bar-end: Sector|Country / N opps  (dates moved to left zone)
+            _ex = _bx + _BAR_TRK_W + Inches(0.10)
+
+            _inv_r = investors[investors["Company Name"] == _co_nb] if not investors.empty and "Company Name" in investors.columns else pd.DataFrame()
+            _sector  = str(_inv_r.iloc[0].get("Sector",  "") if len(_inv_r) > 0 else "").strip()
+            _country = str(_inv_r.iloc[0].get("Country", "") if len(_inv_r) > 0 else "").strip()
+            _sec_cty = f"{_sector} | {_country}" if _sector and _country else (_sector or _country)
+            _be_half = _bar_h // 2
+            _add_text_box(slide, _sec_cty, _ex, _by, _BAR_END_W, _be_half,
+                          font_size=12, color=_rgb("#888888"))
+
+            _n_opps = len(opportunities[opportunities["Company Name"] == _co_nb]) if not opportunities.empty and "Company Name" in opportunities.columns else 0
+            _add_text_box(slide, f"{_n_opps} opp{'s' if _n_opps != 1 else ''}",
+                          _ex, _by + _be_half, _BAR_END_W, _be_half,
+                          font_size=9, bold=True, color=DARK)
 
             _by += _bar_h + _bar_gap
 
@@ -1989,8 +1992,8 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
         # Col 1: Action
         _add_rect(slide, _cx_cur, _row_y, CW_TBL[1], ROW_H2, fill_color=_alt, line_color=_rgb("#E0E0DC"))
         _desc2 = str(_rrow.get("Action Description","") or "")
-        _add_text_box(slide, _desc2[:80], _cx_cur + Inches(0.05), _row_y + Inches(0.04),
-                      CW_TBL[1] - Inches(0.08), ROW_H2 - Inches(0.06),
+        _add_text_box(slide, _desc2[:80], _cx_cur + Inches(0.05), _row_y - Inches(0.01),
+                      CW_TBL[1] - Inches(0.08), ROW_H2 - Inches(0.01),
                       font_size=10, color=_rgb("#2B2B2B"))
         _cx_cur += CW_TBL[1]
         # Col 2: Owner
@@ -2035,7 +2038,7 @@ def _co_slide_cover_profile(prs, company, inv_row, opps, acts, meetings, deals, 
             _add_rect(slide, _bx2, _by2, max(_bw2 * _prog_v, Inches(0.02)), _bh2,
                       fill_color=_fc3, line_color=_fc3)
         _add_text_box(slide, f"{int(_prog_v*100)}%",
-                      _cx_cur, _by2 + _bh2 + Inches(0.01),
+                      _cx_cur, _by2 - Inches(0.03),
                       CW_TBL[6], Inches(0.22),
                       font_size=13, color=_rgb("#2B2B2B"), align=PP_ALIGN.CENTER)
 
