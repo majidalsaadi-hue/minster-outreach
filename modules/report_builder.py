@@ -459,8 +459,11 @@ def render(dfs: dict, lang: str):
                 _raw_xl_co = st.session_state.get("rb_excel_bytes")
                 if _raw_xl_co:
                     _co_acts = _load_excel_actions_for_company(_raw_xl_co, company)
-                    if not _co_acts.empty:
-                        st.session_state["rb_actions"] = _co_acts
+                    # Always replace — even if empty — so stale data from the
+                    # previous company doesn't stay on screen.
+                    st.session_state["rb_actions"] = _co_acts if not _co_acts.empty else pd.DataFrame()
+                else:
+                    st.session_state["rb_actions"] = pd.DataFrame()
                 st.rerun()
         except Exception as _fill_err:
             st.warning(f"⚠️ Auto-fill error (non-fatal): {_fill_err}")
