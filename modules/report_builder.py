@@ -1350,18 +1350,25 @@ def _parse_word(file_bytes: bytes) -> dict:
         """Identify table type by header content, not by position."""
         header_text = " ".join(c for row in rows[:2] for c in row)
         header_lower = header_text.lower()
-        # Arabic action item markers
-        if any(m in header_text for m in ["التوجيه", "المهمة", "مسؤول", "الأولوية", "الموعد النهائي", "الإجراء"]):
-            return "actions"
-        # English action item markers
-        if any(m in header_lower for m in ["action item", "due date", "success measure", "deliverable"]):
-            return "actions"
+        n_cols = max(len(r) for r in rows) if rows else 0
+
+        # English attendee markers — check BEFORE Arabic markers to avoid false
+        # positives: Arabic role titles (مسؤول…) appear in attendee cells and
+        # would otherwise trigger the Arabic action-item branch.
+        if len(rows) <= 6 and n_cols <= 3 and "name" in header_lower and ("role" in header_lower or "title" in header_lower):
+            return "attendees"
         # Arabic attendee markers
         if any(m in header_text for m in ["الاسم", "المسمى", "الجهة", "حضر", "المشاركون", "التوقيع"]):
             return "attendees"
-        # English attendee markers (small table with Name/Role)
-        if len(rows) <= 6 and "name" in header_lower and ("role" in header_lower or "title" in header_lower):
-            return "attendees"
+
+        # English action item markers (header row has these column names)
+        if any(m in header_lower for m in ["action item", "due date", "success measure", "deliverable"]):
+            return "actions"
+        # Arabic action item markers — exclude مسؤول: it's a role title, not a
+        # column header, and causes attendee tables to be misclassified.
+        if any(m in header_text for m in ["التوجيه", "المهمة", "الأولوية", "الموعد النهائي", "الإجراء"]):
+            return "actions"
+
         if len(rows) <= 5:
             for row in rows:
                 for cell in row:
@@ -1371,7 +1378,8 @@ def _parse_word(file_bytes: bytes) -> dict:
             return "discussion"
         return "metadata"
 
-    # Classify all tables by content (order-independent)
+    # Classify all tables; when two tables share a kind, keep the one with more
+    # columns (the real action table beats a misclassified 2-col attendee table).
     _classified: dict[str, list] = {}
     for _t in tables:
         _kind = _classify_table(_t)
@@ -1457,6 +1465,30 @@ def _parse_word(file_bytes: bytes) -> dict:
                     result["subject_en"] = f"Latest Updates — {name}"
                     break
 
+    # ── Fallback: extract company, date, subject from paragraphs (English MoMs) ─
+    if not result["company"] or not result["date"]:
+        for para in doc.paragraphs:
+            txt = para.text.strip()
+            if not txt:
+                continue
+            # Subject line: "Subject: Latest updates — bnp paribas"
+            if not result["company"] and re.match(r"(?i)subject\s*[:\-–]", txt):
+                for _sep in ("—", "–", "-"):
+                    if _sep in txt:
+                        _co = txt.split(_sep, 1)[-1].strip()
+                        if _co and len(_co) >= 2:
+                            result["company"] = _co
+                            result["subject_en"] = f"Latest Updates — {_co}"
+                            break
+            # Date anywhere in paragraph: DD/MM/YYYY or YYYY-MM-DD
+            if not result["date"]:
+                _dm = re.search(r"\b(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})\b", txt)
+                if _dm:
+                    try:
+                        result["date"] = date(int(_dm.group(3)), int(_dm.group(2)), int(_dm.group(1)))
+                    except Exception:
+                        pass
+
     # ── Discussion table ──────────────────────────────────────────────────────
     _disc_rows = _classified.get("discussion")
     if _disc_rows is None:
@@ -1481,19 +1513,36 @@ def _parse_word(file_bytes: bytes) -> dict:
         _act_rows = tables[2]
     if _act_rows:
         act_tbl = _act_rows
+        # Build column-index map from header row so insertion order doesn't matter
+        _hdr = [c.strip().lower() for c in act_tbl[0]] if act_tbl else []
+        def _col(names):
+            for n in names:
+                for i, h in enumerate(_hdr):
+                    if n in h:
+                        return i
+            return -1
+        _ci_action = _col(["action item", "التوجيه", "المهمة", "الإجراء"])
+        _ci_owner  = _col(["owner", "assigned", "مسؤول", "المسؤول"])
+        _ci_prio   = _col(["priority", "الأولوية"])
+        _ci_due    = _col(["due date", "due", "الموعد", "timeline", "target"])
+
         for row in act_tbl[1:]:
             cells = _dedup(row)
-            # Skip row if empty or only numbers
-            non_empty = [c for c in cells if c and not re.match(r"^\d+$", c)]
-            if not non_empty:
-                continue
-            action_ar = non_empty[0]
-            if action_ar in ("م", "التوجيه / المهمة", "Action Item", ""):
+            if not any(c for c in cells if c and not re.match(r"^\d+$", c)):
                 continue
 
-            owner_ar  = non_empty[1] if len(non_empty) > 1 else ""
-            prio_ar   = non_empty[2] if len(non_empty) > 2 else ""
-            due_ar    = non_empty[3] if len(non_empty) > 3 else ""
+            def _get(idx):
+                return cells[idx].strip() if 0 <= idx < len(cells) else ""
+
+            # Fall back to positional (non-empty, non-numeric) if header not found
+            non_empty = [c for c in cells if c and not re.match(r"^\d+$", c)]
+            action_ar = _get(_ci_action) if _ci_action >= 0 else (non_empty[0] if non_empty else "")
+            if not action_ar or action_ar in ("م", "التوجيه / المهمة", "Action Item", "#"):
+                continue
+
+            owner_ar = _get(_ci_owner) if _ci_owner >= 0 else (non_empty[1] if len(non_empty) > 1 else "")
+            prio_ar  = _get(_ci_prio)  if _ci_prio  >= 0 else (non_empty[2] if len(non_empty) > 2 else "")
+            due_ar   = _get(_ci_due)   if _ci_due   >= 0 else (non_empty[3] if len(non_empty) > 3 else "")
 
             owner_en = _OWNER_AR.get(owner_ar, owner_ar)
             prio_en  = _PRIORITY_AR.get(prio_ar, "High")
