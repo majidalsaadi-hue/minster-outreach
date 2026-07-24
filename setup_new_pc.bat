@@ -54,33 +54,38 @@ if errorlevel 1 (
 )
 echo  [OK] All packages installed.
 
-:: ── 5. Create desktop shortcut ────────────────────────────────────────────────
+:: ── 5. Create desktop shortcut via VBScript (no PowerShell needed) ────────────
 echo.
 echo  Creating desktop shortcut...
 set SCRIPT_DIR=%~dp0
-set VBS_PATH=%SCRIPT_DIR%launch_crm.vbs
-set SHORTCUT_NAME=MISA CRM
+set VBS_LAUNCHER=%SCRIPT_DIR%launch_crm.vbs
+set TEMP_MAKER=%TEMP%\misa_make_shortcut.vbs
 
-:: Write VBS launcher (silent, no CMD flash)
+:: Write the VBS launcher (double-click this to open the app silently)
 (
 echo Set oWS = WScript.CreateObject^("WScript.Shell"^)
 echo oWS.Run Chr^(34^) ^& "%SCRIPT_DIR%launch_crm.bat" ^& Chr^(34^), 1, False
-) > "%VBS_PATH%"
+) > "%VBS_LAUNCHER%"
 
-:: Create the .lnk on Desktop
-powershell -NoProfile -Command ^
-  "$ws = New-Object -ComObject WScript.Shell; ^
-   $s = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\%SHORTCUT_NAME%.lnk'); ^
-   $s.TargetPath = '%VBS_PATH:\=\\%'; ^
-   $s.WorkingDirectory = '%SCRIPT_DIR:\=\\%'; ^
-   $s.Description = 'MISA Investor Relations CRM'; ^
-   $s.Save()"
+:: Write a temporary VBS that creates the Desktop shortcut
+(
+echo Set oWS = WScript.CreateObject^("WScript.Shell"^)
+echo sLink = oWS.SpecialFolders^("Desktop"^) ^& "\MISA CRM.lnk"
+echo Set oLink = oWS.CreateShortcut^(sLink^)
+echo oLink.TargetPath = "%VBS_LAUNCHER%"
+echo oLink.WorkingDirectory = "%SCRIPT_DIR%"
+echo oLink.Description = "MISA Investor Relations CRM"
+echo oLink.Save
+) > "%TEMP_MAKER%"
 
-if exist "%USERPROFILE%\Desktop\%SHORTCUT_NAME%.lnk" (
+cscript //NoLogo "%TEMP_MAKER%"
+del "%TEMP_MAKER%" >nul 2>&1
+
+if exist "%USERPROFILE%\Desktop\MISA CRM.lnk" (
     echo  [OK] Shortcut "MISA CRM" created on Desktop.
 ) else (
     echo  [WARN] Could not auto-create shortcut.
-    echo  Manually right-click launch_crm.bat ^> Send to ^> Desktop.
+    echo  Right-click launch_crm.bat ^> Send to ^> Desktop ^(create shortcut^).
 )
 
 echo.
