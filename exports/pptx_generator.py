@@ -2979,7 +2979,7 @@ def _build_strategic_brief(acts, opps, meetings, inv_row):
     elif pct >= 70 and n_opps > 0:
         m_act = "Engagement maturing. Initiate commitment conversation — redirect to deal closure."
     else:
-        m_act = "Arrange senior bilateral meeting. Present MISA's strategic value proposition and Vision 2030 alignment."
+        m_act = "Arrange senior bilateral meeting."
 
     # ── Strategy Pillar Summary ───────────────────────────────────────────────
     if not acts.empty and "Action Description" in acts.columns:
