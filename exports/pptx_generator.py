@@ -911,11 +911,6 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                           _MS_CARD_W - Inches(0.21), _bl_h,
                           font_size=8.5, color=_rgb("#2B2B2B"))
 
-        if not _ms_bullets:
-            _add_text_box(_ms, "No Summary items tagged.",
-                          _cx + Inches(0.09), _bl_y,
-                          _MS_CARD_W - Inches(0.12), Inches(0.18),
-                          font_size=7, color=_rgb("#AAAAAA"))
 
     # Footer
     _add_rect(_ms, Inches(0), SLIDE_H - _MS_FOOTER_H, SLIDE_W, _MS_FOOTER_H,
