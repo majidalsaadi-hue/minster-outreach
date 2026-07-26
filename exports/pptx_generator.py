@@ -789,16 +789,12 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
             _ms_pend = max(_ms_tot - _ms_done - _ms_prog, 0)
             _ms_pct  = round((_ms_done + _ms_prog) / max(_ms_tot, 1) * 100)
 
-            # Bullet points: prefer flagged actions, fall back to any active
+            # Bullet points: ONLY rows explicitly tagged "Summary" in Excel
             _ms_bullets = []
-            if not _ms_acts.empty:
-                _ms_flag = _ms_acts.copy()
-                if "To Be In Dashboard" in _ms_flag.columns:
-                    _fl = _ms_flag["To Be In Dashboard"].astype(str).str.strip().str.upper()
-                    _flagged = _ms_flag[_fl.isin(["SUMMARY"])]
-                    if not _flagged.empty:
-                        _ms_flag = _flagged
-                for _, _mr in _ms_flag.head(3).iterrows():
+            if not _ms_acts.empty and "To Be In Dashboard" in _ms_acts.columns:
+                _fl = _ms_acts["To Be In Dashboard"].astype(str).str.strip().str.upper()
+                _ms_summary_rows = _ms_acts[_fl == "SUMMARY"]
+                for _, _mr in _ms_summary_rows.head(3).iterrows():
                     _rm = str(_mr.get("Remarks", "") or "").strip()
                     _am = str(_mr.get("AM Input", "") or "").strip()
                     _rm = "" if _rm.lower() in ("nan", "none", "-", "n/a") else _rm
