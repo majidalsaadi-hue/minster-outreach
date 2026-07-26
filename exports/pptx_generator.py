@@ -462,8 +462,8 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                   fill_color=_rgb("#CCCCCC"), line_color=_rgb("#CCCCCC"))
 
         for _col_x, _col_cos in [
-            (_BARS_X,  _sorted_cos_list[:8]),
-            (_col2_x,  _sorted_cos_list[8:16]),
+            (_BARS_X,  _sorted_cos_list[:9]),
+            (_col2_x,  _sorted_cos_list[9:18]),
         ]:
             _by = _CONTENT_Y + Inches(0.32)
             for _co_nb, (_dn, _pr, _ns, _tot) in _col_cos:
@@ -759,12 +759,12 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                   Inches(16.0), Inches(0.18), Inches(3.6), Inches(0.26),
                   font_size=9, color=_rgb("#C89B3C"), align=PP_ALIGN.RIGHT)
 
-    # Grid layout: 4 columns × up to 4 rows — tuned to fit 16 companies
+    # Grid layout: 4 columns × up to 5 rows — tuned to fit 18 companies
     _MS_COLS    = 4
     _MS_COL_GAP = Inches(0.10)
-    _MS_ROW_GAP = Inches(0.08)
+    _MS_ROW_GAP = Inches(0.06)
     _MS_PAD_X   = Inches(0.26)
-    _MS_PAD_Y   = Inches(0.76)
+    _MS_PAD_Y   = Inches(0.74)
     _MS_FOOTER_H = Inches(0.36)
     _MS_CARD_W  = (SLIDE_W - 2 * _MS_PAD_X - (_MS_COLS - 1) * _MS_COL_GAP) / _MS_COLS
     _MS_AVAIL_H = SLIDE_H - _MS_PAD_Y - _MS_FOOTER_H
@@ -836,7 +836,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                   fill_color=WHITE, line_color=_rgb("#D8D2C0"))
 
         # Company header — accent bar color reflects priority
-        _ms_hdr_h   = Inches(0.24)
+        _ms_hdr_h   = Inches(0.22)
         _ms_acc_col = {"high": "#C89B3C", "medium": "#2D7A54", "low": "#888888"}.get(_ms_pri_cls, "#C89B3C")
         _add_rect(_ms, _cx, _cy, _MS_CARD_W, _ms_hdr_h,
                   fill_color=_rgb("#0B4A2F"), line_color=_rgb("#0B4A2F"))
@@ -857,7 +857,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                           font_size=6.5, color=_rgb("#C89B3C"), align=PP_ALIGN.RIGHT)
 
         # Progress bar (compact)
-        _pb_y = _cy + _ms_hdr_h + Inches(0.05)
+        _pb_y = _cy + _ms_hdr_h + Inches(0.04)
         _pb_h = Inches(0.10)
         _pb_w = _MS_CARD_W - Inches(0.18)
         _pb_x = _cx + Inches(0.09)
@@ -876,7 +876,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                       font_size=7, bold=True, color=_rgb("#0B4A2F"), align=PP_ALIGN.RIGHT)
 
         # Status counts row (compact)
-        _sc_y = _pb_y + _pb_h + Inches(0.03)
+        _sc_y = _pb_y + _pb_h + Inches(0.02)
         _sc_items = [
             (f"✓ {_ms_done} Done",   "#1B5C3F"),
             (f"↺ {_ms_prog} Active", "#C9974A"),
@@ -890,7 +890,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                           font_size=8, bold=True, color=_rgb(_sc_col))
 
         # Bullet points — driven by "Summary"-tagged actions
-        _bl_y = _sc_y + Inches(0.15)
+        _bl_y = _sc_y + Inches(0.12)
         _bl_avail = _cy + _MS_CARD_H - _bl_y - Inches(0.04)
         _bl_h = _bl_avail / max(len(_ms_bullets), 1) if _ms_bullets else _bl_avail
         for _bi, _bt in enumerate(_ms_bullets):
@@ -905,7 +905,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
             _add_text_box(_ms, _bt,
                           _cx + Inches(0.17), _bly,
                           _MS_CARD_W - Inches(0.21), _bl_h,
-                          font_size=8.5, color=_rgb("#2B2B2B"))
+                          font_size=8, color=_rgb("#2B2B2B"))
 
 
     # Footer
