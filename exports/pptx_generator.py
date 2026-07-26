@@ -609,7 +609,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                 _ia_hi = _ia_all.copy()
             if "To Be In Dashboard" in _ia_hi.columns:
                 _dash_flag = _ia_hi["To Be In Dashboard"].astype(str).str.strip().str.upper()
-                _ia_yes = _ia_hi[_dash_flag.isin(["YES", "TOP"])]
+                _ia_yes = _ia_hi[_dash_flag.isin(["YES"])]
                 if not _ia_yes.empty:
                     _ia_hi = _ia_yes
             _pri_ord2 = {"Very High": 0, "High": 1, "Blocked": 2, "Medium": 3, "Low": 4}
@@ -725,7 +725,7 @@ def generate_pptx_all_companies_dashboard(dfs: dict, lang: str = "en", ministry_
                 _ms_flag = _ms_acts.copy()
                 if "To Be In Dashboard" in _ms_flag.columns:
                     _fl = _ms_flag["To Be In Dashboard"].astype(str).str.strip().str.upper()
-                    _flagged = _ms_flag[_fl.isin(["YES", "TOP"])]
+                    _flagged = _ms_flag[_fl.isin(["SUMMARY"])]
                     if not _flagged.empty:
                         _ms_flag = _flagged
                 for _, _mr in _ms_flag.head(3).iterrows():
