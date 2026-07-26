@@ -2895,7 +2895,7 @@ def _build_strategic_brief(acts, opps, meetings, inv_row):
     elif blocker_lvl not in ("None", "—", "nan", ""):
         m_act = f"Blocker: {blocker_lvl}. Senior engagement needed to champion resolution."
     elif high_descs:
-        m_act = f"Advance: '{high_descs[0]}'. Endorsement will accelerate delivery and signal strategic priority."
+        m_act = f"Advance: '{high_descs[0]}'."
     elif stage in ("Active Negotiation",):
         m_act = "Deal in negotiation — maintain executive contact and signal commitment to close."
     elif stage in ("Committed", "Post-Investment"):
